@@ -26,6 +26,7 @@ struct WebStatus {
   bool tempValid = false;
   float tempF = NAN;
   float targetF = DEFAULT_TARGET_F;
+  bool unitsFahrenheit = true;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;
   FaultCode faultCode = FaultCode::None;

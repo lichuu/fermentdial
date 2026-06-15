@@ -174,15 +174,17 @@ MQTT is not enabled in this Stage 1/2 firmware. The planned topic layout is:
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
-| `dial-ferment/state/temperature_f` | publish | current temperature |
-| `dial-ferment/state/target_f` | publish | target temperature |
-| `dial-ferment/state/mode` | publish | `OFF`, `AUTO`, `HEAT_ONLY`, `COOL_ONLY` |
-| `dial-ferment/state/runtime_state` | publish | `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, `FAULT` |
-| `dial-ferment/state/heater` | publish | `ON` or `OFF` |
-| `dial-ferment/state/pump` | publish | `ON` or `OFF` |
-| `dial-ferment/state/fault` | publish | `NONE`, `SENSOR`, or `INTERLOCK` |
-| `dial-ferment/set/target_f` | subscribe | new target temperature |
-| `dial-ferment/set/mode` | subscribe | new user mode |
+| `fermentdial/state` | publish | JSON state: `temperature`, `target`, `unit`, `mode`, `runtime_state`, `heater`, `pump`, `fault` |
+| `fermentdial/state/temperature` | publish | current temperature in the published `unit` |
+| `fermentdial/state/target` | publish | target temperature in the published `unit` |
+| `fermentdial/state/unit` | publish | `F` or `C` |
+| `fermentdial/state/mode` | publish | `OFF`, `AUTO`, `HEAT_ONLY`, `COOL_ONLY` |
+| `fermentdial/state/runtime_state` | publish | `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, `FAULT` |
+| `fermentdial/state/heater` | publish | `ON` or `OFF` |
+| `fermentdial/state/pump` | publish | `ON` or `OFF` |
+| `fermentdial/state/fault` | publish | `NONE`, `SENSOR`, or `INTERLOCK` |
+| `fermentdial/set/target` | subscribe | JSON `{"value":68.0,"unit":"F"}` or `{"value":20.0,"unit":"C"}` |
+| `fermentdial/set/mode` | subscribe | new user mode |
 
 MQTT commands will only mutate settings. The controller still applies sensor fault, OFF mode, pump timing, and output interlock rules locally.
 

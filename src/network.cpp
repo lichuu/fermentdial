@@ -12,6 +12,10 @@ constexpr const char *SETUP_AP_PASSWORD = "fermentdial";
 IPAddress SETUP_IP(192, 168, 4, 1);
 IPAddress SETUP_GATEWAY(192, 168, 4, 1);
 IPAddress SETUP_MASK(255, 255, 255, 0);
+
+String jsonFloat(float value, unsigned int decimals = 1) {
+  return isnan(value) ? "null" : String(value, decimals);
+}
 }  // namespace
 
 void NetworkManager::begin(const Settings &settings) {
@@ -90,6 +94,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings, cons
   _webStatus.tempValid = sensor.isValid();
   _webStatus.tempF = sensor.temperatureF();
   _webStatus.targetF = settings.targetF;
+  _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
   _webStatus.mode = settings.mode;
   _webStatus.runtimeState = controller.runtimeState();
   _webStatus.faultCode = controller.faultCode();
@@ -103,14 +108,10 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings, cons
   _lastPublishMs = nowMs;
 
 #if FERM_ENABLE_NETWORK
-  // TODO Stage 4 topics:
-  // dial-ferment/state/temperature_f
-  // dial-ferment/state/target_f
-  // dial-ferment/state/mode
-  // dial-ferment/state/runtime_state
-  // dial-ferment/state/heater
-  // dial-ferment/state/pump
-  // dial-ferment/state/fault
+  // TODO Stage 4 MQTT topic namespace: fermentdial
+  // Prefer unit-aware JSON state:
+  // fermentdial/state -> {"temperature":68.1,"target":68.0,"unit":"F",...}
+  // External integrations should use the unit field, not topic suffixes like _f.
 #endif
 }
 
@@ -219,8 +220,9 @@ void NetworkManager::handleSettingsPost() {
 
   bool changed = false;
 
-  if (_server.hasArg("targetF")) {
-    _settings->targetF = _server.arg("targetF").toFloat();
+  if (_server.hasArg("target")) {
+    float target = _server.arg("target").toFloat();
+    _settings->targetF = _settings->unitsFahrenheit ? target : cToF(target);
     changed = true;
   }
 
@@ -278,14 +280,19 @@ bool NetworkManager::parseMode(const String &value, UserMode &mode) const {
 }
 
 String NetworkManager::statusJson() const {
+  const float temperature = _webStatus.unitsFahrenheit ? _webStatus.tempF : fToC(_webStatus.tempF);
+  const float target = _webStatus.unitsFahrenheit ? _webStatus.targetF : fToC(_webStatus.targetF);
+  const char *unit = _webStatus.unitsFahrenheit ? "F" : "C";
+
   String json = "{";
   json += "\"wifiConnected\":" + String(_snapshot.wifiConnected ? "true" : "false") + ",";
   json += "\"wifiStatus\":\"" + _snapshot.status + "\",";
   json += "\"ip\":\"" + _snapshot.ipAddress + "\",";
   json += "\"demo\":" + String(_webStatus.demoSensor ? "true" : "false") + ",";
   json += "\"tempValid\":" + String(_webStatus.tempValid ? "true" : "false") + ",";
-  json += "\"tempF\":" + String(_webStatus.tempF, 1) + ",";
-  json += "\"targetF\":" + String(_webStatus.targetF, 1) + ",";
+  json += "\"temperature\":" + jsonFloat(temperature) + ",";
+  json += "\"target\":" + jsonFloat(target) + ",";
+  json += "\"unit\":\"" + String(unit) + "\",";
   json += "\"mode\":\"" + String(modeTopicText(_webStatus.mode)) + "\",";
   json += "\"state\":\"" + String(stateText(_webStatus.runtimeState)) + "\",";
   json += "\"fault\":\"" + String(faultText(_webStatus.faultCode)) + "\",";
@@ -323,7 +330,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}
 <div class="state" id="state">Loading</div><div class="sub" id="summary">Waiting for controller status</div>
 </section>
 <section class="grid">
-<div class="card"><div class="label">Setpoint</div><div class="value"><span id="target">--.-</span>F</div></div>
+<div class="card"><div class="label">Setpoint</div><div class="value"><span id="target">--.-</span><span class="unit">F</span></div></div>
 <div class="card"><div class="label">Mode</div><div class="value" id="mode">OFF</div></div>
 <div class="card"><div class="label">Heater</div><div class="value" id="heater">OFF</div></div>
 <div class="card"><div class="label">Pump</div><div class="value" id="pump">OFF</div></div>
@@ -347,18 +354,19 @@ async function post(data){
  await tick();
 }
 function nudge(delta){const v=parseFloat(targetInput.value||'68');targetInput.value=(Math.round((v+delta)*10)/10).toFixed(1);saveTarget()}
-function saveTarget(){post({targetF:targetInput.value})}
+function saveTarget(){post({target:targetInput.value})}
 function setMode(mode){post({mode})}
 async function tick(){
  const r=await fetch('/api/status'); const s=await r.json();
  last=s;
  const bg=s.state==='HEATING'?'#380707':s.state==='COOLING'?'#031a32':s.state==='FAULT'?'#360000':'#071015';
  document.body.style.background=bg; hero.style.background=s.state==='HEATING'?'linear-gradient(145deg,#7a1714,#160808)':s.state==='COOLING'?'linear-gradient(145deg,#0e5299,#071015)':s.state==='FAULT'?'linear-gradient(145deg,#6c1010,#120606)':'linear-gradient(145deg,#142938,#071015)';
- temp.textContent=s.tempValid?s.tempF.toFixed(1):'--.-';
- target.textContent=s.targetF.toFixed(1); if(document.activeElement!==targetInput)targetInput.value=s.targetF.toFixed(1);
+ document.querySelectorAll('.unit').forEach(e=>e.textContent=s.unit);
+ temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
+ target.textContent=s.target.toFixed(1); if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
  state.textContent=s.state; mode.textContent=s.mode; wifi.textContent=s.wifiConnected?s.ip:s.wifiStatus; demo.hidden=!s.demo;
  heater.textContent=s.heater?'ON':'OFF'; pump.textContent=s.pump?'ON':'OFF'; fault.textContent=s.fault;
- summary.textContent=s.tempValid?'Target '+s.targetF.toFixed(1)+'F - '+s.mode:'Sensor fault - outputs forced off';
+ summary.textContent=s.tempValid?'Target '+s.target.toFixed(1)+s.unit+' - '+s.mode:'Sensor fault - outputs forced off';
  for(const id of ['OFF','AUTO','HEAT_ONLY','COOL_ONLY'])document.getElementById('btn'+id).classList.toggle('active',s.mode===id);
 }
 tick(); setInterval(tick,2000);
