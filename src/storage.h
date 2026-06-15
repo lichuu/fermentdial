@@ -1,0 +1,24 @@
+#pragma once
+
+#include <Preferences.h>
+
+#include "config.h"
+
+namespace ferm {
+
+class SettingsStorage {
+ public:
+  void begin();
+  bool load(Settings &settings);
+  void scheduleSave(uint32_t nowMs);
+  void loop(uint32_t nowMs, const Settings &settings);
+  void saveNow(const Settings &settings);
+
+ private:
+  Preferences _prefs;
+  bool _pending = false;
+  uint32_t _saveAtMs = 0;
+};
+
+}  // namespace ferm
+

@@ -1,0 +1,8 @@
+.pio/
+.vscode/
+.idea/
+*.bin
+*.elf
+*.map
+compile_commands.json
+include/secrets.h
