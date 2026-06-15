@@ -199,12 +199,9 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
 
 void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Main) {
-    if (_lastShortPressMs != 0 && nowMs - _lastShortPressMs < 350) {
-      settings.mode = settings.mode == UserMode::Off ? UserMode::Auto : UserMode::Off;
-    } else {
-      settings.mode = nextMode(settings.mode);
-    }
-    _lastShortPressMs = nowMs;
+    settings.mode = nextMode(settings.mode);
+    _toast = String("Mode: ") + modeText(settings.mode);
+    _toastUntilMs = nowMs + 1500;
     requestSave();
   } else if (_screen == Screen::Menu) {
     if (_menuIndex <= 6) {
@@ -364,7 +361,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
   _canvas.drawCircle(cx, cy, min(cx, cy) - 7, COLOR_PANEL_DARK);
 
   const bool showingSetpoint = nowMs < _setpointFocusUntilMs;
-  String topText = showingSetpoint ? "SETPOINT" : (model.demoSensor ? "DEMO SENSOR" : modeText(settings.mode));
+  String topText = showingSetpoint ? "SETPOINT" : modeText(settings.mode);
   drawPill(50, 16, 140, 24, COLOR_PANEL_DARK, accent, topText, TFT_WHITE, 1);
 
   if (model.runtimeState == RuntimeState::Fault) {
@@ -395,7 +392,8 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
     _canvas.setTextSize(1);
     _canvas.setTextDatum(middle_center);
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString("outputs disabled", cx, 205);
+    _canvas.drawString("outputs disabled", cx, 199);
+    _canvas.drawString(String(modeText(settings.mode)) + " mode", cx, 214);
   } else {
     _canvas.setTextSize(1);
     _canvas.setTextDatum(middle_center);

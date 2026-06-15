@@ -81,7 +81,6 @@ class DisplayUI {
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
-  uint32_t _lastShortPressMs = 0;
   bool _longPressHandled = false;
   bool _dimmed = false;
   uint32_t _setpointFocusUntilMs = 0;
