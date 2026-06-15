@@ -151,6 +151,14 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     requestSave();
   } else if (_screen == Screen::Menu) {
     if (_menuIndex <= 6) {
+      if (_menuIndex == 6) {
+        settings.unitsFahrenheit = !settings.unitsFahrenheit;
+        _toast = String("Units: ") + (settings.unitsFahrenheit ? "F" : "C");
+        _toastUntilMs = nowMs + 1500;
+        requestSave();
+        _dirty = true;
+        return;
+      }
       _editIndex = _menuIndex;
       _screen = Screen::Edit;
     } else if (_menuIndex == 9 || _menuIndex == 10) {
@@ -186,7 +194,7 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
       settings.targetF = clampFloat(settings.targetF + (delta * 0.1f), MIN_TARGET_F, MAX_TARGET_F);
       break;
     case 1: {
-      int32_t mode = static_cast<int32_t>(settings.mode) + delta;
+      int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
       while (mode < 0) {
         mode += 4;
       }
@@ -332,7 +340,8 @@ void DisplayUI::drawMenu(const Settings &settings, const NetworkSnapshot &networ
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, 130);
 
-  drawPill(62, 199, 116, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK, "Press selects", COLOR_TEXT_MUTED, 1);
+  drawPill(52, 199, 136, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK,
+           _menuIndex == 6 ? "Press toggles" : "Press selects", COLOR_TEXT_MUTED, 1);
 }
 
 void DisplayUI::drawEdit(const Settings &settings) {
@@ -346,7 +355,7 @@ void DisplayUI::drawEdit(const Settings &settings) {
 
   _canvas.setTextSize(1);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("Rotate changes", cx, 173);
+  _canvas.drawString(_editIndex == 1 ? "Rotate selects" : "Rotate changes", cx, 173);
   drawPill(70, 194, 100, 22, COLOR_BLUE, COLOR_BLUE, "Save", TFT_WHITE, 1);
 }
 
