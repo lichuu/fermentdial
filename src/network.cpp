@@ -430,35 +430,34 @@ String NetworkManager::pageHtml() const {
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FermentDial</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff}
-main{max-width:980px;margin:auto;padding:18px}.shell{border-radius:24px;padding:20px;background:#101b24;box-shadow:0 12px 42px #0008}
-.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.brand{font-weight:800;letter-spacing:.03em}
-.pill{border-radius:999px;padding:9px 12px;background:#1b2a34;color:#c9d8e8;font-size:14px}.demo{background:#493718;color:#ffd88a}
-.hero{margin-top:16px;border-radius:22px;padding:24px;background:linear-gradient(145deg,#142938,#071015);min-height:230px}
-.temp{font-size:76px;line-height:.95;font-weight:850;letter-spacing:-1px}.unit{font-size:30px;color:#bed0dc}.state{margin-top:10px;font-size:28px;font-weight:800}
-.sub{margin-top:8px;color:#a9bac8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:14px}
-.card{border-radius:18px;background:#0b151d;padding:14px}.label{color:#91a8b8;font-size:13px}.value{font-size:24px;font-weight:750;margin-top:4px}
-.controls{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}@media(max-width:760px){.controls{grid-template-columns:1fr}.temp{font-size:58px}}
-.panel{border-radius:20px;background:#0b151d;padding:16px}.panel h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}
-.targetCtl{display:grid;grid-template-columns:54px 1fr 54px;gap:8px;align-items:center}
-input,button,select{font:inherit;border:0;border-radius:14px;padding:14px}input,select{width:100%;background:#172633;color:#fff}input{text-align:center;font-size:24px;font-weight:800}
-button{background:#1e3444;color:#ecf8ff;font-weight:800;cursor:pointer}button.primary{background:#0a91d8}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.active{background:#0a91d8!important}.danger{background:#6e1414!important}.heat{background:#af241f!important}.cool{background:#1063b8!important}
-.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px;gap:8px}.thresholds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.wide{grid-column:1/-1}a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}
+:root{--bg:#0d1b1e;--face:#091418;--panel:#132428;--panel2:#1b3540;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--cool:#b0d8f8;--heat:#e36018;--ok:#36c87a;--gold:#ffd178;--fault:#e44840}
+*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text)}
+main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}
+.statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
+.hero{border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}
+body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
+.heroTop{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px;text-transform:uppercase}.readout{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:12px}
+.tempBlock{min-width:0}.tempLine{display:flex;align-items:flex-start}.temp{font-size:78px;line-height:.9;font-weight:900;letter-spacing:0}.unit{font-size:28px;color:var(--accent);margin-left:7px;margin-top:8px}.state{font-size:25px;font-weight:900;margin-top:8px;color:var(--ok)}body[data-state=heating] .state{color:var(--heat)}body[data-state=cooling] .state,body[data-state=crashing] .state{color:var(--cool)}body[data-state=fault] .state{color:var(--fault)}
+.sub{margin-top:6px;color:var(--muted)}.outputs{display:grid;gap:8px;min-width:116px}.out{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--muted);font-weight:900;text-align:center}.out.on.heat{background:#3b1807;color:#ffd8bf;border-color:var(--heat)}.out.on.cool{background:#123040;color:var(--accent);border-color:var(--cool)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.card,.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:13px}.label{color:var(--muted);font-size:12px;text-transform:uppercase}.value{font-size:23px;font-weight:900;margin-top:4px}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}
+input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:12px}input,select{width:100%;background:#102126;color:var(--text)}input{text-align:center;font-size:22px;font-weight:900}button{background:#234858;color:var(--text);font-weight:900;cursor:pointer}button.primary{background:var(--blue);border-color:#3f819d;color:#fff}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px;gap:8px}.thresholds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.thresholds label{color:var(--muted);font-size:13px}
+a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}.thresholds{grid-template-columns:1fr}}
 </style></head>
 <body><main><div class="shell">
-<div class="top"><div class="brand">FermentDial</div><div><span class="pill" id="wifi">Wi-Fi</span> <span class="pill demo" id="demo" hidden>DEMO SENSOR</span></div></div>
+<div class="top"><div class="brand">Ferment<span>Dial</span></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span></div></div>
 <section class="hero" id="hero">
-<div class="temp"><span id="temp">--.-</span><span class="unit">F</span></div>
-<div class="state" id="state">Loading</div><div class="sub" id="summary">Waiting for controller status</div>
+<div class="heroTop"><span id="profileNameHero">Ferment</span><span id="targetHero">target --.-F</span></div>
+<div class="readout"><div class="tempBlock"><div class="tempLine"><span class="temp" id="temp">--.-</span><span class="unit">F</span></div>
+<div class="state" id="state">Loading</div><div class="sub" id="summary">Waiting for controller status</div></div>
+<div class="outputs"><div class="out heat" id="heater">HEATER OFF</div><div class="out cool" id="pump">PUMP OFF</div></div></div>
 </section>
 <section class="grid">
 <div class="card"><div class="label">Profile</div><div class="value" id="profileName">Ferment</div></div>
 <div class="card"><div class="label">Setpoint</div><div class="value"><span id="target">--.-</span><span class="unit">F</span></div></div>
 <div class="card"><div class="label">Mode</div><div class="value" id="mode">OFF</div></div>
-<div class="card"><div class="label">Heater</div><div class="value" id="heater">OFF</div></div>
-<div class="card"><div class="label">Pump</div><div class="value" id="pump">OFF</div></div>
 </section>
 <section class="controls">
 <div class="panel"><h2>Active Profile</h2>
@@ -483,6 +482,7 @@ button{background:#1e3444;color:#ecf8ff;font-weight:800;cursor:pointer}button.pr
 </div></main>
 <script>
 let last=null;
+const deg=String.fromCharCode(176);
 function qs(data){return new URLSearchParams(data).toString()}
 async function post(data){
  await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:qs(data)});
@@ -510,20 +510,18 @@ function renderProfiles(s){
 async function tick(){
  const r=await fetch('/api/status'); const s=await r.json();
  last=s;
- const cooling=s.state==='COOLING'||s.state==='CRASHING';
- const bg=s.state==='HEATING'?'#380707':cooling?'#031a32':s.state==='FAULT'?'#360000':'#071015';
- document.body.style.background=bg; hero.style.background=s.state==='HEATING'?'linear-gradient(145deg,#7a1714,#160808)':cooling?'linear-gradient(145deg,#0e5299,#071015)':s.state==='FAULT'?'linear-gradient(145deg,#6c1010,#120606)':'linear-gradient(145deg,#142938,#071015)';
- document.querySelectorAll('.unit').forEach(e=>e.textContent=s.unit);
+ document.body.dataset.state=s.state.toLowerCase();
+ document.querySelectorAll('.unit').forEach(e=>e.textContent=deg+s.unit);
  temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
- profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
+ profileName.textContent=s.profileName; profileNameHero.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent='target '+s.target.toFixed(1)+deg+s.unit; if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
  if(!document.querySelector('.profileRow input:focus')&&document.activeElement!==profileSelect)renderProfiles(s);
  if(document.activeElement!==coolOnInput)coolOnInput.value=s.coolOn.toFixed(1);
  if(document.activeElement!==heatOnInput)heatOnInput.value=s.heatOn.toFixed(1);
  if(document.activeElement!==holdInput)holdInput.value=s.hold.toFixed(1);
  if(document.activeElement!==offsetInput)offsetInput.value=s.tempOffset.toFixed(1);
  state.textContent=s.state; mode.textContent=s.mode; wifi.textContent=s.wifiConnected?s.ip:s.wifiStatus; demo.hidden=!s.demo;
- heater.textContent=s.heater?'ON':'OFF'; pump.textContent=s.pump?'ON':'OFF'; fault.textContent=s.fault;
- summary.textContent=s.tempValid?s.profileName+' target '+s.target.toFixed(1)+s.unit+' - '+s.mode:'Sensor fault - outputs forced off';
+ heater.textContent=s.heater?'HEATER ON':'HEATER OFF'; pump.textContent=s.pump?'PUMP ON':'PUMP OFF'; heater.classList.toggle('on',s.heater); pump.classList.toggle('on',s.pump); fault.textContent=s.fault;
+ summary.textContent=s.tempValid?s.mode+' mode':'Sensor fault - outputs forced off';
  for(const id of ['OFF','AUTO','HEAT_ONLY','COOL_ONLY'])document.getElementById('btn'+id).classList.toggle('active',s.mode===id);
 }
 tick(); setInterval(tick,2000);

@@ -8,3 +8,4 @@
 *.map
 compile_commands.json
 include/secrets.h
+design/

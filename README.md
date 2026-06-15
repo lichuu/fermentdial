@@ -1,6 +1,6 @@
 # Dial Fermentation Controller
 
-Custom appliance-style firmware for an M5Stack Dial v1.1 / ESP32-S3 fermentation temperature controller. It replaces a legacy Ss Brewtech FTSs controller and prioritizes local standalone operation; Wi-Fi, MQTT, Home Assistant discovery, and OTA are staged as clean future modules.
+Custom appliance-style firmware for an M5Stack Dial v1.1 / ESP32-S3 fermentation temperature controller. It prioritizes local standalone operation; Wi-Fi, MQTT, Home Assistant discovery, and OTA are staged as clean future modules.
 
 ## Current Stage
 
@@ -31,17 +31,29 @@ Important electrical notes:
 
 ## PlatformIO Setup
 
-Install PlatformIO, then build:
+Use `uv` to install and run PlatformIO from `pyproject.toml`:
 
 ```sh
-pio run
+uv run platformio run
 ```
 
 Flash and monitor:
 
 ```sh
-pio run -t upload
-pio device monitor
+uv run platformio run -t upload
+uv run platformio device monitor
+```
+
+## VLW Fonts
+
+The repo includes a local M5GFX VLW converter backed by `freetype-py`.
+The default glyph set is printable ASCII plus the degree symbol (`0xB0`):
+
+```sh
+uv run python tools/make_vlw_font.py \
+  --font /path/to/DejaVuSans-Bold.ttf \
+  --size 44 \
+  --output data/fonts/dejavu_sans_bold_44.vlw
 ```
 
 ## Demo Sensor Mode
@@ -49,33 +61,33 @@ pio device monitor
 If the DS18B20 hardware is not attached yet, flash the demo environment:
 
 ```sh
-pio run -e m5stack_dial_demo -t upload
+uv run platformio run -e m5stack_dial_demo -t upload
 ```
 
-Demo mode compiles with `FERM_DEMO_SENSOR=1`, generates a smooth simulated temperature around the setpoint, and shows `DEMO SENSOR` on the main screen. Physical heater and pump outputs are forced OFF in demo mode so simulated temperatures cannot energize hardware.
+Demo mode compiles with `FERM_DEMO_SENSOR=1` and `FERM_ENABLE_NETWORK=1`,
+generates a smooth simulated temperature around the setpoint, and shows
+`DEMO SENSOR` on the main screen. Physical heater and pump outputs are forced
+OFF in demo mode so simulated temperatures cannot energize hardware. The demo
+build also serves the browser dashboard.
 
 Use the normal environment for real fermentation control:
 
 ```sh
-pio run -e m5stack_dial -t upload
+uv run platformio run -e m5stack_dial -t upload
 ```
 
 Do not use demo sensor mode for actual fermentation control.
 
 ## Wi-Fi Setup And Web UI
 
-Wi-Fi is optional. The local controller continues to run if Wi-Fi is unavailable.
-
-For browser-based Wi-Fi setup without a DS18B20 attached, flash:
-
-```sh
-pio run -e m5stack_dial_demo_wifi -t upload
-```
+Wi-Fi is optional for real hardware. The local controller continues to run if
+Wi-Fi is unavailable. Demo firmware always includes Wi-Fi so the browser
+dashboard is available without a sensor attached.
 
 For real sensor hardware with Wi-Fi enabled, flash:
 
 ```sh
-pio run -e m5stack_dial_wifi -t upload
+uv run platformio run -e m5stack_dial_wifi -t upload
 ```
 
 If no Wi-Fi credentials are saved, the Dial starts a setup access point:
@@ -138,7 +150,7 @@ The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside th
 
 Runtime states are `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, and `FAULT`. The web UI displays crash-profile cooling as `CRASHING`.
 
-The default control band mirrors the useful FTSS behavior: cooling starts at target + 0.5 F, heating starts at target - 5.0 F, and active outputs release near the target hold band. Pump min-off/min-run protection still applies.
+The default control band uses conservative fermentation defaults: cooling starts at target + 0.5 F, heating starts at target - 5.0 F, and active outputs release near the target hold band. Pump min-off/min-run protection still applies.
 
 ## Pump Protection
 
