@@ -42,6 +42,7 @@ class NetworkManager {
                     const FermentationController &controller);
   NetworkSnapshot snapshot() const { return _snapshot; }
   bool consumeSettingsChanged();
+  bool requestSetupPortal();
 
  private:
   NetworkSnapshot _snapshot;

@@ -29,6 +29,7 @@ class DisplayUI {
 
   bool consumeSaveRequested();
   OutputTestKind consumeOutputTestRequest();
+  bool consumeWifiSetupRequested();
   void notifyOutputTestRejected();
 
  private:
@@ -41,6 +42,7 @@ class DisplayUI {
   };
 
   void processInput(uint32_t nowMs, Settings &settings);
+  void handleTouch(uint32_t nowMs, Settings &settings);
   void handleEncoder(int32_t delta, Settings &settings);
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
@@ -74,6 +76,7 @@ class DisplayUI {
   int32_t _editEncoderAccumulator = 0;
   bool _dirty = true;
   bool _saveRequested = false;
+  bool _wifiSetupRequested = false;
   OutputTestKind _pendingOutputTest = OutputTestKind::None;
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;

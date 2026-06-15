@@ -91,6 +91,12 @@ OutputTestKind DisplayUI::consumeOutputTestRequest() {
   return requested;
 }
 
+bool DisplayUI::consumeWifiSetupRequested() {
+  bool requested = _wifiSetupRequested;
+  _wifiSetupRequested = false;
+  return requested;
+}
+
 void DisplayUI::notifyOutputTestRejected() {
   _toast = "Test blocked";
   _toastUntilMs = millis() + 2500;
@@ -105,6 +111,8 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
     markActivity(nowMs);
     handleEncoder(delta, settings);
   }
+
+  handleTouch(nowMs, settings);
 
   if (M5Dial.BtnA.wasPressed()) {
     _pressStartedMs = nowMs;
@@ -122,6 +130,45 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
     markActivity(nowMs);
     handleShortPress(nowMs, settings);
   }
+}
+
+void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
+  auto touch = M5Dial.Touch.getDetail();
+  if (!touch.wasClicked()) {
+    return;
+  }
+
+  markActivity(nowMs);
+
+  const int16_t h = M5Dial.Display.height();
+  if (_screen == Screen::Main) {
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::Menu) {
+    if (touch.y < h / 3) {
+      handleEncoder(-MENU_ENCODER_DIVISOR, settings);
+    } else if (touch.y > (h * 2) / 3) {
+      handleEncoder(MENU_ENCODER_DIVISOR, settings);
+    } else {
+      handleShortPress(nowMs, settings);
+    }
+    return;
+  }
+
+  if (_screen == Screen::Edit) {
+    if (touch.y > (h * 2) / 3) {
+      handleShortPress(nowMs, settings);
+    } else {
+      handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR : EDIT_ENCODER_DIVISOR, settings);
+    }
+    return;
+  }
+
+  handleShortPress(nowMs, settings);
 }
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
@@ -173,6 +220,10 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       _editIndex = _menuIndex;
       _screen = Screen::Edit;
       resetSettingsEncoderFilters();
+    } else if (_menuIndex == 7) {
+      _wifiSetupRequested = true;
+      _toast = "Starting setup AP";
+      _toastUntilMs = nowMs + 2000;
     } else if (_menuIndex == 9 || _menuIndex == 10) {
       _screen = Screen::ConfirmTest;
       resetSettingsEncoderFilters();
@@ -372,8 +423,13 @@ void DisplayUI::drawMenu(const Settings &settings, const NetworkSnapshot &networ
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, 130);
 
-  drawPill(52, 199, 136, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK,
-           _menuIndex == 6 ? "Press toggles" : "Press selects", COLOR_TEXT_MUTED, 1);
+  const char *hint = "Press selects";
+  if (_menuIndex == 6) {
+    hint = "Press toggles";
+  } else if (_menuIndex == 7) {
+    hint = "Press starts AP";
+  }
+  drawPill(48, 199, 144, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK, hint, COLOR_TEXT_MUTED, 1);
 }
 
 void DisplayUI::drawEdit(const Settings &settings) {
@@ -387,7 +443,7 @@ void DisplayUI::drawEdit(const Settings &settings) {
 
   _canvas.setTextSize(1);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(_editIndex == 1 ? "Rotate selects" : "Rotate changes", cx, 173);
+  _canvas.drawString(_editIndex == 1 ? "Rotate/tap selects" : "Rotate/tap changes", cx, 173);
   drawPill(70, 194, 100, 22, COLOR_BLUE, COLOR_BLUE, "Save", TFT_WHITE, 1);
 }
 

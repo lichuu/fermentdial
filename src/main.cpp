@@ -96,6 +96,10 @@ void loop() {
     controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureF());
   }
 
+  if (ui.consumeWifiSetupRequested()) {
+    network.requestSetupPortal();
+  }
+
   OutputTestKind testRequest = ui.consumeOutputTestRequest();
   if (testRequest != OutputTestKind::None) {
     bool accepted = controller.requestOutputTest(testRequest, nowMs, settings, temperatureSensor.isValid());

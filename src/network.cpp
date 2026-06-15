@@ -120,6 +120,15 @@ bool NetworkManager::consumeSettingsChanged() {
   return changed;
 }
 
+bool NetworkManager::requestSetupPortal() {
+#if FERM_ENABLE_NETWORK
+  startSetupPortal();
+  return true;
+#else
+  return false;
+#endif
+}
+
 void NetworkManager::startWifi(uint32_t nowMs) {
 #if FERM_ENABLE_NETWORK
   if (_wifiSsid.length() == 0) {
@@ -161,6 +170,9 @@ void NetworkManager::startWebServer() {
 
   _server.on("/", HTTP_GET, [this]() {
     _server.send(200, "text/html", _apMode ? setupHtml() : pageHtml());
+  });
+  _server.on("/dashboard", HTTP_GET, [this]() {
+    _server.send(200, "text/html", pageHtml());
   });
   _server.on("/wifi", HTTP_GET, [this]() {
     _server.send(200, "text/html", setupHtml());
@@ -365,6 +377,7 @@ button{background:#0aa4ff;color:white;font-weight:700}.hint{color:#a9bac8}
 </style></head><body><main><div class="card">
 <h1>FermentDial Wi-Fi</h1>
 <p class="hint">Join your fermentation controller to your home Wi-Fi.</p>
+<p><a href="/dashboard">Open live dashboard</a></p>
 <form method="post" action="/wifi">
 <label>Wi-Fi name</label><input name="ssid" autocomplete="off" required>
 <label>Password</label><input name="pass" type="password">
