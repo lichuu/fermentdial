@@ -30,8 +30,11 @@ void TemperatureSensor::update(uint32_t nowMs, const Settings &settings) {
   // Demo sensor mode is compile-time only. It exists for UI/control bench work
   // without a DS18B20 attached and must be disabled for real fermentation use.
   constexpr float periodMs = 30000.0f;
-  float phase = static_cast<float>(nowMs % static_cast<uint32_t>(periodMs)) / periodMs;
-  _temperatureC = settings.targetC + (sinf(phase * TWO_PI) * deltaFToC(1.2f)) + settings.tempOffsetC;
+  float phase =
+      static_cast<float>(nowMs % static_cast<uint32_t>(periodMs)) / periodMs;
+  _temperatureC = activeTargetC(settings) +
+                  (sinf(phase * TWO_PI) * deltaFToC(1.2f)) +
+                  settings.tempOffsetC;
   _rawTemperatureC = _temperatureC;
   _valid = true;
   _lastRequestMs = nowMs;
@@ -42,18 +45,36 @@ void TemperatureSensor::update(uint32_t nowMs, const Settings &settings) {
   _sensors.requestTemperatures();
 
   if (isnan(_rawTemperatureC) || _rawTemperatureC == DEVICE_DISCONNECTED_C) {
-    _valid = false;
-    _temperatureC = NAN;
+    if (++_badReadCount >= SENSOR_FAULT_READ_COUNT) {
+      _valid = false;
+      _temperatureC = NAN;
+    }
+    return;
+  }
+
+  if (_rawTemperatureC < MIN_VALID_TEMP_C ||
+      _rawTemperatureC > MAX_VALID_TEMP_C) {
+    if (++_badReadCount >= SENSOR_FAULT_READ_COUNT) {
+      _valid = false;
+      _temperatureC = NAN;
+    }
+    return;
+  }
+
+  if (_haveAcceptedReading &&
+      fabsf(_rawTemperatureC - _lastAcceptedRawC) > MAX_SENSOR_JUMP_C) {
+    if (++_badReadCount >= SENSOR_FAULT_READ_COUNT) {
+      _valid = false;
+      _temperatureC = NAN;
+    }
     return;
   }
 
   float calibratedC = _rawTemperatureC + settings.tempOffsetC;
-  if (isnan(calibratedC) || calibratedC < MIN_VALID_TEMP_C || calibratedC > MAX_VALID_TEMP_C) {
-    _valid = false;
-    _temperatureC = NAN;
-    return;
-  }
-
+  calibratedC = clampFloat(calibratedC, MIN_VALID_TEMP_C, MAX_VALID_TEMP_C);
+  _badReadCount = 0;
+  _haveAcceptedReading = true;
+  _lastAcceptedRawC = _rawTemperatureC;
   _valid = true;
   _temperatureC = calibratedC;
 #endif
@@ -69,20 +90,25 @@ void FermentationController::begin(uint32_t nowMs) {
   Settings bootSettings;
   bootSettings.mode = UserMode::Off;
 
-  // Boot defaults force both outputs OFF before display, storage, or sensor setup runs.
-  applyOutputs(nowMs, bootSettings, false, false, false, FaultCode::None, RuntimeState::Boot);
+  // Boot defaults force both outputs OFF before display, storage, or sensor
+  // setup runs.
+  applyOutputs(nowMs, bootSettings, false, false, false, FaultCode::None,
+               RuntimeState::Boot);
 }
 
-void FermentationController::update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempC) {
+void FermentationController::update(uint32_t nowMs, const Settings &settings,
+                                    bool sensorValid, float tempC) {
   if (_outputTest != OutputTestKind::None) {
     if (!sensorValid) {
       _outputTest = OutputTestKind::None;
-      applyOutputs(nowMs, settings, false, false, true, FaultCode::Sensor, RuntimeState::Fault);
+      applyOutputs(nowMs, settings, false, false, true, FaultCode::Sensor,
+                   RuntimeState::Fault);
       return;
     }
     if (settings.mode == UserMode::Off || nowMs >= _outputTestEndsMs) {
       _outputTest = OutputTestKind::None;
-      applyOutputs(nowMs, settings, false, false, false, FaultCode::None, RuntimeState::Idle);
+      applyOutputs(nowMs, settings, false, false, false, FaultCode::None,
+                   RuntimeState::Idle);
       return;
     }
 
@@ -95,29 +121,40 @@ void FermentationController::update(uint32_t nowMs, const Settings &settings, bo
 
   if (!sensorValid) {
     // Sensor fault forces both outputs OFF.
-    applyOutputs(nowMs, settings, false, false, true, FaultCode::Sensor, RuntimeState::Fault);
+    applyOutputs(nowMs, settings, false, false, true, FaultCode::Sensor,
+                 RuntimeState::Fault);
     return;
   }
 
   if (settings.mode == UserMode::Off) {
-    applyOutputs(nowMs, settings, false, false, false, FaultCode::None, RuntimeState::Off);
+    applyOutputs(nowMs, settings, false, false, false, FaultCode::None,
+                 RuntimeState::Off);
     return;
   }
 
-  bool heatingAllowed = settings.mode == UserMode::Auto || settings.mode == UserMode::HeatOnly;
-  bool coolingAllowed = settings.mode == UserMode::Auto || settings.mode == UserMode::CoolOnly;
+  bool heatingAllowed =
+      settings.mode == UserMode::Auto || settings.mode == UserMode::HeatOnly;
+  bool coolingAllowed =
+      settings.mode == UserMode::Auto || settings.mode == UserMode::CoolOnly;
   bool heaterRequested = false;
   bool pumpRequested = false;
 
-  const float lowThreshold = settings.targetC - settings.hysteresisC;
-  const float highThreshold = settings.targetC + settings.hysteresisC;
+  const float targetC = activeTargetC(settings);
+  const float heatStartThreshold = targetC - settings.heatOnDeltaC;
+  const float heatStopThreshold = targetC - settings.holdDeltaC;
+  const float coolStartThreshold = targetC + settings.coolOnDeltaC;
+  const float coolStopThreshold = targetC + settings.holdDeltaC;
 
   if (coolingAllowed && pumpMinRunActive(nowMs, settings)) {
     pumpRequested = true;
-  } else if (tempC < lowThreshold && heatingAllowed) {
+  } else if (_pumpOn && coolingAllowed && tempC > coolStopThreshold) {
+    pumpRequested = true;
+  } else if (_heaterOn && heatingAllowed && tempC < heatStopThreshold) {
     heaterRequested = true;
-  } else if (tempC > highThreshold && coolingAllowed) {
+  } else if (tempC > coolStartThreshold && coolingAllowed) {
     pumpRequested = _pumpOn || pumpMinOffSatisfied(nowMs, settings);
+  } else if (tempC < heatStartThreshold && heatingAllowed) {
+    heaterRequested = true;
   }
 
   RuntimeState requestedState = RuntimeState::Idle;
@@ -127,11 +164,14 @@ void FermentationController::update(uint32_t nowMs, const Settings &settings, bo
     requestedState = RuntimeState::Cooling;
   }
 
-  applyOutputs(nowMs, settings, heaterRequested, pumpRequested, false, FaultCode::None, requestedState);
+  applyOutputs(nowMs, settings, heaterRequested, pumpRequested, false,
+               FaultCode::None, requestedState);
 }
 
-bool FermentationController::requestOutputTest(
-    OutputTestKind kind, uint32_t nowMs, const Settings &settings, bool sensorValid) {
+bool FermentationController::requestOutputTest(OutputTestKind kind,
+                                               uint32_t nowMs,
+                                               const Settings &settings,
+                                               bool sensorValid) {
   if (kind == OutputTestKind::None || _outputTest != OutputTestKind::None) {
     return false;
   }
@@ -144,19 +184,19 @@ bool FermentationController::requestOutputTest(
   return true;
 }
 
-void FermentationController::cancelOutputTest(uint32_t nowMs, const Settings &settings) {
+void FermentationController::cancelOutputTest(uint32_t nowMs,
+                                              const Settings &settings) {
   _outputTest = OutputTestKind::None;
-  applyOutputs(nowMs, settings, false, false, false, FaultCode::None, RuntimeState::Idle);
+  applyOutputs(nowMs, settings, false, false, false, FaultCode::None,
+               RuntimeState::Idle);
 }
 
-void FermentationController::applyOutputs(
-    uint32_t nowMs,
-    const Settings &settings,
-    bool heaterRequested,
-    bool pumpRequested,
-    bool safetyFault,
-    FaultCode safetyFaultCode,
-    RuntimeState requestedState) {
+void FermentationController::applyOutputs(uint32_t nowMs,
+                                          const Settings &settings,
+                                          bool heaterRequested,
+                                          bool pumpRequested, bool safetyFault,
+                                          FaultCode safetyFaultCode,
+                                          RuntimeState requestedState) {
   bool nextHeater = heaterRequested;
   bool nextPump = pumpRequested;
   RuntimeState nextState = requestedState;
@@ -201,21 +241,25 @@ void FermentationController::applyOutputs(
   _faultCode = nextFault;
 
   // MOSFET triggers are active HIGH.
-  digitalWrite(PIN_HEATER_TRIGGER, _heaterOn == MOSFET_ACTIVE_HIGH ? HIGH : LOW);
+  digitalWrite(PIN_HEATER_TRIGGER,
+               _heaterOn == MOSFET_ACTIVE_HIGH ? HIGH : LOW);
   digitalWrite(PIN_PUMP_TRIGGER, _pumpOn == MOSFET_ACTIVE_HIGH ? HIGH : LOW);
 }
 
-bool FermentationController::pumpMinRunActive(uint32_t nowMs, const Settings &settings) const {
+bool FermentationController::pumpMinRunActive(uint32_t nowMs,
+                                              const Settings &settings) const {
 #if FERM_DEMO_SENSOR
   (void)nowMs;
   (void)settings;
   return false;
 #else
-  return _pumpOn && (nowMs - _lastPumpOnMs) < (settings.pumpMinRunSeconds * 1000UL);
+  return _pumpOn &&
+         (nowMs - _lastPumpOnMs) < (settings.pumpMinRunSeconds * 1000UL);
 #endif
 }
 
-bool FermentationController::pumpMinOffSatisfied(uint32_t nowMs, const Settings &settings) const {
+bool FermentationController::pumpMinOffSatisfied(
+    uint32_t nowMs, const Settings &settings) const {
 #if FERM_DEMO_SENSOR
   (void)nowMs;
   (void)settings;
@@ -225,4 +269,4 @@ bool FermentationController::pumpMinOffSatisfied(uint32_t nowMs, const Settings 
 #endif
 }
 
-}  // namespace ferm
+} // namespace ferm

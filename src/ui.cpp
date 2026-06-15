@@ -4,7 +4,7 @@ namespace ferm {
 
 namespace {
 
-constexpr uint8_t MENU_COUNT = 12;
+constexpr uint8_t MENU_COUNT = 15;
 constexpr uint16_t COLOR_BG = 0x0841;
 constexpr uint16_t COLOR_PANEL = 0x10A2;
 constexpr uint16_t COLOR_PANEL_DARK = 0x0861;
@@ -19,21 +19,12 @@ constexpr int32_t MENU_ENCODER_DIVISOR = 2;
 constexpr int32_t EDIT_ENCODER_DIVISOR = 2;
 
 constexpr const char *MENU_LABELS[MENU_COUNT] = {
-    "Target",
-    "Mode",
-    "Hysteresis",
-    "Pump off",
-    "Pump run",
-    "Offset",
-    "Units",
-    "Wi-Fi",
-    "MQTT",
-    "Heater test",
-    "Pump test",
-    "About",
+    "Profile",   "Target",      "Mode",        "Cool on",   "Heat on",
+    "Hold band", "Cooling off", "Cooling run", "Offset",    "Units",
+    "Wi-Fi",     "MQTT",        "Heater test", "Pump test", "About",
 };
 
-}  // namespace
+} // namespace
 
 DisplayUI::DisplayUI() : _canvas(&M5Dial.Display) {}
 
@@ -52,13 +43,16 @@ void DisplayUI::begin() {
   _canvas.fillScreen(COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, TFT_BLACK);
   _canvas.setTextSize(2);
-  _canvas.drawString(FIRMWARE_NAME, _canvas.width() / 2, _canvas.height() / 2 - 18);
+  _canvas.drawString(FIRMWARE_NAME, _canvas.width() / 2,
+                     _canvas.height() / 2 - 18);
   _canvas.setTextSize(1);
-  _canvas.drawString(String("v") + FIRMWARE_VERSION, _canvas.width() / 2, _canvas.height() / 2 + 18);
+  _canvas.drawString(String("v") + FIRMWARE_VERSION, _canvas.width() / 2,
+                     _canvas.height() / 2 + 18);
   _canvas.pushSprite(0, 0);
 }
 
-void DisplayUI::update(uint32_t nowMs, Settings &settings, const UiModel &model) {
+void DisplayUI::update(uint32_t nowMs, Settings &settings,
+                       const UiModel &model) {
   M5Dial.update();
   processInput(nowMs, settings);
 
@@ -120,7 +114,8 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
     markActivity(nowMs);
   }
 
-  if (M5Dial.BtnA.isPressed() && !_longPressHandled && nowMs - _pressStartedMs > 800) {
+  if (M5Dial.BtnA.isPressed() && !_longPressHandled &&
+      nowMs - _pressStartedMs > 800) {
     _longPressHandled = true;
     markActivity(nowMs);
     handleLongPress(settings);
@@ -163,7 +158,9 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     if (touch.y > (h * 2) / 3) {
       handleShortPress(nowMs, settings);
     } else {
-      handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR : EDIT_ENCODER_DIVISOR, settings);
+      handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR
+                                                         : EDIT_ENCODER_DIVISOR,
+                    settings);
     }
     return;
   }
@@ -174,11 +171,12 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
   if (_screen == Screen::Main) {
     float stepC = settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f;
-    settings.targetC = clampFloat(settings.targetC + (delta * stepC), MIN_TARGET_C, MAX_TARGET_C);
+    setActiveTargetC(settings, activeTargetC(settings) + (delta * stepC));
     _setpointFocusUntilMs = millis() + 3000;
     requestSave();
   } else if (_screen == Screen::Menu) {
-    int32_t filteredDelta = filteredSettingsDelta(delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
     if (filteredDelta == 0) {
       return;
     }
@@ -188,7 +186,8 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     }
     _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
   } else if (_screen == Screen::Edit) {
-    int32_t filteredDelta = filteredSettingsDelta(delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
     if (filteredDelta == 0) {
       return;
     }
@@ -204,8 +203,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     _toastUntilMs = nowMs + 1500;
     requestSave();
   } else if (_screen == Screen::Menu) {
-    if (_menuIndex <= 6) {
-      if (_menuIndex == 6) {
+    if (_menuIndex <= 8) {
+      if (_menuIndex == 8) {
         settings.unitsFahrenheit = !settings.unitsFahrenheit;
         _toast = String("Units: ") + (settings.unitsFahrenheit ? "F" : "C");
         _toastUntilMs = nowMs + 1500;
@@ -217,14 +216,14 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       _editIndex = _menuIndex;
       _screen = Screen::Edit;
       resetSettingsEncoderFilters();
-    } else if (_menuIndex == 7) {
+    } else if (_menuIndex == 9) {
       _wifiSetupRequested = true;
       _toast = "Starting setup AP";
       _toastUntilMs = nowMs + 2000;
-    } else if (_menuIndex == 9 || _menuIndex == 10) {
+    } else if (_menuIndex == 12 || _menuIndex == 13) {
       _screen = Screen::ConfirmTest;
       resetSettingsEncoderFilters();
-    } else if (_menuIndex == 11) {
+    } else if (_menuIndex == 14) {
       _screen = Screen::About;
       resetSettingsEncoderFilters();
     }
@@ -233,7 +232,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     resetSettingsEncoderFilters();
     requestSave();
   } else if (_screen == Screen::ConfirmTest) {
-    _pendingOutputTest = _menuIndex == 9 ? OutputTestKind::Heater : OutputTestKind::Pump;
+    _pendingOutputTest =
+        _menuIndex == 12 ? OutputTestKind::Heater : OutputTestKind::Pump;
     _screen = Screen::Main;
     resetSettingsEncoderFilters();
   } else if (_screen == Screen::About) {
@@ -256,54 +256,87 @@ void DisplayUI::handleLongPress(Settings &settings) {
 
 void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   switch (_editIndex) {
-    case 0:
-      settings.targetC = clampFloat(settings.targetC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
-                                    MIN_TARGET_C, MAX_TARGET_C);
-      break;
-    case 1: {
-      int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
-      while (mode < 0) {
-        mode += 4;
-      }
-      settings.mode = static_cast<UserMode>(mode % 4);
-      break;
+  case 0: {
+    int32_t profile =
+        static_cast<int32_t>(settings.activeProfile) + (delta > 0 ? 1 : -1);
+    while (profile < 0) {
+      profile += PROFILE_COUNT;
     }
-    case 2:
-      settings.hysteresisC =
-          clampFloat(settings.hysteresisC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
-                     MIN_HYSTERESIS_C, MAX_HYSTERESIS_C);
-      break;
-    case 3:
-    {
-      int32_t next = static_cast<int32_t>(settings.pumpMinOffSeconds) + (delta * 5);
-      if (next < 0) {
-        next = 0;
-      }
-      settings.pumpMinOffSeconds = clampU32(static_cast<uint32_t>(next), 0, 1800);
-      break;
+    settings.activeProfile = static_cast<uint8_t>(profile % PROFILE_COUNT);
+    break;
+  }
+  case 1:
+    setActiveTargetC(
+        settings,
+        activeTargetC(settings) +
+            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)));
+    break;
+  case 2: {
+    int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
+    while (mode < 0) {
+      mode += 4;
     }
-    case 4:
-    {
-      int32_t next = static_cast<int32_t>(settings.pumpMinRunSeconds) + (delta * 5);
-      if (next < 0) {
-        next = 0;
-      }
-      settings.pumpMinRunSeconds = clampU32(static_cast<uint32_t>(next), 0, 600);
-      break;
+    settings.mode = static_cast<UserMode>(mode % 4);
+    break;
+  }
+  case 3:
+    settings.coolOnDeltaC = clampFloat(
+        settings.coolOnDeltaC +
+            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+        MIN_DELTA_C, MAX_DELTA_C);
+    break;
+  case 4:
+    settings.heatOnDeltaC = clampFloat(
+        settings.heatOnDeltaC +
+            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+        MIN_DELTA_C, MAX_DELTA_C);
+    break;
+  case 5:
+    settings.holdDeltaC = clampFloat(
+        settings.holdDeltaC +
+            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+        MIN_DELTA_C, MAX_DELTA_C);
+    if (settings.holdDeltaC > settings.coolOnDeltaC) {
+      settings.holdDeltaC = settings.coolOnDeltaC;
     }
-    case 5:
-      settings.tempOffsetC = clampFloat(settings.tempOffsetC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
-                                        MIN_OFFSET_C, MAX_OFFSET_C);
-      break;
-    case 6:
-      settings.unitsFahrenheit = !settings.unitsFahrenheit;
-      break;
-    default:
-      break;
+    if (settings.holdDeltaC > settings.heatOnDeltaC) {
+      settings.holdDeltaC = settings.heatOnDeltaC;
+    }
+    break;
+  case 6: {
+    int32_t next =
+        static_cast<int32_t>(settings.pumpMinOffSeconds) + (delta * 5);
+    if (next < 0) {
+      next = 0;
+    }
+    settings.pumpMinOffSeconds = clampU32(static_cast<uint32_t>(next), 0, 1800);
+    break;
+  }
+  case 7: {
+    int32_t next =
+        static_cast<int32_t>(settings.pumpMinRunSeconds) + (delta * 5);
+    if (next < 0) {
+      next = 0;
+    }
+    settings.pumpMinRunSeconds = clampU32(static_cast<uint32_t>(next), 0, 600);
+    break;
+  }
+  case 8:
+    settings.tempOffsetC = clampFloat(
+        settings.tempOffsetC +
+            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+        MIN_OFFSET_C, MAX_OFFSET_C);
+    break;
+  case 9:
+    settings.unitsFahrenheit = !settings.unitsFahrenheit;
+    break;
+  default:
+    break;
   }
 }
 
-int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator, int32_t divisor) {
+int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator,
+                                         int32_t divisor) {
   accumulator += delta;
   int32_t filteredDelta = accumulator / divisor;
   if (filteredDelta != 0) {
@@ -317,9 +350,7 @@ void DisplayUI::resetSettingsEncoderFilters() {
   _editEncoderAccumulator = 0;
 }
 
-void DisplayUI::requestSave() {
-  _saveRequested = true;
-}
+void DisplayUI::requestSave() { _saveRequested = true; }
 
 void DisplayUI::markActivity(uint32_t nowMs) {
   _lastActivityMs = nowMs;
@@ -329,7 +360,8 @@ void DisplayUI::markActivity(uint32_t nowMs) {
   }
 }
 
-void DisplayUI::draw(uint32_t nowMs, const Settings &settings, const UiModel &model) {
+void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
+                     const UiModel &model) {
   _canvas.fillScreen(COLOR_BG);
   if (_screen == Screen::Main) {
     drawMain(nowMs, settings, model);
@@ -353,7 +385,8 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings, const UiModel &mo
   _canvas.pushSprite(0, 0);
 }
 
-void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel &model) {
+void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
+                         const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
   const uint16_t accent = stateColor(model.runtimeState, model.faultCode);
@@ -365,31 +398,45 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
   _canvas.drawCircle(cx, cy, min(cx, cy) - 7, COLOR_PANEL_DARK);
 
   const bool showingSetpoint = nowMs < _setpointFocusUntilMs;
-  String topText = showingSetpoint ? "SETPOINT" : modeText(settings.mode);
+  String topText = showingSetpoint ? "SETPOINT" : activeProfile(settings).name;
   drawPill(50, 16, 140, 24, COLOR_PANEL_DARK, accent, topText, TFT_WHITE, 1);
 
   if (model.runtimeState == RuntimeState::Fault) {
-    drawPill(34, 64, 172, 88, COLOR_PANEL_DARK, COLOR_FAULT, faultText(model.faultCode), TFT_WHITE, 1);
+    drawPill(34, 64, 172, 88, COLOR_PANEL_DARK, COLOR_FAULT,
+             faultText(model.faultCode), TFT_WHITE, 1);
     _canvas.setTextDatum(middle_center);
     _canvas.setTextSize(1);
     _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
     _canvas.drawString("Outputs OFF", cx, 132);
   } else {
-    const float largeTempC = showingSetpoint ? settings.targetC : model.tempC;
+    const float largeTempC =
+        showingSetpoint ? activeTargetC(settings) : model.tempC;
     _canvas.setTextDatum(middle_center);
     _canvas.setTextSize(1);
     _canvas.setTextColor(TFT_WHITE, bg);
-    _canvas.drawString((showingSetpoint || model.tempValid) ? temperatureNumber(largeTempC, settings.unitsFahrenheit) : "--.-",
-                       cx, 90, 7);
+    _canvas.drawString(
+        (showingSetpoint || model.tempValid)
+            ? temperatureNumber(largeTempC, settings.unitsFahrenheit)
+            : "--.-",
+        cx, 90, 7);
 
-    const String smallValue = showingSetpoint
-                                  ? String("Now ") + (model.tempValid ? formatTemperature(model.tempC, settings.unitsFahrenheit) : "--.-")
-                                  : String("Target ") + formatTemperature(settings.targetC, settings.unitsFahrenheit);
-    drawPill(52, 128, 136, 28, COLOR_PANEL, COLOR_PANEL, smallValue, TFT_WHITE, 1);
+    const String smallValue =
+        showingSetpoint
+            ? String("Now ") +
+                  (model.tempValid ? formatTemperature(model.tempC,
+                                                       settings.unitsFahrenheit)
+                                   : "--.-")
+            : String("Target ") + formatTemperature(activeTargetC(settings),
+                                                    settings.unitsFahrenheit);
+    drawPill(52, 128, 136, 28, COLOR_PANEL, COLOR_PANEL, smallValue, TFT_WHITE,
+             1);
   }
 
-  String state = model.outputTestActive ? (model.outputTestKind == OutputTestKind::Heater ? "TEST HEATER" : "TEST PUMP")
-                                        : stateText(model.runtimeState);
+  String state =
+      model.outputTestActive
+          ? (model.outputTestKind == OutputTestKind::Heater ? "TEST HEATER"
+                                                            : "TEST PUMP")
+          : profileRuntimeText(settings, model.runtimeState);
   drawPill(64, 164, 112, 26, accent, accent, state, TFT_BLACK, 1);
 
   if (model.demoSensor) {
@@ -406,10 +453,12 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
   }
 }
 
-void DisplayUI::drawMenu(const Settings &settings, const NetworkSnapshot &network) {
+void DisplayUI::drawMenu(const Settings &settings,
+                         const NetworkSnapshot &network) {
   const int16_t cx = _canvas.width() / 2;
   _canvas.fillCircle(cx, _canvas.height() / 2, 112, COLOR_BG);
-  drawPill(62, 18, 116, 24, COLOR_PANEL_DARK, COLOR_BLUE, "SETTINGS", TFT_WHITE, 1);
+  drawPill(62, 18, 116, 24, COLOR_PANEL_DARK, COLOR_BLUE, "SETTINGS", TFT_WHITE,
+           1);
 
   int prev = _menuIndex == 0 ? MENU_COUNT - 1 : _menuIndex - 1;
   int next = (_menuIndex + 1) % MENU_COUNT;
@@ -420,23 +469,26 @@ void DisplayUI::drawMenu(const Settings &settings, const NetworkSnapshot &networ
   _canvas.drawString(MENU_LABELS[prev], cx, 63);
   _canvas.drawString(MENU_LABELS[next], cx, 174);
 
-  drawPill(36, 86, 168, 62, COLOR_PANEL, COLOR_BLUE, MENU_LABELS[_menuIndex], TFT_WHITE, 2);
+  drawPill(36, 86, 168, 62, COLOR_PANEL, COLOR_BLUE, MENU_LABELS[_menuIndex],
+           TFT_WHITE, 2);
   _canvas.setTextSize(1);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, 130);
 
   const char *hint = "Press selects";
-  if (_menuIndex == 6) {
+  if (_menuIndex == 8) {
     hint = "Press toggles";
-  } else if (_menuIndex == 7) {
+  } else if (_menuIndex == 9) {
     hint = "Press starts AP";
   }
-  drawPill(48, 199, 144, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK, hint, COLOR_TEXT_MUTED, 1);
+  drawPill(48, 199, 144, 22, COLOR_PANEL_DARK, COLOR_PANEL_DARK, hint,
+           COLOR_TEXT_MUTED, 1);
 }
 
 void DisplayUI::drawEdit(const Settings &settings) {
   const int16_t cx = _canvas.width() / 2;
-  drawPill(52, 22, 136, 26, COLOR_PANEL_DARK, COLOR_BLUE, MENU_LABELS[_editIndex], TFT_WHITE, 1);
+  drawPill(52, 22, 136, 26, COLOR_PANEL_DARK, COLOR_BLUE,
+           MENU_LABELS[_editIndex], TFT_WHITE, 1);
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextSize(2);
@@ -445,7 +497,10 @@ void DisplayUI::drawEdit(const Settings &settings) {
 
   _canvas.setTextSize(1);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(_editIndex == 1 ? "Rotate/tap selects" : "Rotate/tap changes", cx, 173);
+  _canvas.drawString((_editIndex == 0 || _editIndex == 2)
+                         ? "Rotate/tap selects"
+                         : "Rotate/tap changes",
+                     cx, 173);
   drawPill(70, 194, 100, 22, COLOR_BLUE, COLOR_BLUE, "Save", TFT_WHITE, 1);
 }
 
@@ -456,10 +511,13 @@ void DisplayUI::drawConfirmTest() {
   _canvas.drawString("Confirm test", _canvas.width() / 2, 61);
   _canvas.setTextSize(1);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(_menuIndex == 9 ? "Heater ON for 5 sec" : "Pump ON for 5 sec", _canvas.width() / 2, 108);
+  _canvas.drawString(_menuIndex == 12 ? "Heater ON for 5 sec"
+                                      : "Pump ON for 5 sec",
+                     _canvas.width() / 2, 108);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString("Mode cannot be OFF", _canvas.width() / 2, 134);
-  drawPill(58, 160, 124, 28, COLOR_WARN, COLOR_WARN, "Press to start", TFT_BLACK, 1);
+  drawPill(58, 160, 124, 28, COLOR_WARN, COLOR_WARN, "Press to start",
+           TFT_BLACK, 1);
 }
 
 void DisplayUI::drawAbout() {
@@ -469,12 +527,14 @@ void DisplayUI::drawAbout() {
   _canvas.drawString(FIRMWARE_NAME, _canvas.width() / 2, 74);
   _canvas.setTextSize(1);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, _canvas.width() / 2, 108);
+  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, _canvas.width() / 2,
+                     108);
   _canvas.drawString("M5Stack Dial / ESP32-S3", _canvas.width() / 2, 132);
 }
 
-void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
-                         const String &text, uint16_t textColor, uint8_t textSize) {
+void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
+                         uint16_t fill, uint16_t outline, const String &text,
+                         uint16_t textColor, uint8_t textSize) {
   _canvas.fillRoundRect(x, y, w, h, h / 2, fill);
   _canvas.drawRoundRect(x, y, w, h, h / 2, outline);
   _canvas.setTextDatum(middle_center);
@@ -502,38 +562,55 @@ String DisplayUI::formatTemperature(float tempC, bool unitsFahrenheit) const {
   return String(displayed, 1) + (unitsFahrenheit ? "F" : "C");
 }
 
-String DisplayUI::menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network) const {
+String DisplayUI::menuValue(uint8_t index, const Settings &settings,
+                            const NetworkSnapshot &network) const {
   switch (index) {
-    case 0:
-      return formatTemperature(settings.targetC, settings.unitsFahrenheit);
-    case 1:
-      return modeText(settings.mode);
-    case 2:
-      return String(settings.unitsFahrenheit ? deltaCToF(settings.hysteresisC) : settings.hysteresisC, 1) +
-             (settings.unitsFahrenheit ? "F" : "C");
-    case 3:
-      return String(settings.pumpMinOffSeconds) + "s";
-    case 4:
-      return String(settings.pumpMinRunSeconds) + "s";
-    case 5:
-      return String(settings.unitsFahrenheit ? deltaCToF(settings.tempOffsetC) : settings.tempOffsetC, 1) +
-             (settings.unitsFahrenheit ? "F" : "C");
-    case 6:
-      return settings.unitsFahrenheit ? "F" : "C";
-    case 7:
-      if (!network.wifiEnabled) {
-        return "Disabled";
-      }
-      return network.status;
-    case 8:
-      return FERM_ENABLE_NETWORK ? "Enabled" : "Offline";
-    case 9:
-    case 10:
-      return "5s";
-    case 11:
-      return FIRMWARE_VERSION;
-    default:
-      return "";
+  case 0:
+    return activeProfile(settings).name;
+  case 1:
+    return formatTemperature(activeTargetC(settings), settings.unitsFahrenheit);
+  case 2:
+    return modeText(settings.mode);
+  case 3:
+    return String(settings.unitsFahrenheit ? deltaCToF(settings.coolOnDeltaC)
+                                           : settings.coolOnDeltaC,
+                  1) +
+           (settings.unitsFahrenheit ? "F" : "C");
+  case 4:
+    return String(settings.unitsFahrenheit ? deltaCToF(settings.heatOnDeltaC)
+                                           : settings.heatOnDeltaC,
+                  1) +
+           (settings.unitsFahrenheit ? "F" : "C");
+  case 5:
+    return String(settings.unitsFahrenheit ? deltaCToF(settings.holdDeltaC)
+                                           : settings.holdDeltaC,
+                  1) +
+           (settings.unitsFahrenheit ? "F" : "C");
+  case 6:
+    return String(settings.pumpMinOffSeconds) + "s";
+  case 7:
+    return String(settings.pumpMinRunSeconds) + "s";
+  case 8:
+    return String(settings.unitsFahrenheit ? deltaCToF(settings.tempOffsetC)
+                                           : settings.tempOffsetC,
+                  1) +
+           (settings.unitsFahrenheit ? "F" : "C");
+  case 9:
+    return settings.unitsFahrenheit ? "F" : "C";
+  case 10:
+    if (!network.wifiEnabled) {
+      return "Disabled";
+    }
+    return network.status;
+  case 11:
+    return FERM_ENABLE_NETWORK ? "Enabled" : "Offline";
+  case 12:
+  case 13:
+    return "5s";
+  case 14:
+    return FIRMWARE_VERSION;
+  default:
+    return "";
   }
 }
 
@@ -542,16 +619,16 @@ uint16_t DisplayUI::stateColor(RuntimeState state, FaultCode fault) const {
     return COLOR_FAULT;
   }
   switch (state) {
-    case RuntimeState::Heating:
-      return COLOR_HEAT;
-    case RuntimeState::Cooling:
-      return COLOR_COOL;
-    case RuntimeState::Idle:
-      return COLOR_OK;
-    case RuntimeState::Off:
-      return TFT_DARKGREY;
-    default:
-      return COLOR_TEXT_MUTED;
+  case RuntimeState::Heating:
+    return COLOR_HEAT;
+  case RuntimeState::Cooling:
+    return COLOR_COOL;
+  case RuntimeState::Idle:
+    return COLOR_OK;
+  case RuntimeState::Off:
+    return TFT_DARKGREY;
+  default:
+    return COLOR_TEXT_MUTED;
   }
 }
 
@@ -560,15 +637,15 @@ uint16_t DisplayUI::stateBackground(RuntimeState state, FaultCode fault) const {
     return 0x4800;
   }
   switch (state) {
-    case RuntimeState::Heating:
-      return 0x5002;
-    case RuntimeState::Cooling:
-      return 0x0230;
-    case RuntimeState::Off:
-      return 0x0861;
-    default:
-      return COLOR_BG;
+  case RuntimeState::Heating:
+    return 0x5002;
+  case RuntimeState::Cooling:
+    return 0x0230;
+  case RuntimeState::Off:
+    return 0x0861;
+  default:
+    return COLOR_BG;
   }
 }
 
-}  // namespace ferm
+} // namespace ferm

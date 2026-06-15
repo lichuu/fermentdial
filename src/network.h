@@ -25,7 +25,12 @@ struct NetworkSnapshot {
 struct WebStatus {
   bool tempValid = false;
   float tempC = NAN;
-  float targetC = DEFAULT_TARGET_C;
+  ProfileSettings profiles[PROFILE_COUNT];
+  uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
+  float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
+  float holdDeltaC = DEFAULT_HOLD_DELTA_C;
+  float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;
@@ -36,16 +41,17 @@ struct WebStatus {
 };
 
 class NetworkManager {
- public:
+public:
   void begin(const Settings &settings);
   void update(uint32_t nowMs, Settings &settings);
-  void publishState(uint32_t nowMs, const Settings &settings, const TemperatureSensor &sensor,
+  void publishState(uint32_t nowMs, const Settings &settings,
+                    const TemperatureSensor &sensor,
                     const FermentationController &controller);
   NetworkSnapshot snapshot() const { return _snapshot; }
   bool consumeSettingsChanged();
   bool requestSetupPortal();
 
- private:
+private:
   NetworkSnapshot _snapshot;
   bool _settingsChanged = false;
   uint32_t _lastPublishMs = 0;
@@ -76,4 +82,4 @@ class NetworkManager {
 #endif
 };
 
-}  // namespace ferm
+} // namespace ferm

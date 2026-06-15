@@ -1,4 +1,6 @@
 .pio/
+.platformio/
+.uv-cache/
 .vscode/
 .idea/
 *.bin

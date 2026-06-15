@@ -5,7 +5,7 @@ Custom appliance-style firmware for an M5Stack Dial v1.1 / ESP32-S3 fermentation
 ## Current Stage
 
 - Stage 1: DS18B20 sensing, serial logging, output safety, pump protection, and control modes.
-- Stage 2: Basic M5 Dial display, target adjustment, mode cycling, settings menu, NVS storage, and manual 5 second output tests.
+- Stage 2: Basic M5 Dial display, profile target adjustment, mode cycling, settings menu, NVS storage, and manual 5 second output tests.
 - Stage 4/5 placeholders: MQTT/Home Assistant discovery and OTA hooks are isolated in `src/network.cpp`.
 
 ## Hardware
@@ -117,9 +117,12 @@ The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside th
 5. Confirm the display boots and serial logging shows `heater=OFF pump=OFF`.
 6. Connect 12V load power only after the output safety checklist passes.
 
-## Controls
+## Profiles And Controls
 
-- Main screen rotation: adjust target temperature in 0.1 F increments.
+- FermentDial stores four profiles: `Ferment`, `Crash`, `Custom 1`, and `Custom 2`.
+- The Dial settings menu can select the active profile and adjust that profile's target.
+- The web dashboard can rename profiles and edit every profile target.
+- Main screen rotation adjusts the active profile target in 0.1 F or 0.1 C increments.
 - Short press: cycle `OFF -> AUTO -> HEAT_ONLY -> COOL_ONLY -> OFF`.
 - Double short press: quick toggle between `OFF` and `AUTO`.
 - Long press: open or leave the settings menu.
@@ -129,11 +132,13 @@ The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside th
 ## Modes
 
 - `OFF`: heater OFF, pump OFF. OFF mode overrides everything.
-- `AUTO`: heats below target minus hysteresis; cools above target plus hysteresis.
+- `AUTO`: cools above the active profile target plus `Cool on`; heats below target minus `Heat on`.
 - `HEAT_ONLY`: heater may run on low-temperature demand; pump remains off in normal control.
 - `COOL_ONLY`: pump may run on high-temperature demand; heater remains off in normal control.
 
-Runtime states are `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, and `FAULT`.
+Runtime states are `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, and `FAULT`. The web UI displays crash-profile cooling as `CRASHING`.
+
+The default control band mirrors the useful FTSS behavior: cooling starts at target + 0.5 F, heating starts at target - 5.0 F, and active outputs release near the target hold band. Pump min-off/min-run protection still applies.
 
 ## Pump Protection
 
@@ -156,7 +161,7 @@ The settings menu includes hidden/manual bench tests:
 ## Safety Test Checklist
 
 - Boot with outputs OFF.
-- Sensor unplugged causes FAULT and outputs OFF.
+- Sensor unplugged or three consecutive bad readings cause FAULT and outputs OFF.
 - Too cold turns only heater ON.
 - Too warm turns only pump ON.
 - Within deadband turns both OFF.
@@ -174,9 +179,10 @@ MQTT is not enabled in this Stage 1/2 firmware. The planned topic layout is:
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
-| `fermentdial/state` | publish | JSON state: `temperature`, `target`, `unit`, `mode`, `runtime_state`, `heater`, `pump`, `fault` |
+| `fermentdial/state` | publish | JSON state: `temperature`, `target`, `unit`, `profile`, `profiles`, `mode`, `runtime_state`, `heater`, `pump`, `fault` |
 | `fermentdial/state/temperature` | publish | current temperature in the published `unit` |
 | `fermentdial/state/target` | publish | target temperature in the published `unit` |
+| `fermentdial/state/profile` | publish | active profile index/name |
 | `fermentdial/state/unit` | publish | `F` or `C` |
 | `fermentdial/state/mode` | publish | `OFF`, `AUTO`, `HEAT_ONLY`, `COOL_ONLY` |
 | `fermentdial/state/runtime_state` | publish | `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, `FAULT` |

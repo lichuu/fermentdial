@@ -30,7 +30,9 @@ void logStatus(uint32_t nowMs) {
     Serial.print(F("invalid"));
   }
   Serial.print(F(" targetC="));
-  Serial.print(settings.targetC, 1);
+  Serial.print(activeTargetC(settings), 1);
+  Serial.print(F(" profile="));
+  Serial.print(activeProfile(settings).name);
   Serial.print(F(" mode="));
   Serial.print(modeTopicText(settings.mode));
   Serial.print(F(" state="));
@@ -55,14 +57,16 @@ void setup() {
   Serial.print(F(" v"));
   Serial.println(FIRMWARE_VERSION);
 #if FERM_DEMO_SENSOR
-  Serial.println(F("DEMO SENSOR MODE ENABLED - do not use for real fermentation control"));
+  Serial.println(
+      F("DEMO SENSOR MODE ENABLED - do not use for real fermentation control"));
 #endif
 
   ui.begin();
   storage.begin();
   bool loaded = storage.load(settings);
   sanitizeSettings(settings);
-  Serial.println(loaded ? F("Loaded saved settings") : F("Using safe defaults"));
+  Serial.println(loaded ? F("Loaded saved settings")
+                        : F("Using safe defaults"));
 
   temperatureSensor.begin(millis());
   network.begin(settings);
@@ -74,7 +78,8 @@ void loop() {
   temperatureSensor.update(nowMs, settings);
   network.update(nowMs, settings);
 
-  controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureC());
+  controller.update(nowMs, settings, temperatureSensor.isValid(),
+                    temperatureSensor.temperatureC());
 
   UiModel model;
   model.tempValid = temperatureSensor.isValid();
@@ -93,7 +98,8 @@ void loop() {
   if (ui.consumeSaveRequested() || network.consumeSettingsChanged()) {
     sanitizeSettings(settings);
     storage.scheduleSave(nowMs);
-    controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureC());
+    controller.update(nowMs, settings, temperatureSensor.isValid(),
+                      temperatureSensor.temperatureC());
   }
 
   if (ui.consumeWifiSetupRequested()) {
@@ -102,7 +108,8 @@ void loop() {
 
   OutputTestKind testRequest = ui.consumeOutputTestRequest();
   if (testRequest != OutputTestKind::None) {
-    bool accepted = controller.requestOutputTest(testRequest, nowMs, settings, temperatureSensor.isValid());
+    bool accepted = controller.requestOutputTest(testRequest, nowMs, settings,
+                                                 temperatureSensor.isValid());
     if (!accepted) {
       ui.notifyOutputTestRejected();
     }

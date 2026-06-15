@@ -8,7 +8,7 @@
 namespace ferm {
 
 class TemperatureSensor {
- public:
+public:
   explicit TemperatureSensor(uint8_t dataPin = PIN_DS18B20_DATA);
 
   void begin(uint32_t nowMs);
@@ -19,21 +19,26 @@ class TemperatureSensor {
   float rawTemperatureC() const { return _rawTemperatureC; }
   bool demoMode() const { return FERM_DEMO_SENSOR; }
 
- private:
+private:
   OneWire _oneWire;
   DallasTemperature _sensors;
   uint32_t _lastRequestMs = 0;
+  uint8_t _badReadCount = 0;
+  bool _haveAcceptedReading = false;
   bool _valid = false;
   float _temperatureC = NAN;
   float _rawTemperatureC = NAN;
+  float _lastAcceptedRawC = NAN;
 };
 
 class FermentationController {
- public:
+public:
   void begin(uint32_t nowMs);
-  void update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempC);
+  void update(uint32_t nowMs, const Settings &settings, bool sensorValid,
+              float tempC);
 
-  bool requestOutputTest(OutputTestKind kind, uint32_t nowMs, const Settings &settings, bool sensorValid);
+  bool requestOutputTest(OutputTestKind kind, uint32_t nowMs,
+                         const Settings &settings, bool sensorValid);
   void cancelOutputTest(uint32_t nowMs, const Settings &settings);
 
   RuntimeState runtimeState() const { return _runtimeState; }
@@ -42,18 +47,17 @@ class FermentationController {
   bool pumpOn() const { return _pumpOn; }
   bool outputTestActive() const { return _outputTest != OutputTestKind::None; }
   OutputTestKind outputTestKind() const { return _outputTest; }
-  uint32_t pumpOffElapsedMs(uint32_t nowMs) const { return nowMs - _lastPumpOffMs; }
-  uint32_t pumpRunElapsedMs(uint32_t nowMs) const { return nowMs - _lastPumpOnMs; }
+  uint32_t pumpOffElapsedMs(uint32_t nowMs) const {
+    return nowMs - _lastPumpOffMs;
+  }
+  uint32_t pumpRunElapsedMs(uint32_t nowMs) const {
+    return nowMs - _lastPumpOnMs;
+  }
 
- private:
-  void applyOutputs(
-      uint32_t nowMs,
-      const Settings &settings,
-      bool heaterRequested,
-      bool pumpRequested,
-      bool safetyFault,
-      FaultCode safetyFaultCode,
-      RuntimeState requestedState);
+private:
+  void applyOutputs(uint32_t nowMs, const Settings &settings,
+                    bool heaterRequested, bool pumpRequested, bool safetyFault,
+                    FaultCode safetyFaultCode, RuntimeState requestedState);
 
   bool pumpMinRunActive(uint32_t nowMs, const Settings &settings) const;
   bool pumpMinOffSatisfied(uint32_t nowMs, const Settings &settings) const;
@@ -68,4 +72,4 @@ class FermentationController {
   uint32_t _outputTestEndsMs = 0;
 };
 
-}  // namespace ferm
+} // namespace ferm
