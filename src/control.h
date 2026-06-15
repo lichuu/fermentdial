@@ -15,7 +15,7 @@ class TemperatureSensor {
   void update(uint32_t nowMs, const Settings &settings);
 
   bool isValid() const { return _valid; }
-  float temperatureF() const { return _temperatureF; }
+  float temperatureC() const { return _temperatureC; }
   float rawTemperatureC() const { return _rawTemperatureC; }
   bool demoMode() const { return FERM_DEMO_SENSOR; }
 
@@ -24,14 +24,14 @@ class TemperatureSensor {
   DallasTemperature _sensors;
   uint32_t _lastRequestMs = 0;
   bool _valid = false;
-  float _temperatureF = NAN;
+  float _temperatureC = NAN;
   float _rawTemperatureC = NAN;
 };
 
 class FermentationController {
  public:
   void begin(uint32_t nowMs);
-  void update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempF);
+  void update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempC);
 
   bool requestOutputTest(OutputTestKind kind, uint32_t nowMs, const Settings &settings, bool sensorValid);
   void cancelOutputTest(uint32_t nowMs, const Settings &settings);

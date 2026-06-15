@@ -173,8 +173,8 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
   if (_screen == Screen::Main) {
-    float stepF = settings.unitsFahrenheit ? 0.1f : (0.1f * 9.0f / 5.0f);
-    settings.targetF = clampFloat(settings.targetF + (delta * stepF), MIN_TARGET_F, MAX_TARGET_F);
+    float stepC = settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f;
+    settings.targetC = clampFloat(settings.targetC + (delta * stepC), MIN_TARGET_C, MAX_TARGET_C);
     _setpointFocusUntilMs = millis() + 3000;
     requestSave();
   } else if (_screen == Screen::Menu) {
@@ -257,7 +257,8 @@ void DisplayUI::handleLongPress(Settings &settings) {
 void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   switch (_editIndex) {
     case 0:
-      settings.targetF = clampFloat(settings.targetF + (delta * 0.1f), MIN_TARGET_F, MAX_TARGET_F);
+      settings.targetC = clampFloat(settings.targetC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+                                    MIN_TARGET_C, MAX_TARGET_C);
       break;
     case 1: {
       int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
@@ -268,7 +269,9 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
       break;
     }
     case 2:
-      settings.hysteresisF = clampFloat(settings.hysteresisF + (delta * 0.1f), MIN_HYSTERESIS_F, MAX_HYSTERESIS_F);
+      settings.hysteresisC =
+          clampFloat(settings.hysteresisC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+                     MIN_HYSTERESIS_C, MAX_HYSTERESIS_C);
       break;
     case 3:
     {
@@ -289,7 +292,8 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
       break;
     }
     case 5:
-      settings.tempOffsetF = clampFloat(settings.tempOffsetF + (delta * 0.1f), MIN_OFFSET_F, MAX_OFFSET_F);
+      settings.tempOffsetC = clampFloat(settings.tempOffsetC + (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+                                        MIN_OFFSET_C, MAX_OFFSET_C);
       break;
     case 6:
       settings.unitsFahrenheit = !settings.unitsFahrenheit;
@@ -371,16 +375,16 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
     _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
     _canvas.drawString("Outputs OFF", cx, 132);
   } else {
-    const float largeTempF = showingSetpoint ? settings.targetF : model.tempF;
+    const float largeTempC = showingSetpoint ? settings.targetC : model.tempC;
     _canvas.setTextDatum(middle_center);
     _canvas.setTextSize(1);
     _canvas.setTextColor(TFT_WHITE, bg);
-    _canvas.drawString((showingSetpoint || model.tempValid) ? temperatureNumber(largeTempF, settings.unitsFahrenheit) : "--.-",
+    _canvas.drawString((showingSetpoint || model.tempValid) ? temperatureNumber(largeTempC, settings.unitsFahrenheit) : "--.-",
                        cx, 90, 7);
 
     const String smallValue = showingSetpoint
-                                  ? String("Now ") + (model.tempValid ? formatTemperature(model.tempF, settings.unitsFahrenheit) : "--.-")
-                                  : String("Target ") + formatTemperature(settings.targetF, settings.unitsFahrenheit);
+                                  ? String("Now ") + (model.tempValid ? formatTemperature(model.tempC, settings.unitsFahrenheit) : "--.-")
+                                  : String("Target ") + formatTemperature(settings.targetC, settings.unitsFahrenheit);
     drawPill(52, 128, 136, 28, COLOR_PANEL, COLOR_PANEL, smallValue, TFT_WHITE, 1);
   }
 
@@ -479,40 +483,40 @@ void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fi
   _canvas.drawString(text, x + w / 2, y + h / 2);
 }
 
-String DisplayUI::temperatureNumber(float tempF, bool unitsFahrenheit) const {
-  if (isnan(tempF)) {
+String DisplayUI::temperatureNumber(float tempC, bool unitsFahrenheit) const {
+  if (isnan(tempC)) {
     return "--.-";
   }
-  return String(unitsFahrenheit ? tempF : fToC(tempF), 1);
+  return String(unitsFahrenheit ? cToF(tempC) : tempC, 1);
 }
 
 const char *DisplayUI::temperatureUnit(bool unitsFahrenheit) const {
   return unitsFahrenheit ? "F" : "C";
 }
 
-String DisplayUI::formatTemperature(float tempF, bool unitsFahrenheit) const {
-  if (isnan(tempF)) {
+String DisplayUI::formatTemperature(float tempC, bool unitsFahrenheit) const {
+  if (isnan(tempC)) {
     return "--.-";
   }
-  float displayed = unitsFahrenheit ? tempF : fToC(tempF);
+  float displayed = unitsFahrenheit ? cToF(tempC) : tempC;
   return String(displayed, 1) + (unitsFahrenheit ? "F" : "C");
 }
 
 String DisplayUI::menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network) const {
   switch (index) {
     case 0:
-      return formatTemperature(settings.targetF, settings.unitsFahrenheit);
+      return formatTemperature(settings.targetC, settings.unitsFahrenheit);
     case 1:
       return modeText(settings.mode);
     case 2:
-      return String(settings.unitsFahrenheit ? settings.hysteresisF : settings.hysteresisF * 5.0f / 9.0f, 1) +
+      return String(settings.unitsFahrenheit ? deltaCToF(settings.hysteresisC) : settings.hysteresisC, 1) +
              (settings.unitsFahrenheit ? "F" : "C");
     case 3:
       return String(settings.pumpMinOffSeconds) + "s";
     case 4:
       return String(settings.pumpMinRunSeconds) + "s";
     case 5:
-      return String(settings.unitsFahrenheit ? settings.tempOffsetF : settings.tempOffsetF * 5.0f / 9.0f, 1) +
+      return String(settings.unitsFahrenheit ? deltaCToF(settings.tempOffsetC) : settings.tempOffsetC, 1) +
              (settings.unitsFahrenheit ? "F" : "C");
     case 6:
       return settings.unitsFahrenheit ? "F" : "C";

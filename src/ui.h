@@ -9,7 +9,7 @@ namespace ferm {
 
 struct UiModel {
   bool tempValid = false;
-  float tempF = NAN;
+  float tempC = NAN;
   RuntimeState runtimeState = RuntimeState::Boot;
   FaultCode faultCode = FaultCode::None;
   bool heaterOn = false;
@@ -60,9 +60,9 @@ class DisplayUI {
   void drawAbout();
   void drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
                 const String &text, uint16_t textColor, uint8_t textSize = 1);
-  String temperatureNumber(float tempF, bool unitsFahrenheit) const;
+  String temperatureNumber(float tempC, bool unitsFahrenheit) const;
   const char *temperatureUnit(bool unitsFahrenheit) const;
-  String formatTemperature(float tempF, bool unitsFahrenheit) const;
+  String formatTemperature(float tempC, bool unitsFahrenheit) const;
   String menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network = NetworkSnapshot{}) const;
   uint16_t stateColor(RuntimeState state, FaultCode fault) const;
   uint16_t stateBackground(RuntimeState state, FaultCode fault) const;

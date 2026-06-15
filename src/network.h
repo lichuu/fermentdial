@@ -24,8 +24,8 @@ struct NetworkSnapshot {
 
 struct WebStatus {
   bool tempValid = false;
-  float tempF = NAN;
-  float targetF = DEFAULT_TARGET_F;
+  float tempC = NAN;
+  float targetC = DEFAULT_TARGET_C;
   bool unitsFahrenheit = true;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;

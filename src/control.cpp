@@ -8,8 +8,8 @@ TemperatureSensor::TemperatureSensor(uint8_t dataPin)
 void TemperatureSensor::begin(uint32_t nowMs) {
 #if FERM_DEMO_SENSOR
   _valid = true;
-  _temperatureF = DEFAULT_TARGET_F;
-  _rawTemperatureC = fToC(_temperatureF);
+  _temperatureC = DEFAULT_TARGET_C;
+  _rawTemperatureC = _temperatureC;
   _lastRequestMs = nowMs;
 #else
   // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
@@ -31,8 +31,8 @@ void TemperatureSensor::update(uint32_t nowMs, const Settings &settings) {
   // without a DS18B20 attached and must be disabled for real fermentation use.
   constexpr float periodMs = 30000.0f;
   float phase = static_cast<float>(nowMs % static_cast<uint32_t>(periodMs)) / periodMs;
-  _temperatureF = settings.targetF + (sinf(phase * TWO_PI) * 1.2f) + settings.tempOffsetF;
-  _rawTemperatureC = fToC(_temperatureF);
+  _temperatureC = settings.targetC + (sinf(phase * TWO_PI) * deltaFToC(1.2f)) + settings.tempOffsetC;
+  _rawTemperatureC = _temperatureC;
   _valid = true;
   _lastRequestMs = nowMs;
   return;
@@ -43,19 +43,19 @@ void TemperatureSensor::update(uint32_t nowMs, const Settings &settings) {
 
   if (isnan(_rawTemperatureC) || _rawTemperatureC == DEVICE_DISCONNECTED_C) {
     _valid = false;
-    _temperatureF = NAN;
+    _temperatureC = NAN;
     return;
   }
 
-  float calibratedF = cToF(_rawTemperatureC) + settings.tempOffsetF;
-  if (isnan(calibratedF) || calibratedF < MIN_VALID_TEMP_F || calibratedF > MAX_VALID_TEMP_F) {
+  float calibratedC = _rawTemperatureC + settings.tempOffsetC;
+  if (isnan(calibratedC) || calibratedC < MIN_VALID_TEMP_C || calibratedC > MAX_VALID_TEMP_C) {
     _valid = false;
-    _temperatureF = NAN;
+    _temperatureC = NAN;
     return;
   }
 
   _valid = true;
-  _temperatureF = calibratedF;
+  _temperatureC = calibratedC;
 #endif
 }
 
@@ -73,7 +73,7 @@ void FermentationController::begin(uint32_t nowMs) {
   applyOutputs(nowMs, bootSettings, false, false, false, FaultCode::None, RuntimeState::Boot);
 }
 
-void FermentationController::update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempF) {
+void FermentationController::update(uint32_t nowMs, const Settings &settings, bool sensorValid, float tempC) {
   if (_outputTest != OutputTestKind::None) {
     if (!sensorValid) {
       _outputTest = OutputTestKind::None;
@@ -109,14 +109,14 @@ void FermentationController::update(uint32_t nowMs, const Settings &settings, bo
   bool heaterRequested = false;
   bool pumpRequested = false;
 
-  const float lowThreshold = settings.targetF - settings.hysteresisF;
-  const float highThreshold = settings.targetF + settings.hysteresisF;
+  const float lowThreshold = settings.targetC - settings.hysteresisC;
+  const float highThreshold = settings.targetC + settings.hysteresisC;
 
   if (coolingAllowed && pumpMinRunActive(nowMs, settings)) {
     pumpRequested = true;
-  } else if (tempF < lowThreshold && heatingAllowed) {
+  } else if (tempC < lowThreshold && heatingAllowed) {
     heaterRequested = true;
-  } else if (tempF > highThreshold && coolingAllowed) {
+  } else if (tempC > highThreshold && coolingAllowed) {
     pumpRequested = _pumpOn || pumpMinOffSatisfied(nowMs, settings);
   }
 

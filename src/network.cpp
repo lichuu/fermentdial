@@ -92,8 +92,8 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
 void NetworkManager::publishState(uint32_t nowMs, const Settings &settings, const TemperatureSensor &sensor,
                                   const FermentationController &controller) {
   _webStatus.tempValid = sensor.isValid();
-  _webStatus.tempF = sensor.temperatureF();
-  _webStatus.targetF = settings.targetF;
+  _webStatus.tempC = sensor.temperatureC();
+  _webStatus.targetC = settings.targetC;
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
   _webStatus.mode = settings.mode;
   _webStatus.runtimeState = controller.runtimeState();
@@ -222,7 +222,7 @@ void NetworkManager::handleSettingsPost() {
 
   if (_server.hasArg("target")) {
     float target = _server.arg("target").toFloat();
-    _settings->targetF = _settings->unitsFahrenheit ? target : cToF(target);
+    _settings->targetC = _settings->unitsFahrenheit ? fToC(target) : target;
     changed = true;
   }
 
@@ -236,13 +236,15 @@ void NetworkManager::handleSettingsPost() {
     changed = true;
   }
 
-  if (_server.hasArg("hysteresisF")) {
-    _settings->hysteresisF = _server.arg("hysteresisF").toFloat();
+  if (_server.hasArg("hysteresis")) {
+    float hysteresis = _server.arg("hysteresis").toFloat();
+    _settings->hysteresisC = _settings->unitsFahrenheit ? deltaFToC(hysteresis) : hysteresis;
     changed = true;
   }
 
-  if (_server.hasArg("tempOffsetF")) {
-    _settings->tempOffsetF = _server.arg("tempOffsetF").toFloat();
+  if (_server.hasArg("tempOffset")) {
+    float offset = _server.arg("tempOffset").toFloat();
+    _settings->tempOffsetC = _settings->unitsFahrenheit ? deltaFToC(offset) : offset;
     changed = true;
   }
 
@@ -280,8 +282,8 @@ bool NetworkManager::parseMode(const String &value, UserMode &mode) const {
 }
 
 String NetworkManager::statusJson() const {
-  const float temperature = _webStatus.unitsFahrenheit ? _webStatus.tempF : fToC(_webStatus.tempF);
-  const float target = _webStatus.unitsFahrenheit ? _webStatus.targetF : fToC(_webStatus.targetF);
+  const float temperature = _webStatus.unitsFahrenheit ? cToF(_webStatus.tempC) : _webStatus.tempC;
+  const float target = _webStatus.unitsFahrenheit ? cToF(_webStatus.targetC) : _webStatus.targetC;
   const char *unit = _webStatus.unitsFahrenheit ? "F" : "C";
 
   String json = "{";

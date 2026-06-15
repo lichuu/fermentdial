@@ -35,7 +35,8 @@ namespace ferm {
 
 constexpr const char *FIRMWARE_NAME = "Dial Ferment";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
-constexpr uint16_t SETTINGS_VERSION = 1;
+constexpr uint16_t SETTINGS_VERSION = 2;
+constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -52,11 +53,30 @@ constexpr uint32_t UI_TIMEOUT_MS = 30000;
 constexpr uint32_t DISPLAY_DIM_MS = 60000;
 constexpr uint32_t OUTPUT_TEST_MS = 5000;
 
+constexpr float cToF(float tempC) {
+  return (tempC * 9.0f / 5.0f) + 32.0f;
+}
+
+constexpr float fToC(float tempF) {
+  return (tempF - 32.0f) * 5.0f / 9.0f;
+}
+
+constexpr float deltaFToC(float deltaF) {
+  return deltaF * 5.0f / 9.0f;
+}
+
+constexpr float deltaCToF(float deltaC) {
+  return deltaC * 9.0f / 5.0f;
+}
+
 constexpr float DEFAULT_TARGET_F = 68.0f;
 constexpr float DEFAULT_HYSTERESIS_F = 0.5f;
+constexpr float DEFAULT_TARGET_C = fToC(DEFAULT_TARGET_F);
+constexpr float DEFAULT_HYSTERESIS_C = deltaFToC(DEFAULT_HYSTERESIS_F);
 constexpr uint32_t DEFAULT_PUMP_MIN_OFF_SECONDS = 120;
 constexpr uint32_t DEFAULT_PUMP_MIN_RUN_SECONDS = 30;
 constexpr float DEFAULT_TEMP_OFFSET_F = 0.0f;
+constexpr float DEFAULT_TEMP_OFFSET_C = deltaFToC(DEFAULT_TEMP_OFFSET_F);
 
 constexpr float MIN_VALID_TEMP_F = 20.0f;
 constexpr float MAX_VALID_TEMP_F = 120.0f;
@@ -66,6 +86,14 @@ constexpr float MIN_HYSTERESIS_F = 0.1f;
 constexpr float MAX_HYSTERESIS_F = 5.0f;
 constexpr float MIN_OFFSET_F = -10.0f;
 constexpr float MAX_OFFSET_F = 10.0f;
+constexpr float MIN_VALID_TEMP_C = fToC(MIN_VALID_TEMP_F);
+constexpr float MAX_VALID_TEMP_C = fToC(MAX_VALID_TEMP_F);
+constexpr float MIN_TARGET_C = fToC(MIN_TARGET_F);
+constexpr float MAX_TARGET_C = fToC(MAX_TARGET_F);
+constexpr float MIN_HYSTERESIS_C = deltaFToC(MIN_HYSTERESIS_F);
+constexpr float MAX_HYSTERESIS_C = deltaFToC(MAX_HYSTERESIS_F);
+constexpr float MIN_OFFSET_C = deltaFToC(MIN_OFFSET_F);
+constexpr float MAX_OFFSET_C = deltaFToC(MAX_OFFSET_F);
 
 enum class UserMode : uint8_t {
   Off = 0,
@@ -97,22 +125,14 @@ enum class OutputTestKind : uint8_t {
 
 struct Settings {
   uint16_t version = SETTINGS_VERSION;
-  float targetF = DEFAULT_TARGET_F;
-  float hysteresisF = DEFAULT_HYSTERESIS_F;
+  float targetC = DEFAULT_TARGET_C;
+  float hysteresisC = DEFAULT_HYSTERESIS_C;
   UserMode mode = UserMode::Off;
   uint32_t pumpMinOffSeconds = DEFAULT_PUMP_MIN_OFF_SECONDS;
   uint32_t pumpMinRunSeconds = DEFAULT_PUMP_MIN_RUN_SECONDS;
-  float tempOffsetF = DEFAULT_TEMP_OFFSET_F;
+  float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
 };
-
-inline float cToF(float tempC) {
-  return (tempC * 9.0f / 5.0f) + 32.0f;
-}
-
-inline float fToC(float tempF) {
-  return (tempF - 32.0f) * 5.0f / 9.0f;
-}
 
 inline float clampFloat(float value, float minimum, float maximum) {
   if (isnan(value)) {
@@ -215,11 +235,11 @@ inline UserMode nextMode(UserMode mode) {
 
 inline void sanitizeSettings(Settings &settings) {
   settings.version = SETTINGS_VERSION;
-  settings.targetF = clampFloat(settings.targetF, MIN_TARGET_F, MAX_TARGET_F);
-  settings.hysteresisF = clampFloat(settings.hysteresisF, MIN_HYSTERESIS_F, MAX_HYSTERESIS_F);
+  settings.targetC = clampFloat(settings.targetC, MIN_TARGET_C, MAX_TARGET_C);
+  settings.hysteresisC = clampFloat(settings.hysteresisC, MIN_HYSTERESIS_C, MAX_HYSTERESIS_C);
   settings.pumpMinOffSeconds = clampU32(settings.pumpMinOffSeconds, 0, 1800);
   settings.pumpMinRunSeconds = clampU32(settings.pumpMinRunSeconds, 0, 600);
-  settings.tempOffsetF = clampFloat(settings.tempOffsetF, MIN_OFFSET_F, MAX_OFFSET_F);
+  settings.tempOffsetC = clampFloat(settings.tempOffsetC, MIN_OFFSET_C, MAX_OFFSET_C);
 
   uint8_t modeValue = static_cast<uint8_t>(settings.mode);
   if (modeValue > static_cast<uint8_t>(UserMode::CoolOnly)) {

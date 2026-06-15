@@ -23,14 +23,14 @@ void logStatus(uint32_t nowMs) {
   }
   lastSerialLogMs = nowMs;
 
-  Serial.print(F("tempF="));
+  Serial.print(F("tempC="));
   if (temperatureSensor.isValid()) {
-    Serial.print(temperatureSensor.temperatureF(), 1);
+    Serial.print(temperatureSensor.temperatureC(), 1);
   } else {
     Serial.print(F("invalid"));
   }
-  Serial.print(F(" targetF="));
-  Serial.print(settings.targetF, 1);
+  Serial.print(F(" targetC="));
+  Serial.print(settings.targetC, 1);
   Serial.print(F(" mode="));
   Serial.print(modeTopicText(settings.mode));
   Serial.print(F(" state="));
@@ -74,11 +74,11 @@ void loop() {
   temperatureSensor.update(nowMs, settings);
   network.update(nowMs, settings);
 
-  controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureF());
+  controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureC());
 
   UiModel model;
   model.tempValid = temperatureSensor.isValid();
-  model.tempF = temperatureSensor.temperatureF();
+  model.tempC = temperatureSensor.temperatureC();
   model.runtimeState = controller.runtimeState();
   model.faultCode = controller.faultCode();
   model.heaterOn = controller.heaterOn();
@@ -93,7 +93,7 @@ void loop() {
   if (ui.consumeSaveRequested() || network.consumeSettingsChanged()) {
     sanitizeSettings(settings);
     storage.scheduleSave(nowMs);
-    controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureF());
+    controller.update(nowMs, settings, temperatureSensor.isValid(), temperatureSensor.temperatureC());
   }
 
   if (ui.consumeWifiSetupRequested()) {
