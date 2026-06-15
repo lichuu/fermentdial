@@ -45,6 +45,8 @@ class DisplayUI {
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
   void editCurrentValue(int32_t delta, Settings &settings);
+  int32_t filteredSettingsDelta(int32_t delta, int32_t &accumulator, int32_t divisor);
+  void resetSettingsEncoderFilters();
   void requestSave();
   void markActivity(uint32_t nowMs);
 
@@ -68,6 +70,8 @@ class DisplayUI {
   int32_t _lastEncoder = 0;
   uint8_t _menuIndex = 0;
   uint8_t _editIndex = 0;
+  int32_t _menuEncoderAccumulator = 0;
+  int32_t _editEncoderAccumulator = 0;
   bool _dirty = true;
   bool _saveRequested = false;
   OutputTestKind _pendingOutputTest = OutputTestKind::None;

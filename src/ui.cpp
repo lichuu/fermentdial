@@ -15,6 +15,8 @@ constexpr uint16_t COLOR_COOL = 0x06BF;
 constexpr uint16_t COLOR_OK = 0x45E8;
 constexpr uint16_t COLOR_WARN = 0xFDE0;
 constexpr uint16_t COLOR_FAULT = 0xD945;
+constexpr int32_t MENU_ENCODER_DIVISOR = 2;
+constexpr int32_t EDIT_ENCODER_DIVISOR = 2;
 
 constexpr const char *MENU_LABELS[MENU_COUNT] = {
     "Target",
@@ -129,13 +131,21 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     _setpointFocusUntilMs = millis() + 3000;
     requestSave();
   } else if (_screen == Screen::Menu) {
-    int32_t next = static_cast<int32_t>(_menuIndex) + delta;
+    int32_t filteredDelta = filteredSettingsDelta(delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    int32_t next = static_cast<int32_t>(_menuIndex) + filteredDelta;
     while (next < 0) {
       next += MENU_COUNT;
     }
     _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
   } else if (_screen == Screen::Edit) {
-    editCurrentValue(delta, settings);
+    int32_t filteredDelta = filteredSettingsDelta(delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    editCurrentValue(filteredDelta, settings);
   }
   _dirty = true;
 }
@@ -156,24 +166,31 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
         _toast = String("Units: ") + (settings.unitsFahrenheit ? "F" : "C");
         _toastUntilMs = nowMs + 1500;
         requestSave();
+        resetSettingsEncoderFilters();
         _dirty = true;
         return;
       }
       _editIndex = _menuIndex;
       _screen = Screen::Edit;
+      resetSettingsEncoderFilters();
     } else if (_menuIndex == 9 || _menuIndex == 10) {
       _screen = Screen::ConfirmTest;
+      resetSettingsEncoderFilters();
     } else if (_menuIndex == 11) {
       _screen = Screen::About;
+      resetSettingsEncoderFilters();
     }
   } else if (_screen == Screen::Edit) {
     _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
     requestSave();
   } else if (_screen == Screen::ConfirmTest) {
     _pendingOutputTest = _menuIndex == 9 ? OutputTestKind::Heater : OutputTestKind::Pump;
     _screen = Screen::Main;
+    resetSettingsEncoderFilters();
   } else if (_screen == Screen::About) {
     _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
   }
   _dirty = true;
 }
@@ -185,6 +202,7 @@ void DisplayUI::handleLongPress(Settings &settings) {
   } else {
     _screen = Screen::Main;
   }
+  resetSettingsEncoderFilters();
   _dirty = true;
 }
 
@@ -231,6 +249,20 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     default:
       break;
   }
+}
+
+int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator, int32_t divisor) {
+  accumulator += delta;
+  int32_t filteredDelta = accumulator / divisor;
+  if (filteredDelta != 0) {
+    accumulator -= filteredDelta * divisor;
+  }
+  return filteredDelta;
+}
+
+void DisplayUI::resetSettingsEncoderFilters() {
+  _menuEncoderAccumulator = 0;
+  _editEncoderAccumulator = 0;
 }
 
 void DisplayUI::requestSave() {
