@@ -392,8 +392,8 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings, const UiModel
     _canvas.setTextSize(1);
     _canvas.setTextDatum(middle_center);
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString("outputs disabled", cx, 199);
-    _canvas.drawString(String(modeText(settings.mode)) + " mode", cx, 214);
+    _canvas.drawString("demo sensor", cx, 199);
+    _canvas.drawString("outputs disabled", cx, 214);
   } else {
     _canvas.setTextSize(1);
     _canvas.setTextDatum(middle_center);
