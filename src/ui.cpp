@@ -284,8 +284,13 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
         resetSettingsEncoderFilters();
       }
     } else {
-      handleEncoder(dy < 0 ? -MENU_ENCODER_DIVISOR : MENU_ENCODER_DIVISOR,
-                    settings);
+      const int8_t direction = dy < 0 ? 1 : -1;
+      int32_t next = static_cast<int32_t>(_menuIndex) + direction;
+      while (next < 0) {
+        next += MENU_COUNT;
+      }
+      _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
+      resetSettingsEncoderFilters();
     }
     _dirty = true;
     return;
@@ -959,7 +964,7 @@ void DisplayUI::drawMenu(const Settings &settings,
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, cy + 13,
                      &fonts::DejaVu18);
 
-  const char *hint = "tap or swipe right";
+  const char *hint = "swipe up/down";
   if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
   } else if (_menuIndex == MENU_WIFI) {
