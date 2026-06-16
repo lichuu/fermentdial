@@ -1534,8 +1534,8 @@ body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cool
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.card,.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:13px}.label{color:var(--muted);font-size:12px;text-transform:uppercase}.value{font-size:23px;font-weight:900;margin-top:4px}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}
 input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:12px}input,select{width:100%;background:#102126;color:var(--text)}input{text-align:center;font-size:22px;font-weight:900}.nameInput{text-align:left;font-size:20px}.fieldLabel{display:block;color:var(--muted);font-size:13px}button{background:#234858;color:var(--text);font-weight:900;cursor:pointer}button.primary{background:var(--blue);border-color:#3f819d;color:#fff}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 92px 42px;gap:6px}.reset{padding:8px 0;font-size:17px;line-height:1;background:#1b3540;border:1px solid var(--line);border-radius:8px;color:var(--accent);cursor:pointer}.unsaved{outline:2px solid var(--gold);outline-offset:1px}.thresholds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.thresholds label{color:var(--muted);font-size:13px}
-a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}.thresholds{grid-template-columns:1fr}}
+.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}
+a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}}
 </style></head>
 <body><main><div class="shell">
 <div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span></div></div>
@@ -1553,26 +1553,18 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <div class="card"><div class="label">Mode</div><div class="value" id="mode">OFF</div></div>
 </section>
 <section class="controls">
-<div class="panel"><h2>Active Profile</h2>
+<div class="panel"><h2>Profile</h2>
 <select id="profileSelect" onchange="selectProfile()"></select>
-<div class="targetCtl" style="margin-top:10px">
-<button onclick="nudge(-0.1)">-</button><input id="targetInput" inputmode="decimal" step="0.1" oninput="markActiveDirty()"><button onclick="nudge(0.1)">+</button>
-</div><div style="display:grid;grid-template-columns:1fr 42px;gap:6px;margin-top:10px">
-<button id="saveActiveBtn" class="primary" onclick="saveActive()">Save active profile</button>
-<button class="reset" title="Reset to default" onclick="resetActive()">&#8634;</button>
-</div></div>
+<div class="fieldLabel" style="margin-top:12px">Setpoint</div>
+<div class="targetCtl" style="margin-top:6px">
+<button onclick="nudge(-0.1)">-</button><input id="targetInput" inputmode="decimal" step="0.1" onchange="applyTarget()"><button onclick="nudge(0.1)">+</button>
+</div>
+<p class="sub" style="font-size:12px;margin-top:10px">Pick a profile to recall its preset, or nudge the live setpoint. Edit presets in <a href="/settings#profiles">Settings</a>.</p>
+</div>
 <div class="panel"><h2>Mode</h2><div class="modes">
 <button id="btnOFF" class="danger" onclick="setMode('OFF')">OFF</button><button id="btnAUTO" onclick="setMode('AUTO')">AUTO</button>
 <button id="btnHEAT_ONLY" class="heat" onclick="setMode('HEAT_ONLY')">HEAT</button><button id="btnCOOL_ONLY" class="cool" onclick="setMode('COOL_ONLY')">COOL</button>
 </div></div>
-<div class="panel"><h2>Profiles</h2><div id="profileRows" class="profileRows"></div>
-<button id="saveProfilesBtn" class="primary" style="width:100%;margin-top:10px" onclick="saveProfiles()">Save profiles</button></div>
-<div class="panel"><h2>Control</h2><div class="thresholds">
-<label>Cool on <input id="coolOnInput" inputmode="decimal" step="0.1"></label>
-<label>Heat on <input id="heatOnInput" inputmode="decimal" step="0.1"></label>
-<label>Hold band <input id="holdInput" inputmode="decimal" step="0.1"></label>
-<label>Offset <input id="offsetInput" inputmode="decimal" step="0.1"></label>
-</div><button class="primary" style="width:100%;margin-top:10px" onclick="saveControl()">Save control</button></div>
 </section>
 <div class="footer"><span id="fault">NONE</span> - <a href="/settings">Settings</a> - <a href="/metrics">Metrics</a></div>
 </div></main>
@@ -1585,36 +1577,14 @@ async function post(data){
  await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:qs(data)});
  await tick();
 }
-let activeDirty=false,profilesDirty=false;
-function markActiveDirty(){activeDirty=true;saveActiveBtn.classList.add('unsaved')}
-function markProfilesDirty(){profilesDirty=true;saveProfilesBtn.classList.add('unsaved')}
-function nudge(delta){const v=parseFloat(targetInput.value||'68');targetInput.value=(Math.round((v+delta)*10)/10).toFixed(1);markActiveDirty()}
-function resetActive(){const p=last&&last.profiles[+profileSelect.value];if(p&&confirm('Reset '+p.name+' target to '+p.default.toFixed(1)+deg+last.unit+'?')){targetInput.value=p.default.toFixed(1);markActiveDirty()}}
-function saveActive(){const p=last&&last.profiles[+profileSelect.value];if(!p||!confirm('Save '+p.name+' target as '+targetInput.value+deg+last.unit+'?'))return;activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value,target:targetInput.value})}
-function selectProfile(){activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value})}
+function applyTarget(){const v=parseFloat(targetInput.value);if(!isNaN(v))post({target:v.toFixed(1)})}
+function nudge(delta){const v=parseFloat(targetInput.value||'68')+delta;targetInput.value=(Math.round(v*10)/10).toFixed(1);applyTarget()}
+function selectProfile(){post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
-function saveControl(){post({coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value})}
-function saveProfiles(){
- const data={};
- const changes=[];
- for(const p of last.profiles){
-  const name=document.getElementById('pName'+p.index).value;
-  const target=document.getElementById('pTarget'+p.index).value;
-  data['profile'+p.index+'Name']=name;
-  data['profile'+p.index+'Target']=target;
-  if(name!==p.name||Math.abs(parseFloat(target)-p.target)>0.04)changes.push(p.name+': '+p.target.toFixed(1)+deg+last.unit+' -> '+target+deg+last.unit+(name!==p.name?' / name -> '+name:''));
- }
- if(!changes.length){profilesDirty=false;saveProfilesBtn.classList.remove('unsaved');return}
- if(!confirm('Save profile changes?\n\n'+changes.join('\n')))return;
- profilesDirty=false;saveProfilesBtn.classList.remove('unsaved');
- post(data);
-}
-function resetProfile(i){const p=last&&last.profiles[i];if(p&&confirm('Reset '+p.name+' target to '+p.default.toFixed(1)+deg+last.unit+'?')){document.getElementById('pTarget'+i).value=p.default.toFixed(1);markProfilesDirty()}}
 function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
 function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
  profileSelect.value=s.activeProfile;
- profileRows.innerHTML=s.profiles.map(p=>`<div class="profileRow"><input id="pName${p.index}" maxlength="15" value="${attr(p.name)}" oninput="markProfilesDirty()"><input id="pTarget${p.index}" inputmode="decimal" step="0.1" value="${p.target.toFixed(1)}" oninput="markProfilesDirty()"><button class="reset" title="Reset to default" onclick="resetProfile(${p.index})">&#8634;</button></div>`).join('');
 }
 async function tick(){
  const r=await fetch('/api/status'); const s=await r.json();
@@ -1624,12 +1594,9 @@ async function tick(){
  document.querySelectorAll('.unit').forEach(e=>e.textContent=deg+s.unit);
  temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
  fermenterName.textContent=s.fermenterName; fermenterNameTop.textContent=s.fermenterName; fermenterNameHero.textContent=s.fermenterName;
- profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=s.profileName+' target '+s.target.toFixed(1)+deg+s.unit; if(!activeDirty&&document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
- if(!profilesDirty&&!document.querySelector('.profileRow input:focus')&&document.activeElement!==profileSelect)renderProfiles(s);
- if(document.activeElement!==coolOnInput)coolOnInput.value=s.coolOn.toFixed(1);
- if(document.activeElement!==heatOnInput)heatOnInput.value=s.heatOn.toFixed(1);
- if(document.activeElement!==holdInput)holdInput.value=s.hold.toFixed(1);
- if(document.activeElement!==offsetInput)offsetInput.value=s.tempOffset.toFixed(1);
+ profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=s.profileName+' target '+s.target.toFixed(1)+deg+s.unit;
+ if(document.activeElement!==profileSelect)renderProfiles(s);
+ if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
  state.textContent=s.state; mode.textContent=s.mode; wifi.textContent=s.wifiConnected?s.ip:s.wifiStatus; demo.hidden=!s.demo;
  heater.textContent=s.heater?'HEATER ON':'HEATER OFF'; pump.textContent=s.pump?'PUMP ON':'PUMP OFF'; heater.classList.toggle('on',s.heater); pump.classList.toggle('on',s.pump); fault.textContent=s.fault;
  summary.textContent=s.tempValid?s.mode+' mode':'Sensor fault - outputs forced off';
@@ -1663,6 +1630,8 @@ loadHistory(); setInterval(loadHistory,30000);
 
 String NetworkManager::settingsHtml() const {
   const String apSsid = setupApSsid();
+  const bool f = _webStatus.unitsFahrenheit;
+  const String unit = unitLabel(f);
   String html = R"HTML(<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FermentDial Settings</title>
@@ -1676,9 +1645,69 @@ label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,selec
 input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:auto;margin-right:7px}button{background:var(--blue);color:white;font-weight:900;cursor:pointer}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.nav a{color:#79d4ff;margin-left:12px}.status{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--accent);font-weight:900}
 .wifiTools{margin:8px 0 12px}.scanStatus{min-height:18px}.networkList{display:grid;gap:6px;margin-top:6px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:var(--text);font-weight:700;text-align:left}.networkMeta{color:var(--muted);font-size:12px;white-space:nowrap}
-@media(max-width:640px){main{padding:12px}.row{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{width:auto;margin:0;background:#102126;color:var(--muted);border:1px solid var(--line);font-weight:900;padding:10px 16px}.tab.active{background:var(--blue);color:#fff;border-color:#3f819d}
+.tabpanel{display:none}.tabpanel.active{display:block}.tabpanel>.panel{margin-bottom:12px}
+.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px 46px;gap:6px;align-items:center}.profileRow input{margin-top:0}.reset{margin-top:0;padding:12px 0;background:#1b3540;color:var(--accent);font-size:16px}
+.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}
+@media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
 <div class="top"><h1>FermentDial Settings</h1><div class="nav"><a href="/dashboard">Dashboard</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></div></div>
+<div class="tabs">
+<button class="tab" data-tab="profiles">Profiles</button>
+<button class="tab" data-tab="controller">Controller</button>
+<button class="tab" data-tab="system">System</button>
+<button class="tab" data-tab="monitoring">Monitoring</button>
+</div>
+<div id="tab-profiles" class="tabpanel">
+<section class="panel"><h2>Fermentation Profiles</h2>
+<p class="hint">Presets you recall from the dashboard or the dial. Editing a preset here doesn't change the live setpoint until you select that profile.</p>
+<div class="profileRows" style="margin-top:10px">
+)HTML";
+  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
+    html += R"HTML(<div class="profileRow"><input id="pName)HTML";
+    html += String(i);
+    html += R"HTML(" maxlength="15" value=")HTML";
+    html += htmlEscape(_webStatus.profiles[i].name);
+    html += R"HTML("><input id="pTarget)HTML";
+    html += String(i);
+    html += R"HTML(" inputmode="decimal" step="0.1" value=")HTML";
+    html += String(toDisplayTemp(_webStatus.profiles[i].targetC, f), 1);
+    html += R"HTML("><button class="reset" title="Reset to default" data-i=")HTML";
+    html += String(i);
+    html += R"HTML(" data-default=")HTML";
+    html += String(toDisplayTemp(defaultProfileTargetC(i), f), 1);
+    html += R"HTML(" onclick="resetProfile(this)">&#8634;</button></div>
+)HTML";
+  }
+  html += R"HTML(</div>
+<button class="primary" onclick="saveProfiles()">Save profiles</button>
+<div class="saveStatus" id="profilesStatus"></div>
+</section>
+</div>
+<div id="tab-controller" class="tabpanel">
+<section class="panel"><h2>Regulation</h2>
+<p class="hint">How tightly the controller holds the setpoint. Values are in )HTML";
+  html += unit;
+  html += R"HTML(.</p>
+<div class="thresholds" style="margin-top:10px">
+<label>Cool on<input id="coolOnInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.coolOnDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Heat on<input id="heatOnInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.heatOnDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Hold band<input id="holdInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.holdDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Sensor offset<input id="offsetInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.tempOffsetC, f), 1);
+  html += R"HTML("></label>
+</div>
+<button class="primary" onclick="saveControl()">Save controller settings</button>
+<div class="saveStatus" id="controllerStatus"></div>
+</section>
+</div>
+<div id="tab-system" class="tabpanel">
 <div class="grid">
 <section class="panel"><h2>Device</h2>
 <form method="post" action="/settings/device">
@@ -1749,6 +1778,21 @@ async function scanWifi(){
 <p class="hint">Setup AP: )HTML";
   html += htmlEscape(apSsid);
   html += R"HTML( (open network)</p></section>
+<section class="panel"><h2>Firmware Update</h2>
+<p class="warn">Outputs turn off before upload starts. The controller reboots after a successful update.</p>
+)HTML";
+#if FERM_ENABLE_OTA
+  html += R"HTML(<form method="post" action="/firmware" enctype="multipart/form-data">
+<label>Firmware .bin<input type="file" name="firmware" accept=".bin" required></label>
+<button type="submit">Upload and reboot</button>
+</form>)HTML";
+#else
+  html += R"HTML(<p class="hint">Firmware upload is disabled in this build.</p>)HTML";
+#endif
+  html += R"HTML(<p class="hint">Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.</p>
+</section>
+</div></div>
+<div id="tab-monitoring" class="tabpanel"><div class="grid">
 <section class="panel"><h2>Prometheus</h2>
 <div class="status">/metrics</div>
 <p class="hint">Scrape <code>http://)HTML";
@@ -1855,20 +1899,21 @@ async function scanWifi(){
   html += htmlEscape(_lastMqttStatus);
   html += R"HTML(</p>
 </section>
-<section class="panel"><h2>Firmware Update</h2>
-<p class="warn">Outputs turn off before upload starts. The controller reboots after a successful update.</p>
-)HTML";
-#if FERM_ENABLE_OTA
-  html += R"HTML(<form method="post" action="/firmware" enctype="multipart/form-data">
-<label>Firmware .bin<input type="file" name="firmware" accept=".bin" required></label>
-<button type="submit">Upload and reboot</button>
-</form>)HTML";
-#else
-  html += R"HTML(<p class="hint">Firmware upload is disabled in this build.</p>)HTML";
-#endif
-  html += R"HTML(<p class="hint">Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.</p>
-</section>
-</div></main></body></html>)HTML";
+</div></div>
+<script>
+function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
+document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
+showTab((location.hash||'#profiles').slice(1));
+async function postSettings(d){await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d).toString()});}
+async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}}catch(e){}}
+function resetProfile(btn){const t=document.getElementById('pTarget'+btn.dataset.i);if(t)t.value=btn.dataset.default;}
+async function saveProfiles(){const d={};for(let i=0;i<)HTML";
+  html += String(PROFILE_COUNT);
+  html += R"HTML(;i++){const n=document.getElementById('pName'+i),t=document.getElementById('pTarget'+i);if(!n||!t)continue;d['profile'+i+'Name']=n.value;d['profile'+i+'Target']=t.value;}const st=document.getElementById('profilesStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
+async function saveControl(){const d={coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value};const st=document.getElementById('controllerStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
+refresh();
+</script>
+</main></body></html>)HTML";
   return html;
 }
 
