@@ -52,6 +52,7 @@ constexpr uint16_t COLOR_TRACK = rgb565(30, 56, 64);     // unlit ring
 constexpr uint16_t COLOR_TICK = rgb565(53, 111, 137);    // 5 C scale ticks
 constexpr uint16_t COLOR_GOLD = rgb565(255, 209, 120);   // setpoint tick
 constexpr uint16_t COLOR_WIFI_OFF = rgb565(96, 122, 130);
+constexpr int32_t TOUCH_MENU_ITEM_PX = 28;
 
 constexpr int16_t GAUGE_R = 108;        // gauge radius (hugs the bezel)
 constexpr int16_t GAUGE_W = 7;          // ring thickness
@@ -197,7 +198,21 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   auto touch = M5Dial.Touch.getDetail();
+  if (_screen == Screen::Menu && touch.isFlicking()) {
+    markActivity(nowMs);
+    scrollMenuByTouch(touch.deltaY());
+    return;
+  }
+
   if (touch.wasFlicked()) {
+    if (_screen == Screen::Menu) {
+      _touchMenuScrollAccumulator = 0;
+      const bool horizontal = abs(touch.distanceX()) > abs(touch.distanceY());
+      if (horizontal) {
+        handleSwipe(nowMs, settings, touch.distanceX(), touch.distanceY());
+      }
+      return;
+    }
     handleSwipe(nowMs, settings, touch.distanceX(), touch.distanceY());
     return;
   }
@@ -283,14 +298,6 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
         _screen = Screen::Main;
         resetSettingsEncoderFilters();
       }
-    } else {
-      const int8_t direction = dy < 0 ? 1 : -1;
-      int32_t next = static_cast<int32_t>(_menuIndex) + direction;
-      while (next < 0) {
-        next += MENU_COUNT;
-      }
-      _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
-      resetSettingsEncoderFilters();
     }
     _dirty = true;
     return;
@@ -313,6 +320,22 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
     resetSettingsEncoderFilters();
     _dirty = true;
   }
+}
+
+void DisplayUI::scrollMenuByTouch(int16_t deltaY) {
+  _touchMenuScrollAccumulator -= deltaY;
+  int32_t steps = _touchMenuScrollAccumulator / TOUCH_MENU_ITEM_PX;
+  if (steps == 0) {
+    return;
+  }
+  _touchMenuScrollAccumulator -= steps * TOUCH_MENU_ITEM_PX;
+
+  int32_t next = static_cast<int32_t>(_menuIndex) + steps;
+  while (next < 0) {
+    next += MENU_COUNT;
+  }
+  _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
+  _dirty = true;
 }
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
@@ -565,6 +588,7 @@ int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator,
 void DisplayUI::resetSettingsEncoderFilters() {
   _menuEncoderAccumulator = 0;
   _editEncoderAccumulator = 0;
+  _touchMenuScrollAccumulator = 0;
 }
 
 void DisplayUI::requestSave() { _saveRequested = true; }

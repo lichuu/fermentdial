@@ -44,6 +44,7 @@ class DisplayUI {
   void processInput(uint32_t nowMs, Settings &settings);
   void handleTouch(uint32_t nowMs, Settings &settings);
   void handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx, int16_t dy);
+  void scrollMenuByTouch(int16_t deltaY);
   void handleEncoder(int32_t delta, Settings &settings);
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
@@ -101,6 +102,7 @@ class DisplayUI {
   bool _editSnapshotValid = false;
   int32_t _menuEncoderAccumulator = 0;
   int32_t _editEncoderAccumulator = 0;
+  int32_t _touchMenuScrollAccumulator = 0;
   bool _dirty = true;
   bool _saveRequested = false;
   bool _wifiSetupRequested = false;
