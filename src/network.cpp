@@ -1356,7 +1356,7 @@ String NetworkManager::pageHtml() const {
 main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
 .statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
-.hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1}
+.hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1;text-shadow:0 1px 4px rgba(4,12,16,.92),0 0 2px rgba(4,12,16,.92)}
 body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
 .heroTop{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px;text-transform:uppercase}.readout{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:12px}
 .tempBlock{min-width:0}.tempLine{display:flex;align-items:flex-start}.temp{font-size:78px;line-height:.9;font-weight:900;letter-spacing:0}.unit{font-size:28px;color:var(--accent);margin-left:7px;margin-top:8px}.state{font-size:25px;font-weight:900;margin-top:8px;color:var(--ok)}body[data-state=heating] .state{color:var(--heat)}body[data-state=cooling] .state,body[data-state=crashing] .state{color:var(--cool)}body[data-state=fault] .state{color:var(--fault)}
@@ -1481,7 +1481,7 @@ function drawSpark(){
  const area=new Path2D(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?area.lineTo(px,py):area.moveTo(px,py);}); area.lineTo(w,h); area.lineTo(0,h); area.closePath();
  const fg=g.createLinearGradient(0,top,0,h); fg.addColorStop(0,'rgba(46,213,160,0.16)'); fg.addColorStop(1,'rgba(46,213,160,0)');
  g.fillStyle=fg; g.fill(area);
- const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'rgba(46,213,160,0.38)'); lg.addColorStop(1,'rgba(127,230,200,0.38)');
+ const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'rgba(46,213,160,0.28)'); lg.addColorStop(1,'rgba(127,230,200,0.28)');
  g.strokeStyle=lg; g.lineWidth=1.5; g.lineJoin='round'; g.lineCap='round'; g.stroke();
 }
 async function loadHistory(){try{const r=await fetch('/api/history'); const j=await r.json(); spark=j.tempsC||[]; drawSpark();}catch(e){}}
