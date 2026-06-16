@@ -331,7 +331,11 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
         cancelQuickFlow();
       }
     } else {
-      moveQuickMenu(dy > 0 ? 1 : -1);
+      if (dy > 0) {
+        cancelQuickFlow();
+      } else {
+        moveQuickMenu(-1);
+      }
     }
     _dirty = true;
     return;
@@ -346,7 +350,11 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
         resetSettingsEncoderFilters();
       }
     } else {
-      moveQuickSelection(dy > 0 ? 1 : -1, settings);
+      if (dy > 0) {
+        cancelQuickFlow();
+      } else {
+        moveQuickSelection(-1, settings);
+      }
     }
     _dirty = true;
     return;
