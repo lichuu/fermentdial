@@ -1479,10 +1479,10 @@ function drawSpark(){
  const Y=v=>(h-pad)-(v-lo)/(hi-lo)*((h-pad)-top);
  g.beginPath(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?g.lineTo(px,py):g.moveTo(px,py);});
  const area=new Path2D(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?area.lineTo(px,py):area.moveTo(px,py);}); area.lineTo(w,h); area.lineTo(0,h); area.closePath();
- const fg=g.createLinearGradient(0,top,0,h); fg.addColorStop(0,'rgba(46,213,160,0.30)'); fg.addColorStop(1,'rgba(46,213,160,0)');
+ const fg=g.createLinearGradient(0,top,0,h); fg.addColorStop(0,'rgba(46,213,160,0.16)'); fg.addColorStop(1,'rgba(46,213,160,0)');
  g.fillStyle=fg; g.fill(area);
- const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'#2ee5a0'); lg.addColorStop(1,'#7fe6c8');
- g.strokeStyle=lg; g.lineWidth=2; g.lineJoin='round'; g.lineCap='round'; g.stroke();
+ const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'rgba(46,213,160,0.38)'); lg.addColorStop(1,'rgba(127,230,200,0.38)');
+ g.strokeStyle=lg; g.lineWidth=1.5; g.lineJoin='round'; g.lineCap='round'; g.stroke();
 }
 async function loadHistory(){try{const r=await fetch('/api/history'); const j=await r.json(); spark=j.tempsC||[]; drawSpark();}catch(e){}}
 addEventListener('resize',drawSpark);

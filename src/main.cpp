@@ -18,8 +18,10 @@ DisplayUI ui;
 uint32_t lastSerialLogMs = 0;
 
 void prepareForFirmwareUpdate() {
+  // Force the relays off for the flash itself, but keep the saved mode/profile
+  // so the controller resumes what was running once it reboots (resilient to
+  // both OTA updates and power loss). Flush current settings first.
   Serial.println(F("Firmware update requested; forcing outputs OFF"));
-  settings.mode = UserMode::Off;
   controller.forceOutputsOff(millis());
   storage.saveNow(settings);
 }

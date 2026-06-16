@@ -1822,8 +1822,9 @@ String DisplayUI::editDefaultLine(const Settings &settings) const {
     return String("Target ") +
            formatTemperature(activeTargetC(settings), settings.unitsFahrenheit);
   }
-  return String("Current ") + menuValue(_editIndex, settings) + " -> Default " +
-         defaultMenuValue(_editIndex, settings);
+  // The current value is already shown large above; this just notes what the
+  // Reset button restores, so keep it to the default alone.
+  return String("Default ") + defaultMenuValue(_editIndex, settings);
 }
 
 String DisplayUI::editConfirmLine(const Settings &settings) const {
