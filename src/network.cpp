@@ -436,7 +436,7 @@ void NetworkManager::startSetupPortal() {
   _snapshot.status = "Setup AP";
 
   WiFi.disconnect(true, false);
-  WiFi.mode(WIFI_AP);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(SETUP_IP, SETUP_GATEWAY, SETUP_MASK);
   WiFi.softAP(ssid.c_str(), SETUP_AP_PASSWORD);
   _snapshot.ipAddress = WiFi.softAPIP().toString();
@@ -525,6 +525,7 @@ void NetworkManager::startWebServer() {
 #endif
   _server.on("/api/status", HTTP_GET,
              [this]() { _server.send(200, "application/json", statusJson()); });
+  _server.on("/api/wifi/scan", HTTP_GET, [this]() { handleWifiScan(); });
   _server.on("/api/settings", HTTP_POST, [this]() { handleSettingsPost(); });
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
@@ -582,6 +583,34 @@ void NetworkManager::handleFirmwareUpload() {
     _firmwareUpdateInProgress = false;
     Serial.println(F("Firmware upload aborted"));
   }
+#endif
+}
+
+void NetworkManager::handleWifiScan() {
+#if FERM_ENABLE_NETWORK
+  const int count = WiFi.scanNetworks(false, true);
+  if (count < 0) {
+    _server.send(500, "application/json",
+                 "{\"error\":\"Wi-Fi scan failed\",\"networks\":[]}");
+    return;
+  }
+
+  String json = "{\"networks\":[";
+  for (int i = 0; i < count; ++i) {
+    if (i > 0) {
+      json += ",";
+    }
+    json += "{\"ssid\":" + jsonString(WiFi.SSID(i)) + ",";
+    json += "\"rssi\":" + String(WiFi.RSSI(i)) + ",";
+    json += "\"channel\":" + String(WiFi.channel(i)) + ",";
+    json += "\"secure\":" +
+            String(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "false"
+                                                             : "true") +
+            "}";
+  }
+  json += "]}";
+  WiFi.scanDelete();
+  _server.send(200, "application/json", json);
 #endif
 }
 
@@ -1175,6 +1204,8 @@ String NetworkManager::statusJson() const {
   json += "\"ip\":" + jsonString(_snapshot.ipAddress) + ",";
   json += "\"hostname\":" + jsonString(_snapshot.hostname) + ",";
   json += "\"otaEnabled\":" + String(FERM_ENABLE_OTA ? "true" : "false") + ",";
+  json += "\"firmwareVersion\":" + jsonString(FIRMWARE_VERSION) + ",";
+  json += "\"firmwareGitSha\":" + jsonString(FIRMWARE_GIT_SHA) + ",";
   json += "\"demo\":" + String(_webStatus.demoSensor ? "true" : "false") + ",";
   json +=
       "\"tempValid\":" + String(_webStatus.tempValid ? "true" : "false") + ",";
@@ -1394,6 +1425,7 @@ h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}.hint{color:var(--muted);font-si
 label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,select,button{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:5px}
 input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:auto;margin-right:7px}button{background:var(--blue);color:white;font-weight:900;cursor:pointer}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.nav a{color:#79d4ff;margin-left:12px}.status{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--accent);font-weight:900}
+.wifiTools{margin:8px 0 12px}.scanStatus{min-height:18px}.networkList{display:grid;gap:6px;margin-top:6px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:var(--text);font-weight:700;text-align:left}.networkMeta{color:var(--muted);font-size:12px;white-space:nowrap}
 @media(max-width:640px){main{padding:12px}.row{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
 <div class="top"><h1>FermentDial Settings</h1><div class="nav"><a href="/dashboard">Dashboard</a><a href="/metrics">Metrics</a></div></div>
@@ -1422,9 +1454,32 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <label>Wi-Fi name<input name="ssid" autocomplete="off" required value=")HTML";
   html += htmlEscape(_wifiSsid);
   html += R"HTML("></label>
+<div class="wifiTools">
+<button type="button" onclick="scanWifi()">Scan for networks</button>
+<div class="hint scanStatus" id="wifiScanStatus">Select a scanned network or enter the name manually.</div>
+<div class="networkList" id="wifiNetworks"></div>
+</div>
 <label>Password<input name="pass" type="password" placeholder="leave blank to keep saved"></label>
 <button type="submit">Save and reboot</button>
 </form>
+<script>
+function pickWifi(ssid){document.querySelector('input[name=ssid]').value=ssid}
+async function scanWifi(){
+ const status=document.getElementById('wifiScanStatus'),list=document.getElementById('wifiNetworks');
+ status.textContent='Scanning...'; list.innerHTML='';
+ try{
+  const r=await fetch('/api/wifi/scan'); if(!r.ok)throw new Error('scan failed');
+  const data=await r.json(),nets=(data.networks||[]).filter(n=>n.ssid);
+  if(!nets.length){status.textContent='No networks found. Enter the name manually.';return}
+  status.textContent='Select a network or enter the name manually.';
+  for(const n of nets){
+   const b=document.createElement('button'),name=document.createElement('span'),meta=document.createElement('span');
+   b.type='button'; name.textContent=n.ssid; meta.className='networkMeta'; meta.textContent=(n.secure?'secured':'open')+' '+n.rssi+' dBm';
+   b.appendChild(name); b.appendChild(meta); b.onclick=function(){pickWifi(n.ssid)}; list.appendChild(b);
+  }
+ }catch(e){status.textContent='Scan failed. Enter the name manually.'}
+}
+</script>
 <p class="hint">Connected IP: )HTML";
   html += htmlEscape(_snapshot.ipAddress.length() > 0 ? _snapshot.ipAddress
                                                        : "not connected");
@@ -1564,6 +1619,7 @@ body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;
 main{max-width:480px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}a{color:#79d4ff}
+.scanStatus{min-height:20px;margin:0 0 8px}.networkList{display:grid;gap:6px;margin:0 0 16px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:#f8fbff;font-weight:700;text-align:left;margin:0}.networkMeta{color:#a9bac8;font-size:12px;white-space:nowrap}
 </style></head><body><main><div class="card">
 <h1>FermentDial Wi-Fi</h1>
 <p class="hint">Join your fermentation controller to your home Wi-Fi.</p>
@@ -1571,9 +1627,30 @@ input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;fon
 <p><a href="/settings">Device settings</a></p>
 <form method="post" action="/wifi">
 <label>Wi-Fi name</label><input name="ssid" autocomplete="off" required>
+<button type="button" onclick="scanWifi()">Scan for networks</button>
+<p class="hint scanStatus" id="wifiScanStatus">Select a scanned network or enter the name manually.</p>
+<div class="networkList" id="wifiNetworks"></div>
 <label>Password</label><input name="pass" type="password">
 <button type="submit">Save and reboot</button>
 </form>
+<script>
+function pickWifi(ssid){document.querySelector('input[name=ssid]').value=ssid}
+async function scanWifi(){
+ const status=document.getElementById('wifiScanStatus'),list=document.getElementById('wifiNetworks');
+ status.textContent='Scanning...'; list.innerHTML='';
+ try{
+  const r=await fetch('/api/wifi/scan'); if(!r.ok)throw new Error('scan failed');
+  const data=await r.json(),nets=(data.networks||[]).filter(n=>n.ssid);
+  if(!nets.length){status.textContent='No networks found. Enter the name manually.';return}
+  status.textContent='Select a network or enter the name manually.';
+  for(const n of nets){
+   const b=document.createElement('button'),name=document.createElement('span'),meta=document.createElement('span');
+   b.type='button'; name.textContent=n.ssid; meta.className='networkMeta'; meta.textContent=(n.secure?'secured':'open')+' '+n.rssi+' dBm';
+   b.appendChild(name); b.appendChild(meta); b.onclick=function(){pickWifi(n.ssid)}; list.appendChild(b);
+  }
+ }catch(e){status.textContent='Scan failed. Enter the name manually.'}
+}
+</script>
 <p class="hint">Setup AP: )HTML";
   html += htmlEscape(setupApSsid());
   html += R"HTML( / fermentdial</p>

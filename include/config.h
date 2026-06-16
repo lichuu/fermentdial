@@ -35,10 +35,15 @@
 #endif
 #endif
 
+#ifndef FERM_GIT_SHA
+#define FERM_GIT_SHA "unknown"
+#endif
+
 namespace ferm {
 
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
+constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
 constexpr uint16_t SETTINGS_VERSION = 6;
 constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;

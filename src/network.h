@@ -128,6 +128,7 @@ private:
   void startWifi(uint32_t nowMs);
   void startSetupPortal();
   void startWebServer();
+  void handleWifiScan();
   void handleSettingsPost();
   void handleDeviceSettingsPost();
   void handleFirmwareUpload();

@@ -97,7 +97,7 @@ If no Wi-Fi credentials are saved, the Dial starts a setup access point:
 - Setup page: `http://192.168.4.1/`
 - Dashboard page: `http://192.168.4.1/dashboard`
 
-Join that network from a phone or laptop, open the setup page, enter your home Wi-Fi credentials, and the device will save them to NVS and reboot. The setup page also links to the live dashboard, so demo Wi-Fi builds can show the browser UI without joining a home network.
+Join that network from a phone or laptop, open the setup page, scan for nearby Wi-Fi networks or enter the network name manually, then enter the password. The device saves the credentials to NVS and reboots. The setup page also links to the live dashboard, so demo Wi-Fi builds can show the browser UI without joining a home network.
 
 After it joins your Wi-Fi, the Dial settings menu shows the assigned IP address under `Wi-Fi`. Open that IP address in a browser to see the local web UI. The DHCP hostname is `fermentdial-XXXX` by default, or `fermentdial-{fermenter-name}-XXXX` after the fermenter is named. From the Dial settings menu, selecting `Wi-Fi` starts the setup AP again even if credentials are already saved.
 
