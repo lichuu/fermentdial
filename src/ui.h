@@ -103,6 +103,7 @@ class DisplayUI {
   uint32_t _pressStartedMs = 0;
   bool _longPressHandled = false;
   bool _dimmed = false;
+  uint8_t _appliedBrightness = 255;
   uint32_t _setpointFocusUntilMs = 0;
   bool _largeFontLoaded = false;
   String _toast = "";

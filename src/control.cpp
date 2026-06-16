@@ -228,13 +228,6 @@ void FermentationController::applyOutputs(uint32_t nowMs,
     nextFault = FaultCode::Interlock;
   }
 
-#if FERM_DEMO_SENSOR
-  // Demo sensor mode is for UI work without probes or loads attached. Keep
-  // physical outputs off so simulated temperatures cannot energize hardware.
-  nextHeater = false;
-  nextPump = false;
-#endif
-
   if (_pumpOn != nextPump) {
     if (nextPump) {
       _lastPumpOnMs = nowMs;
@@ -248,10 +241,20 @@ void FermentationController::applyOutputs(uint32_t nowMs,
   _runtimeState = nextState;
   _faultCode = nextFault;
 
+#if FERM_DEMO_SENSOR
+  // Demo sensor mode is for UI work without probes or loads attached. Keep the
+  // physical outputs de-energized so simulated temperatures cannot drive real
+  // hardware, but leave _heaterOn/_pumpOn reflecting the logical decision so the
+  // UI and web state still show heater/pump activity.
+  const int offLevel = MOSFET_ACTIVE_HIGH ? LOW : HIGH;
+  digitalWrite(PIN_HEATER_TRIGGER, offLevel);
+  digitalWrite(PIN_PUMP_TRIGGER, offLevel);
+#else
   // MOSFET triggers are active HIGH.
   digitalWrite(PIN_HEATER_TRIGGER,
                _heaterOn == MOSFET_ACTIVE_HIGH ? HIGH : LOW);
   digitalWrite(PIN_PUMP_TRIGGER, _pumpOn == MOSFET_ACTIVE_HIGH ? HIGH : LOW);
+#endif
 }
 
 bool FermentationController::pumpMinRunActive(uint32_t nowMs,

@@ -117,9 +117,16 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
     _dirty = true;
   }
 
+  const uint8_t activeBrightness = settings.brightness;
   if (!_dimmed && nowMs - _lastActivityMs > DISPLAY_DIM_MS) {
-    M5Dial.Display.setBrightness(60);
+    const uint8_t dim =
+        DIM_BRIGHTNESS < activeBrightness ? DIM_BRIGHTNESS : activeBrightness;
+    M5Dial.Display.setBrightness(dim);
     _dimmed = true;
+    _appliedBrightness = dim;
+  } else if (!_dimmed && _appliedBrightness != activeBrightness) {
+    M5Dial.Display.setBrightness(activeBrightness);
+    _appliedBrightness = activeBrightness;
   }
 
   if (_dirty || nowMs - _lastDrawMs >= UI_REDRAW_INTERVAL_MS) {
@@ -414,8 +421,8 @@ void DisplayUI::requestSave() { _saveRequested = true; }
 void DisplayUI::markActivity(uint32_t nowMs) {
   _lastActivityMs = nowMs;
   if (_dimmed) {
-    M5Dial.Display.setBrightness(255);
     _dimmed = false;
+    _appliedBrightness = 0;  // force re-apply at configured brightness next update
   }
 }
 

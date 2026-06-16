@@ -94,6 +94,11 @@ constexpr float DEFAULT_TEMP_OFFSET_F = 0.0f;
 constexpr float DEFAULT_TEMP_OFFSET_C = deltaFToC(DEFAULT_TEMP_OFFSET_F);
 constexpr const char *DEFAULT_FERMENTER_NAME = "Fermenter";
 
+constexpr uint8_t DEFAULT_BRIGHTNESS = 255;
+constexpr uint8_t MIN_BRIGHTNESS = 30;
+constexpr uint8_t MAX_BRIGHTNESS = 255;
+constexpr uint8_t DIM_BRIGHTNESS = 60;
+
 constexpr float MIN_VALID_TEMP_F = 20.0f;
 constexpr float MAX_VALID_TEMP_F = 120.0f;
 constexpr float MIN_TARGET_F = 35.0f;
@@ -179,6 +184,7 @@ struct Settings {
   uint32_t pumpMinRunSeconds = DEFAULT_PUMP_MIN_RUN_SECONDS;
   float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
+  uint8_t brightness = DEFAULT_BRIGHTNESS;
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
@@ -357,6 +363,9 @@ inline void sanitizeSettings(Settings &settings) {
   if (settings.fermenterName.length() > MAX_FERMENTER_NAME_LENGTH) {
     settings.fermenterName =
         settings.fermenterName.substring(0, MAX_FERMENTER_NAME_LENGTH);
+  }
+  if (settings.brightness < MIN_BRIGHTNESS) {
+    settings.brightness = MIN_BRIGHTNESS;
   }
   if (settings.activeProfile >= PROFILE_COUNT) {
     settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);

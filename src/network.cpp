@@ -251,6 +251,7 @@ void NetworkManager::begin(const Settings &settings) {
   _webStatus.holdDeltaC = settings.holdDeltaC;
   _webStatus.tempOffsetC = settings.tempOffsetC;
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
+  _webStatus.brightness = settings.brightness;
   _webStatus.mode = settings.mode;
 
 #if FERM_ENABLE_NETWORK
@@ -337,6 +338,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   _webStatus.holdDeltaC = settings.holdDeltaC;
   _webStatus.tempOffsetC = settings.tempOffsetC;
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
+  _webStatus.brightness = settings.brightness;
   _webStatus.mode = settings.mode;
   _webStatus.runtimeState = controller.runtimeState();
   _webStatus.faultCode = controller.faultCode();
@@ -555,6 +557,17 @@ void NetworkManager::handleDeviceSettingsPost() {
     _webStatus.fermenterName = _settings->fermenterName;
     _hostname = networkHostname(_settings->fermenterName);
     _snapshot.hostname = _hostname;
+    _settingsChanged = true;
+  }
+  if (_server.hasArg("brightness")) {
+    int brightness = _server.arg("brightness").toInt();
+    if (brightness < MIN_BRIGHTNESS) {
+      brightness = MIN_BRIGHTNESS;
+    } else if (brightness > MAX_BRIGHTNESS) {
+      brightness = MAX_BRIGHTNESS;
+    }
+    _settings->brightness = static_cast<uint8_t>(brightness);
+    _webStatus.brightness = _settings->brightness;
     _settingsChanged = true;
   }
   _server.sendHeader("Location", "/settings", true);
@@ -974,6 +987,7 @@ String NetworkManager::statusJson() const {
   json += "\"hold\":" + jsonFloat(hold) + ",";
   json += "\"tempOffset\":" + jsonFloat(tempOffset) + ",";
   json += "\"unit\":\"" + String(unit) + "\",";
+  json += "\"brightness\":" + String(_webStatus.brightness) + ",";
   json += "\"mode\":\"" + String(modeTopicText(_webStatus.mode)) + "\",";
   json +=
       "\"state\":\"" +
@@ -1172,6 +1186,9 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <label>Fermenter name<input name="fermenterName" maxlength="24" value=")HTML";
   html += htmlEscape(_webStatus.fermenterName);
   html += R"HTML("></label>
+<label>Screen brightness<input name="brightness" type="range" min="30" max="255" step="5" value=")HTML";
+  html += String(_webStatus.brightness);
+  html += R"HTML("></label>
 <button type="submit">Save device settings</button>
 </form>
 <p class="hint">Firmware: )HTML";
@@ -1213,7 +1230,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <label>Target<select name="influxTarget">
 <option value="1")HTML";
   html += selected(_influx.target, InfluxExportTarget::V1);
-  html += R"HTML(>InfluxDB 1.x / 1.8+</option>
+  html += R"HTML(>InfluxDB 1.x</option>
 <option value="2")HTML";
   html += selected(_influx.target, InfluxExportTarget::V2);
   html += R"HTML(>InfluxDB 2.x</option>
@@ -1227,6 +1244,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <label>Base URL<input name="influxUrl" placeholder="http://host:8086" value=")HTML";
   html += htmlEscape(_influx.url);
   html += R"HTML("></label>
+<div id="influxV1">
 <div class="row">
 <label>Database / DB<input name="influxDatabase" value=")HTML";
   html += htmlEscape(_influx.database);
@@ -1241,6 +1259,8 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <label>Password / v1 token<input name="influxPassword" type="password" placeholder="leave blank to keep saved"></label>
 </div>
 <label><input type="checkbox" name="clearInfluxPassword">Clear saved password</label>
+</div>
+<div id="influxV2">
 <div class="row">
 <label>Org<input name="influxOrg" value=")HTML";
   html += htmlEscape(_influx.org);
@@ -1251,11 +1271,13 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 </div>
 <label>V2/V3 token<input name="influxToken" type="password" placeholder="leave blank to keep saved"></label>
 <label><input type="checkbox" name="clearInfluxToken">Clear saved token</label>
+</div>
 <label>Interval seconds<input name="influxInterval" inputmode="numeric" value=")HTML";
   html += String(_influx.intervalSeconds);
   html += R"HTML("></label>
 <button type="submit">Save export settings</button>
 </form>
+<script>(function(){var s=document.querySelector('select[name=influxTarget]'),a=document.getElementById('influxV1'),b=document.getElementById('influxV2');function u(){var v2=(s.value==='2'||s.value==='3');b.style.display=v2?'':'none';a.style.display=v2?'none':'';}s.addEventListener('change',u);u();})();</script>
 <p class="hint">Last export: )HTML";
   html += htmlEscape(_lastInfluxStatus);
   html += R"HTML(. VictoriaMetrics uses Influx line protocol at <code>/write</code> unless the URL already includes an Influx write path.</p>

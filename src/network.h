@@ -34,6 +34,7 @@ struct WebStatus {
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;
   float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
+  uint8_t brightness = DEFAULT_BRIGHTNESS;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;
   FaultCode faultCode = FaultCode::None;

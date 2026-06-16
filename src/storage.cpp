@@ -118,6 +118,7 @@ bool SettingsStorage::load(Settings &settings) {
       _prefs.getUInt("pumpRun", DEFAULT_PUMP_MIN_RUN_SECONDS);
   settings.tempOffsetC = _prefs.getFloat("offsetC", DEFAULT_TEMP_OFFSET_C);
   settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
+  settings.brightness = _prefs.getUChar("bright", DEFAULT_BRIGHTNESS);
   sanitizeSettings(settings);
   if (version == SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE) {
     if (migrateProfileDefaults(settings)) {
@@ -161,6 +162,7 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putUInt("pumpRun", copy.pumpMinRunSeconds);
   _prefs.putFloat("offsetC", copy.tempOffsetC);
   _prefs.putBool("unitsF", copy.unitsFahrenheit);
+  _prefs.putUChar("bright", copy.brightness);
   _pending = false;
 }
 
