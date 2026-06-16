@@ -25,6 +25,7 @@ enum MenuIndex : uint8_t {
 };
 
 constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
+constexpr uint8_t QUICK_ACTION_COUNT = 2;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
@@ -204,6 +205,13 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     scrollMenuByTouch(touch.deltaY());
     return;
   }
+  if ((_screen == Screen::QuickMenu || _screen == Screen::QuickProfile ||
+       _screen == Screen::QuickMode) &&
+      touch.isFlicking()) {
+    markActivity(nowMs);
+    scrollQuickByTouch(touch.deltaY(), settings);
+    return;
+  }
 
   if (touch.wasFlicked()) {
     if (_screen == Screen::Menu) {
@@ -226,9 +234,38 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
 
   const int16_t h = M5Dial.Display.height();
   if (_screen == Screen::Main) {
-    _screen = Screen::Menu;
-    resetSettingsEncoderFilters();
-    _dirty = true;
+    openQuickMenu(settings);
+    return;
+  }
+
+  if (_screen == Screen::QuickMenu) {
+    if (touch.y < h / 3) {
+      handleEncoder(-MENU_ENCODER_DIVISOR, settings);
+    } else if (touch.y > (h * 2) / 3) {
+      handleEncoder(MENU_ENCODER_DIVISOR, settings);
+    } else {
+      handleShortPress(nowMs, settings);
+    }
+    return;
+  }
+
+  if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
+    if (touch.y < h / 3) {
+      handleEncoder(-MENU_ENCODER_DIVISOR, settings);
+    } else if (touch.y > (h * 2) / 3) {
+      handleEncoder(MENU_ENCODER_DIVISOR, settings);
+    } else {
+      requestQuickConfirm();
+    }
+    return;
+  }
+
+  if (_screen == Screen::QuickConfirm) {
+    if (touch.y > h / 2) {
+      confirmQuickAction(settings);
+    } else {
+      cancelQuickFlow();
+    }
     return;
   }
 
@@ -282,21 +319,45 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
   markActivity(nowMs);
 
   if (_screen == Screen::Main) {
+    openQuickMenu(settings);
+    return;
+  }
+
+  if (_screen == Screen::QuickMenu) {
     if (horizontal) {
-      const float stepC = settings.unitsFahrenheit ? deltaFToC(0.5f) : 0.5f;
-      setActiveTargetC(settings, activeTargetC(settings) +
-                                     (dx > 0 ? stepC : -stepC));
-      _setpointFocusUntilMs = nowMs + 3000;
-      _toast = String("Target ") +
-               formatTemperature(activeTargetC(settings),
-                                 settings.unitsFahrenheit);
-      _toastUntilMs = nowMs + 1200;
-      requestSave();
-    } else if (dy < 0) {
-      _screen = Screen::Menu;
-      resetSettingsEncoderFilters();
+      if (dx > 0) {
+        selectQuickAction(settings);
+      } else {
+        cancelQuickFlow();
+      }
+    } else {
+      moveQuickMenu(dy > 0 ? 1 : -1);
     }
     _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
+    if (horizontal) {
+      if (dx > 0) {
+        requestQuickConfirm();
+      } else {
+        _screen = Screen::QuickMenu;
+        resetSettingsEncoderFilters();
+      }
+    } else {
+      moveQuickSelection(dy > 0 ? 1 : -1, settings);
+    }
+    _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::QuickConfirm) {
+    if (dx > 0) {
+      confirmQuickAction(settings);
+    } else {
+      cancelQuickFlow();
+    }
     return;
   }
 
@@ -348,12 +409,40 @@ void DisplayUI::scrollMenuByTouch(int16_t deltaY) {
   _dirty = true;
 }
 
+void DisplayUI::scrollQuickByTouch(int16_t deltaY, const Settings &settings) {
+  _touchMenuScrollAccumulator -= deltaY;
+  int32_t steps = _touchMenuScrollAccumulator / TOUCH_MENU_ITEM_PX;
+  if (steps == 0) {
+    return;
+  }
+  _touchMenuScrollAccumulator -= steps * TOUCH_MENU_ITEM_PX;
+
+  if (_screen == Screen::QuickMenu) {
+    moveQuickMenu(steps);
+  } else {
+    moveQuickSelection(steps, settings);
+  }
+  _dirty = true;
+}
+
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
   if (_screen == Screen::Main) {
-    float stepC = settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f;
-    setActiveTargetC(settings, activeTargetC(settings) + (delta * stepC));
-    _setpointFocusUntilMs = millis() + 3000;
-    requestSave();
+    openQuickMenu(settings);
+    return;
+  } else if (_screen == Screen::QuickMenu) {
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    moveQuickMenu(filteredDelta);
+  } else if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    moveQuickSelection(filteredDelta, settings);
   } else if (_screen == Screen::Menu) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
@@ -378,10 +467,13 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
 
 void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Main) {
-    settings.mode = nextMode(settings.mode);
-    _toast = String("Mode: ") + modeText(settings.mode);
-    _toastUntilMs = nowMs + 1500;
-    requestSave();
+    openQuickMenu(settings);
+  } else if (_screen == Screen::QuickMenu) {
+    selectQuickAction(settings);
+  } else if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
+    requestQuickConfirm();
+  } else if (_screen == Screen::QuickConfirm) {
+    confirmQuickAction(settings);
   } else if (_screen == Screen::Menu) {
     if (_menuIndex <= MENU_OFFSET) {
       beginEdit(_menuIndex, settings);
@@ -426,7 +518,15 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleLongPress(Settings &settings) {
   if (_screen == Screen::Main) {
+    openQuickMenu(settings);
+    return;
+  } else if (_screen == Screen::QuickMenu) {
     _screen = Screen::Menu;
+  } else if (_screen == Screen::QuickProfile ||
+             _screen == Screen::QuickMode ||
+             _screen == Screen::QuickConfirm) {
+    cancelQuickFlow();
+    return;
   } else if (_screen == Screen::Edit) {
     cancelEdit(settings);
     return;
@@ -436,6 +536,87 @@ void DisplayUI::handleLongPress(Settings &settings) {
   } else {
     _screen = Screen::Main;
   }
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::openQuickMenu(const Settings &settings) {
+  _pendingProfile = activeProfileIndex(settings);
+  _pendingMode = settings.mode;
+  _screen = Screen::QuickMenu;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::moveQuickMenu(int32_t delta) {
+  int32_t next = static_cast<int32_t>(_quickIndex) + delta;
+  while (next < 0) {
+    next += QUICK_ACTION_COUNT;
+  }
+  _quickIndex = static_cast<uint8_t>(next % QUICK_ACTION_COUNT);
+  _dirty = true;
+}
+
+void DisplayUI::selectQuickAction(const Settings &settings) {
+  if (_quickIndex == 0) {
+    _pendingQuickAction = QuickAction::Profile;
+    _pendingProfile = activeProfileIndex(settings);
+    _screen = Screen::QuickProfile;
+  } else {
+    _pendingQuickAction = QuickAction::Mode;
+    _pendingMode = settings.mode;
+    _screen = Screen::QuickMode;
+  }
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::moveQuickSelection(int32_t delta, const Settings &settings) {
+  if (_screen == Screen::QuickProfile) {
+    int32_t profile = static_cast<int32_t>(_pendingProfile) + delta;
+    while (profile < 0) {
+      profile += PROFILE_COUNT;
+    }
+    _pendingProfile = static_cast<uint8_t>(profile % PROFILE_COUNT);
+  } else if (_screen == Screen::QuickMode) {
+    int32_t mode = static_cast<int32_t>(_pendingMode) + delta;
+    while (mode < 0) {
+      mode += 4;
+    }
+    _pendingMode = static_cast<UserMode>(mode % 4);
+  }
+  (void)settings;
+  _dirty = true;
+}
+
+void DisplayUI::requestQuickConfirm() {
+  if (_screen == Screen::QuickProfile) {
+    _pendingQuickAction = QuickAction::Profile;
+  } else if (_screen == Screen::QuickMode) {
+    _pendingQuickAction = QuickAction::Mode;
+  }
+  _screen = Screen::QuickConfirm;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::confirmQuickAction(Settings &settings) {
+  if (_pendingQuickAction == QuickAction::Profile) {
+    settings.activeProfile = _pendingProfile;
+    _toast = String("Profile: ") + activeProfile(settings).name;
+  } else {
+    settings.mode = _pendingMode;
+    _toast = String("Mode: ") + modeText(settings.mode);
+  }
+  _toastUntilMs = millis() + 1500;
+  requestSave();
+  _screen = Screen::Main;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::cancelQuickFlow() {
+  _screen = Screen::Main;
   resetSettingsEncoderFilters();
   _dirty = true;
 }
@@ -632,6 +813,7 @@ int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator,
 void DisplayUI::resetSettingsEncoderFilters() {
   _menuEncoderAccumulator = 0;
   _editEncoderAccumulator = 0;
+  _quickEncoderAccumulator = 0;
   _touchMenuScrollAccumulator = 0;
 }
 
@@ -653,6 +835,14 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
   _canvas.fillScreen(COLOR_BG);
   if (_screen == Screen::Main) {
     drawMain(nowMs, settings, model);
+  } else if (_screen == Screen::QuickMenu) {
+    drawQuickMenu(settings);
+  } else if (_screen == Screen::QuickProfile) {
+    drawQuickProfile(settings);
+  } else if (_screen == Screen::QuickMode) {
+    drawQuickMode(settings);
+  } else if (_screen == Screen::QuickConfirm) {
+    drawQuickConfirm(settings);
   } else if (_screen == Screen::Menu) {
     drawMenu(settings, model.network);
   } else if (_screen == Screen::Edit) {
@@ -784,6 +974,121 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     _canvas.drawString(settings.fermenterName, cx, cy + 56, &fonts::DejaVu12);
   }
   drawOutputChips(model);
+}
+
+void DisplayUI::drawQuickMenu(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  const QuickAction action =
+      _quickIndex == 0 ? QuickAction::Profile : QuickAction::Mode;
+  const QuickAction other =
+      _quickIndex == 0 ? QuickAction::Mode : QuickAction::Profile;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
+  _canvas.drawString("QUICK", cx, cy - 74, &fonts::DejaVu18);
+
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
+  _canvas.drawString(quickActionLabel(other), cx,
+                     _quickIndex == 0 ? cy + 48 : cy - 44, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_GOLD);
+  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.drawString(quickActionLabel(action), cx, cy - 9,
+                     &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString(quickActionValue(action, settings), cx, cy + 13,
+                     &fonts::DejaVu18);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("tap choose / hold settings", cx, cy + 78,
+                     &fonts::DejaVu12);
+}
+
+void DisplayUI::drawQuickProfile(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  const uint8_t prev = _pendingProfile == 0 ? PROFILE_COUNT - 1
+                                            : _pendingProfile - 1;
+  const uint8_t next = (_pendingProfile + 1) % PROFILE_COUNT;
+  const ProfileSettings &profile = settings.profiles[_pendingProfile];
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
+  _canvas.drawString("PROFILE", cx, cy - 74, &fonts::DejaVu18);
+
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
+  _canvas.drawString(settings.profiles[prev].name, cx, cy - 44,
+                     &fonts::DejaVu12);
+  _canvas.drawString(settings.profiles[next].name, cx, cy + 48,
+                     &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_BLUE);
+  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.drawString(profile.name, cx, cy - 9, &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString(formatTemperature(profile.targetC, settings.unitsFahrenheit),
+                     cx, cy + 13, &fonts::DejaVu18);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("tap to confirm", cx, cy + 78, &fonts::DejaVu12);
+}
+
+void DisplayUI::drawQuickMode(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  int32_t prev = static_cast<int32_t>(_pendingMode) - 1;
+  if (prev < 0) {
+    prev += 4;
+  }
+  const int32_t next = (static_cast<int32_t>(_pendingMode) + 1) % 4;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
+  _canvas.drawString("MODE", cx, cy - 74, &fonts::DejaVu18);
+
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
+  _canvas.drawString(modeText(static_cast<UserMode>(prev)), cx, cy - 44,
+                     &fonts::DejaVu12);
+  _canvas.drawString(modeText(static_cast<UserMode>(next)), cx, cy + 48,
+                     &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_BLUE);
+  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.drawString(modeText(_pendingMode), cx, cy - 4,
+                     &fonts::FreeSansBold18pt7b);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("tap to confirm", cx, cy + 78, &fonts::DejaVu12);
+  (void)settings;
+}
+
+void DisplayUI::drawQuickConfirm(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_GOLD, COLOR_BG);
+  _canvas.drawString("CONFIRM", cx, cy - 68, &fonts::DejaVu18);
+
+  _canvas.fillSmoothRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_GOLD);
+  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 18,
+                     &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString(quickPendingValue(settings), cx, cy + 8,
+                     &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 55, cy + 52, 110, 28, 14, COLOR_GOLD);
+  _canvas.setTextColor(TFT_BLACK, COLOR_GOLD);
+  _canvas.drawString("Apply", cx, cy + 66, &fonts::DejaVu12);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("tap top to cancel", cx, cy + 92, &fonts::DejaVu12);
 }
 
 bool DisplayUI::ensureLargeFont() {
@@ -1191,6 +1496,28 @@ String DisplayUI::formatTemperature(float tempC, bool unitsFahrenheit) const {
   }
   float displayed = unitsFahrenheit ? cToF(tempC) : tempC;
   return String(displayed, 1) + temperatureUnit(unitsFahrenheit);
+}
+
+const char *DisplayUI::quickActionLabel(QuickAction action) const {
+  return action == QuickAction::Profile ? "Profile" : "Mode";
+}
+
+String DisplayUI::quickActionValue(QuickAction action,
+                                   const Settings &settings) const {
+  if (action == QuickAction::Profile) {
+    return activeProfile(settings).name;
+  }
+  return modeText(settings.mode);
+}
+
+String DisplayUI::quickPendingValue(const Settings &settings) const {
+  if (_pendingQuickAction == QuickAction::Profile) {
+    return String("Use ") + settings.profiles[_pendingProfile].name + " (" +
+           formatTemperature(settings.profiles[_pendingProfile].targetC,
+                             settings.unitsFahrenheit) +
+           ")";
+  }
+  return String("Use ") + modeText(_pendingMode) + " mode";
 }
 
 String DisplayUI::menuValue(uint8_t index, const Settings &settings,

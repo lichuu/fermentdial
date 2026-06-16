@@ -35,6 +35,10 @@ class DisplayUI {
  private:
   enum class Screen : uint8_t {
     Main,
+    QuickMenu,
+    QuickProfile,
+    QuickMode,
+    QuickConfirm,
     Menu,
     Edit,
     ConfirmEdit,
@@ -48,13 +52,26 @@ class DisplayUI {
     Reset,
   };
 
+  enum class QuickAction : uint8_t {
+    Profile,
+    Mode,
+  };
+
   void processInput(uint32_t nowMs, Settings &settings);
   void handleTouch(uint32_t nowMs, Settings &settings);
   void handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx, int16_t dy);
   void scrollMenuByTouch(int16_t deltaY);
+  void scrollQuickByTouch(int16_t deltaY, const Settings &settings);
   void handleEncoder(int32_t delta, Settings &settings);
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
+  void openQuickMenu(const Settings &settings);
+  void moveQuickMenu(int32_t delta);
+  void selectQuickAction(const Settings &settings);
+  void moveQuickSelection(int32_t delta, const Settings &settings);
+  void requestQuickConfirm();
+  void confirmQuickAction(Settings &settings);
+  void cancelQuickFlow();
   void beginEdit(uint8_t index, const Settings &settings);
   void cancelEdit(Settings &settings);
   void saveEdit(Settings &settings);
@@ -70,6 +87,10 @@ class DisplayUI {
 
   void draw(uint32_t nowMs, const Settings &settings, const UiModel &model);
   void drawMain(uint32_t nowMs, const Settings &settings, const UiModel &model);
+  void drawQuickMenu(const Settings &settings);
+  void drawQuickProfile(const Settings &settings);
+  void drawQuickMode(const Settings &settings);
+  void drawQuickConfirm(const Settings &settings);
   void drawMenu(const Settings &settings, const NetworkSnapshot &network);
   void drawEdit(const Settings &settings);
   void drawConfirmEdit(const Settings &settings);
@@ -100,6 +121,9 @@ class DisplayUI {
   String temperatureNumber(float tempC, bool unitsFahrenheit) const;
   const char *temperatureUnit(bool unitsFahrenheit) const;
   String formatTemperature(float tempC, bool unitsFahrenheit) const;
+  const char *quickActionLabel(QuickAction action) const;
+  String quickActionValue(QuickAction action, const Settings &settings) const;
+  String quickPendingValue(const Settings &settings) const;
   String menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network = NetworkSnapshot{}) const;
   String defaultMenuValue(uint8_t index, const Settings &settings) const;
   String editDefaultLine(const Settings &settings) const;
@@ -116,12 +140,17 @@ class DisplayUI {
   bool _editSnapshotValid = false;
   int32_t _menuEncoderAccumulator = 0;
   int32_t _editEncoderAccumulator = 0;
+  int32_t _quickEncoderAccumulator = 0;
   int32_t _touchMenuScrollAccumulator = 0;
   bool _dirty = true;
   bool _saveRequested = false;
   bool _wifiSetupRequested = false;
   OutputTestKind _pendingOutputTest = OutputTestKind::None;
   EditConfirmAction _pendingEditConfirm = EditConfirmAction::None;
+  uint8_t _quickIndex = 0;
+  uint8_t _pendingProfile = 0;
+  UserMode _pendingMode = UserMode::Off;
+  QuickAction _pendingQuickAction = QuickAction::Profile;
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
