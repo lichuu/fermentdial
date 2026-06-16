@@ -999,7 +999,7 @@ void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
 
   _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_GOLD);
-  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
   _canvas.drawString(quickActionLabel(action), cx, cy - 7,
                      &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
@@ -1034,7 +1034,7 @@ void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model)
 
   _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BLUE);
-  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
   _canvas.drawString(profile.name, cx, cy - 7, &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(
@@ -1070,7 +1070,7 @@ void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
   _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(modeText(_pendingMode), cx, cy - 4,
+  _canvas.drawString(modeText(_pendingMode), cx, cy + 2,
                      &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
