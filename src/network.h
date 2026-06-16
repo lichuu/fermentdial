@@ -123,6 +123,10 @@ private:
   String _wifiSsid;
   String _wifiPassword;
   String _hostname;
+  // Admin password for the config pages; blank disables the lock. The session
+  // token is regenerated on each login and lives only in RAM.
+  String _adminPassword;
+  String _sessionToken;
 
 #if FERM_ENABLE_NETWORK
   Preferences _prefs;
@@ -137,6 +141,15 @@ private:
   void startWifi(uint32_t nowMs);
   void startSetupPortal();
   void startWebServer();
+  // Web admin auth: a session cookie gates the config pages/POSTs while the
+  // live dashboard, metrics and status stay public. AP setup mode is exempt.
+  bool isAuthed();
+  bool requireAuth();
+  void handleLogin();
+  void handleLogout();
+  void handleSecurityPost();
+  String loginHtml(bool showError) const;
+  String newSessionToken();
   void handleWifiScan();
   void handleSettingsPost();
   void handleDeviceSettingsPost();

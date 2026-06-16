@@ -3,6 +3,7 @@
 #if FERM_ENABLE_NETWORK
 #include <HTTPClient.h>
 #include <WiFi.h>
+#include <esp_random.h>
 #endif
 
 #if FERM_ENABLE_NETWORK && FERM_ENABLE_OTA
@@ -13,7 +14,12 @@ namespace ferm {
 
 namespace {
 constexpr const char *SETUP_AP_SSID_PREFIX = "FermentDial-Setup";
+// Wi-Fi password for the temporary onboarding access point (only broadcast
+// before the device has joined a network).
 constexpr const char *SETUP_AP_PASSWORD = "fermentdial";
+// Default password for the web config pages over your LAN. Independent of the
+// setup-AP password; change it from Settings > Security.
+constexpr const char *DEFAULT_ADMIN_PASSWORD = "fermentdial";
 IPAddress SETUP_IP(192, 168, 4, 1);
 IPAddress SETUP_GATEWAY(192, 168, 4, 1);
 IPAddress SETUP_MASK(255, 255, 255, 0);
@@ -256,6 +262,23 @@ void appendField(String &fields, const String &field) {
   fields += field;
 }
 
+// Pull a single cookie value out of a raw Cookie header ("a=1; b=2").
+String cookieValue(const String &cookieHeader, const char *name) {
+  const String key = String(name) + "=";
+  int idx = cookieHeader.indexOf(key);
+  if (idx < 0) {
+    return "";
+  }
+  idx += key.length();
+  int end = cookieHeader.indexOf(';', idx);
+  if (end < 0) {
+    end = cookieHeader.length();
+  }
+  String value = cookieHeader.substring(idx, end);
+  value.trim();
+  return value;
+}
+
 } // namespace
 
 void NetworkManager::begin(const Settings &settings) {
@@ -284,6 +307,8 @@ void NetworkManager::begin(const Settings &settings) {
   loadMqttConfig();
   _wifiSsid = _prefs.getString("ssid", FERM_WIFI_SSID);
   _wifiPassword = _prefs.getString("pass", FERM_WIFI_PASSWORD);
+  // Ships locked: config pages require the default password until it's changed.
+  _adminPassword = _prefs.getString("adminPass", DEFAULT_ADMIN_PASSWORD);
   _snapshot.wifiConfigured = _wifiSsid.length() > 0;
   _snapshot.ssid = _wifiSsid;
 
@@ -454,26 +479,59 @@ void NetworkManager::startWebServer() {
     return;
   }
 
+  // Expose the Cookie header so the session check can read it.
+  static const char *kHeaderKeys[] = {"Cookie"};
+  _server.collectHeaders(kHeaderKeys, 1);
+
   _server.on("/", HTTP_GET, [this]() {
     _server.send(200, "text/html", _apMode ? setupHtml() : pageHtml());
   });
   _server.on("/dashboard", HTTP_GET,
              [this]() { _server.send(200, "text/html", pageHtml()); });
-  _server.on("/settings", HTTP_GET,
-             [this]() { _server.send(200, "text/html", settingsHtml()); });
-  _server.on("/settings/device", HTTP_POST,
-             [this]() { handleDeviceSettingsPost(); });
-  _server.on("/settings/influx", HTTP_POST,
-             [this]() { handleInfluxSettingsPost(); });
-  _server.on("/settings/mqtt", HTTP_POST,
-             [this]() { handleMqttSettingsPost(); });
+  _server.on("/login", HTTP_GET, [this]() { handleLogin(); });
+  _server.on("/login", HTTP_POST, [this]() { handleLogin(); });
+  _server.on("/logout", HTTP_GET, [this]() { handleLogout(); });
+  _server.on("/logout", HTTP_POST, [this]() { handleLogout(); });
+  _server.on("/settings", HTTP_GET, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    _server.send(200, "text/html", settingsHtml());
+  });
+  _server.on("/settings/device", HTTP_POST, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    handleDeviceSettingsPost();
+  });
+  _server.on("/settings/security", HTTP_POST,
+             [this]() { handleSecurityPost(); });
+  _server.on("/settings/influx", HTTP_POST, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    handleInfluxSettingsPost();
+  });
+  _server.on("/settings/mqtt", HTTP_POST, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    handleMqttSettingsPost();
+  });
   _server.on("/metrics", HTTP_GET, [this]() {
     _server.send(200, "text/plain; version=0.0.4; charset=utf-8",
                  metricsText());
   });
-  _server.on("/wifi", HTTP_GET,
-             [this]() { _server.send(200, "text/html", setupHtml()); });
+  _server.on("/wifi", HTTP_GET, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    _server.send(200, "text/html", setupHtml());
+  });
   _server.on("/wifi", HTTP_POST, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
     String ssid = _server.arg("ssid");
     String pass = _server.arg("pass");
     ssid.trim();
@@ -500,11 +558,18 @@ void NetworkManager::startWebServer() {
     ESP.restart();
   });
 #if FERM_ENABLE_OTA
-  _server.on("/firmware", HTTP_GET,
-             [this]() { _server.send(200, "text/html", firmwareHtml()); });
+  _server.on("/firmware", HTTP_GET, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    _server.send(200, "text/html", firmwareHtml());
+  });
   _server.on(
       "/firmware", HTTP_POST,
       [this]() {
+        if (!requireAuth()) {
+          return;
+        }
         const bool ok = _firmwareUpdateOk && !_firmwareUpdateHadError;
         const String message =
             ok ? "Firmware updated. Rebooting..."
@@ -551,6 +616,14 @@ void NetworkManager::handleFirmwareUpload() {
     _firmwareUpdateHadError = false;
     _firmwareUpdateOk = false;
     _firmwareUpdateError = "";
+
+    // Reject before a single byte is written if the session isn't authorized;
+    // the WRITE/END steps bail out on this error so nothing is ever flashed.
+    if (!isAuthed()) {
+      _firmwareUpdateHadError = true;
+      _firmwareUpdateError = "Authentication required";
+      return;
+    }
 
     if (_firmwareUpdateSafetyCallback != nullptr) {
       _firmwareUpdateSafetyCallback();
@@ -617,6 +690,119 @@ void NetworkManager::handleWifiScan() {
   json += "]}";
   WiFi.scanDelete();
   _server.send(200, "application/json", json);
+#endif
+}
+
+String NetworkManager::newSessionToken() {
+#if FERM_ENABLE_NETWORK
+  char buf[33];
+  for (int i = 0; i < 4; ++i) {
+    snprintf(buf + i * 8, 9, "%08x", static_cast<unsigned>(esp_random()));
+  }
+  return String(buf);
+#else
+  return "";
+#endif
+}
+
+bool NetworkManager::isAuthed() {
+#if FERM_ENABLE_NETWORK
+  if (_apMode) {
+    return true;  // setup portal is already gated by the AP Wi-Fi password
+  }
+  if (_adminPassword.length() == 0) {
+    return true;  // lock explicitly disabled
+  }
+  if (_sessionToken.length() == 0) {
+    return false;  // no active session
+  }
+  return cookieValue(_server.header("Cookie"), "fdsession") == _sessionToken;
+#else
+  return true;
+#endif
+}
+
+bool NetworkManager::requireAuth() {
+#if FERM_ENABLE_NETWORK
+  if (isAuthed()) {
+    return true;
+  }
+  _server.sendHeader("Location", "/login", true);
+  _server.send(302, "text/plain", "");
+  return false;
+#else
+  return true;
+#endif
+}
+
+void NetworkManager::handleLogin() {
+#if FERM_ENABLE_NETWORK
+  if (_server.method() == HTTP_GET) {
+    if (isAuthed()) {
+      _server.sendHeader("Location", "/settings", true);
+      _server.send(302, "text/plain", "");
+      return;
+    }
+    _server.send(200, "text/html", loginHtml(false));
+    return;
+  }
+
+  // POST: validate the submitted password and start a session.
+  const String pass = _server.arg("password");
+  if (_adminPassword.length() > 0 && pass == _adminPassword) {
+    _sessionToken = newSessionToken();
+    _server.sendHeader("Set-Cookie", "fdsession=" + _sessionToken +
+                                         "; Path=/; HttpOnly; SameSite=Lax; "
+                                         "Max-Age=604800");
+    _server.sendHeader("Location", "/settings", true);
+    _server.send(302, "text/plain", "");
+    return;
+  }
+  _server.send(401, "text/html", loginHtml(true));
+#endif
+}
+
+void NetworkManager::handleLogout() {
+#if FERM_ENABLE_NETWORK
+  _sessionToken = "";
+  _server.sendHeader("Set-Cookie", "fdsession=; Path=/; Max-Age=0");
+  _server.sendHeader("Location", "/dashboard", true);
+  _server.send(302, "text/plain", "");
+#endif
+}
+
+void NetworkManager::handleSecurityPost() {
+#if FERM_ENABLE_NETWORK
+  if (!requireAuth()) {
+    return;
+  }
+  const String np = _server.arg("newPassword");
+  const String cp = _server.arg("confirmPassword");
+  if (np != cp) {
+    _server.send(400, "text/html",
+                 "<!doctype html><meta name='viewport' "
+                 "content='width=device-width,initial-scale=1'>"
+                 "<body style='font-family:sans-serif;padding:2rem;"
+                 "background:#071015;color:#f8fbff'><h1>Passwords did not "
+                 "match</h1><p><a href='/settings'>Back to settings</a></p>"
+                 "</body>");
+    return;
+  }
+  _adminPassword = np;
+  _prefs.putString("adminPass", _adminPassword);
+  // Re-issue the current session so this browser stays in; any other browser's
+  // old token is now invalid. Disabling the lock just clears the session.
+  if (_adminPassword.length() > 0) {
+    _sessionToken = newSessionToken();
+    _server.sendHeader("Set-Cookie", "fdsession=" + _sessionToken +
+                                         "; Path=/; HttpOnly; SameSite=Lax; "
+                                         "Max-Age=604800");
+  } else {
+    _sessionToken = "";
+    _server.sendHeader("Set-Cookie", "fdsession=; Path=/; Max-Age=0");
+  }
+  _server.sendHeader("Location", "/settings", true);
+  _server.send(302, "text/plain", "");
 #endif
 }
 
@@ -1091,8 +1277,8 @@ void NetworkManager::handleSettingsPost() {
 
   if (_server.hasArg("target")) {
     float target = _server.arg("target").toFloat();
-    setCurrentTargetC(*_settings,
-                      _settings->unitsFahrenheit ? fToC(target) : target);
+    setCurrentTargetC(
+        *_settings, fromDisplayTemp(target, _settings->unitsFahrenheit));
     changed = true;
   }
 
@@ -1107,30 +1293,29 @@ void NetworkManager::handleSettingsPost() {
     changed = true;
   }
 
+  const bool unitsF = _settings->unitsFahrenheit;
+
   if (_server.hasArg("coolOn")) {
-    float coolOn = _server.arg("coolOn").toFloat();
     _settings->coolOnDeltaC =
-        _settings->unitsFahrenheit ? deltaFToC(coolOn) : coolOn;
+        fromDisplayDelta(_server.arg("coolOn").toFloat(), unitsF);
     changed = true;
   }
 
   if (_server.hasArg("heatOn")) {
-    float heatOn = _server.arg("heatOn").toFloat();
     _settings->heatOnDeltaC =
-        _settings->unitsFahrenheit ? deltaFToC(heatOn) : heatOn;
+        fromDisplayDelta(_server.arg("heatOn").toFloat(), unitsF);
     changed = true;
   }
 
   if (_server.hasArg("hold")) {
-    float hold = _server.arg("hold").toFloat();
-    _settings->holdDeltaC = _settings->unitsFahrenheit ? deltaFToC(hold) : hold;
+    _settings->holdDeltaC =
+        fromDisplayDelta(_server.arg("hold").toFloat(), unitsF);
     changed = true;
   }
 
   if (_server.hasArg("tempOffset")) {
-    float offset = _server.arg("tempOffset").toFloat();
     _settings->tempOffsetC =
-        _settings->unitsFahrenheit ? deltaFToC(offset) : offset;
+        fromDisplayDelta(_server.arg("tempOffset").toFloat(), unitsF);
     changed = true;
   }
 
@@ -1142,9 +1327,8 @@ void NetworkManager::handleSettingsPost() {
       changed = true;
     }
     if (_server.hasArg(targetArg)) {
-      float target = _server.arg(targetArg).toFloat();
       _settings->profiles[i].targetC =
-          _settings->unitsFahrenheit ? fToC(target) : target;
+          fromDisplayTemp(_server.arg(targetArg).toFloat(), unitsF);
       changed = true;
     }
   }
@@ -1214,25 +1398,16 @@ String NetworkManager::historyJson() const {
 }
 
 String NetworkManager::statusJson() const {
-  const float temperature =
-      _webStatus.unitsFahrenheit ? cToF(_webStatus.tempC) : _webStatus.tempC;
+  const bool f = _webStatus.unitsFahrenheit;
+  const float temperature = toDisplayTemp(_webStatus.tempC, f);
   const uint8_t profileIndex =
       _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
-  const float targetC = _webStatus.liveTargetC;  // live setpoint, not preset
-  const float target = _webStatus.unitsFahrenheit ? cToF(targetC) : targetC;
-  const float coolOn = _webStatus.unitsFahrenheit
-                           ? deltaCToF(_webStatus.coolOnDeltaC)
-                           : _webStatus.coolOnDeltaC;
-  const float heatOn = _webStatus.unitsFahrenheit
-                           ? deltaCToF(_webStatus.heatOnDeltaC)
-                           : _webStatus.heatOnDeltaC;
-  const float hold = _webStatus.unitsFahrenheit
-                         ? deltaCToF(_webStatus.holdDeltaC)
-                         : _webStatus.holdDeltaC;
-  const float tempOffset = _webStatus.unitsFahrenheit
-                               ? deltaCToF(_webStatus.tempOffsetC)
-                               : _webStatus.tempOffsetC;
-  const char *unit = _webStatus.unitsFahrenheit ? "F" : "C";
+  const float target = toDisplayTemp(_webStatus.liveTargetC, f);  // live setpoint
+  const float coolOn = toDisplayDelta(_webStatus.coolOnDeltaC, f);
+  const float heatOn = toDisplayDelta(_webStatus.heatOnDeltaC, f);
+  const float hold = toDisplayDelta(_webStatus.holdDeltaC, f);
+  const float tempOffset = toDisplayDelta(_webStatus.tempOffsetC, f);
+  const char *unit = unitLabel(f);
 
   String json = "{";
   json += "\"wifiConnected\":" +
@@ -1258,12 +1433,8 @@ String NetworkManager::statusJson() const {
     if (i > 0) {
       json += ",";
     }
-    const float profileTarget = _webStatus.unitsFahrenheit
-                                    ? cToF(_webStatus.profiles[i].targetC)
-                                    : _webStatus.profiles[i].targetC;
-    const float profileDefaultC = defaultProfileTargetC(i);
-    const float profileDefault =
-        _webStatus.unitsFahrenheit ? cToF(profileDefaultC) : profileDefaultC;
+    const float profileTarget = toDisplayTemp(_webStatus.profiles[i].targetC, f);
+    const float profileDefault = toDisplayTemp(defaultProfileTargetC(i), f);
     json += "{\"index\":" + String(i) +
             ",\"name\":" + jsonString(_webStatus.profiles[i].name) +
             ",\"target\":" + jsonFloat(profileTarget) +
@@ -1508,7 +1679,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 .wifiTools{margin:8px 0 12px}.scanStatus{min-height:18px}.networkList{display:grid;gap:6px;margin-top:6px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:var(--text);font-weight:700;text-align:left}.networkMeta{color:var(--muted);font-size:12px;white-space:nowrap}
 @media(max-width:640px){main{padding:12px}.row{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
-<div class="top"><h1>FermentDial Settings</h1><div class="nav"><a href="/dashboard">Dashboard</a><a href="/metrics">Metrics</a></div></div>
+<div class="top"><h1>FermentDial Settings</h1><div class="nav"><a href="/dashboard">Dashboard</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></div></div>
 <div class="grid">
 <section class="panel"><h2>Device</h2>
 <form method="post" action="/settings/device">
@@ -1528,6 +1699,18 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <p class="hint">Hostname: <code>)HTML";
   html += htmlEscape(_snapshot.hostname);
   html += R"HTML(</code></p>
+</section>
+<section class="panel"><h2>Security</h2>
+<form method="post" action="/settings/security">
+<label>New admin password<input name="newPassword" type="password" autocomplete="new-password" placeholder="leave blank to disable the lock"></label>
+<label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password"></label>
+<button type="submit">Update password</button>
+</form>
+<p class="hint">)HTML";
+  html += _adminPassword.length() > 0
+              ? R"HTML(Config pages are <b>locked</b>. The live dashboard and metrics stay public.)HTML"
+              : R"HTML(Config pages are <span class="warn">unlocked</span> &mdash; anyone on the network can change settings.)HTML";
+  html += R"HTML(</p>
 </section>
 <section class="panel"><h2>Wi-Fi</h2>
 <form method="post" action="/wifi">
@@ -1734,6 +1917,31 @@ async function scanWifi(){
 <p class="hint">Setup AP: )HTML";
   html += htmlEscape(setupApSsid());
   html += R"HTML( / fermentdial</p>
+</div></main></body></html>)HTML";
+  return html;
+}
+
+String NetworkManager::loginHtml(bool showError) const {
+  String html = R"HTML(<!doctype html>
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FermentDial Login</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0}
+main{max-width:420px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
+h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
+input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.err{color:#ffb4a8;font-weight:700}a{color:#79d4ff}
+</style></head><body><main><div class="card">
+<h1>FermentDial</h1>
+<p class="hint">Enter the admin password to reach device settings.</p>
+)HTML";
+  if (showError) {
+    html += R"HTML(<p class="err">Incorrect password. Try again.</p>)HTML";
+  }
+  html += R"HTML(<form method="post" action="/login">
+<label>Password</label><input name="password" type="password" autofocus required>
+<button type="submit">Log in</button>
+</form>
+<p><a href="/dashboard">Back to dashboard</a></p>
 </div></main></body></html>)HTML";
   return html;
 }

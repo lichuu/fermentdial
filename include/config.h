@@ -79,6 +79,59 @@ constexpr float deltaFToC(float deltaF) { return deltaF * 5.0f / 9.0f; }
 
 constexpr float deltaCToF(float deltaC) { return deltaC * 9.0f / 5.0f; }
 
+// --- Display-unit helpers: single source of truth for C/F handling ----------
+// Storage and control are always Celsius; the user merely views and edits in
+// their chosen unit. These wrap the raw conversions so call sites read as
+// intent ("to display", "from display") instead of repeating the
+// `unitsFahrenheit ? cToF(x) : x` ternary everywhere.
+inline float toDisplayTemp(float tempC, bool fahrenheit) {
+  return fahrenheit ? cToF(tempC) : tempC;
+}
+
+inline float fromDisplayTemp(float tempDisplay, bool fahrenheit) {
+  return fahrenheit ? fToC(tempDisplay) : tempDisplay;
+}
+
+inline float toDisplayDelta(float deltaC, bool fahrenheit) {
+  return fahrenheit ? deltaCToF(deltaC) : deltaC;
+}
+
+inline float fromDisplayDelta(float deltaDisplay, bool fahrenheit) {
+  return fahrenheit ? deltaFToC(deltaDisplay) : deltaDisplay;
+}
+
+inline const char *unitLabel(bool fahrenheit) { return fahrenheit ? "F" : "C"; }
+
+// Resolution shown to and edited by the user (0.1 in the active unit).
+constexpr float DISPLAY_TEMP_STEP = 0.1f;
+
+// One on-screen tick (0.1 in the active unit) expressed in Celsius, so the dial
+// nudges by the same visible step in either unit.
+inline float displayStepC(bool fahrenheit) {
+  return fromDisplayDelta(DISPLAY_TEMP_STEP, fahrenheit);
+}
+
+// Snap a stored Celsius value onto the display grid so Fahrenheit<->Celsius
+// round-trips are stable and persisted setpoints never drift to ugly values
+// (e.g. a stale 19.97 C migrates cleanly to 68.0 F == 20.0 C).
+inline float snapTempC(float tempC, bool fahrenheit) {
+  if (isnan(tempC)) {
+    return tempC;
+  }
+  const float disp = toDisplayTemp(tempC, fahrenheit);
+  return fromDisplayTemp(roundf(disp / DISPLAY_TEMP_STEP) * DISPLAY_TEMP_STEP,
+                         fahrenheit);
+}
+
+inline float snapDeltaC(float deltaC, bool fahrenheit) {
+  if (isnan(deltaC)) {
+    return deltaC;
+  }
+  const float disp = toDisplayDelta(deltaC, fahrenheit);
+  return fromDisplayDelta(roundf(disp / DISPLAY_TEMP_STEP) * DISPLAY_TEMP_STEP,
+                          fahrenheit);
+}
+
 constexpr float DEFAULT_TARGET_F = 68.0f;
 constexpr float DEFAULT_SOFT_CRASH_TARGET_F = 55.0f;
 constexpr float DEFAULT_CRASH_TARGET_F = 37.0f;
@@ -410,15 +463,19 @@ inline void sanitizeSettings(Settings &settings) {
       settings.profiles[i].name =
           settings.profiles[i].name.substring(0, MAX_PROFILE_NAME_LENGTH);
     }
-    settings.profiles[i].targetC =
-        clampFloat(settings.profiles[i].targetC, MIN_TARGET_C, MAX_TARGET_C);
+    settings.profiles[i].targetC = snapTempC(
+        clampFloat(settings.profiles[i].targetC, MIN_TARGET_C, MAX_TARGET_C),
+        settings.unitsFahrenheit);
   }
-  settings.coolOnDeltaC =
-      clampFloat(settings.coolOnDeltaC, MIN_DELTA_C, MAX_DELTA_C);
-  settings.heatOnDeltaC =
-      clampFloat(settings.heatOnDeltaC, MIN_DELTA_C, MAX_DELTA_C);
-  settings.holdDeltaC =
-      clampFloat(settings.holdDeltaC, MIN_DELTA_C, MAX_DELTA_C);
+  settings.coolOnDeltaC = snapDeltaC(
+      clampFloat(settings.coolOnDeltaC, MIN_DELTA_C, MAX_DELTA_C),
+      settings.unitsFahrenheit);
+  settings.heatOnDeltaC = snapDeltaC(
+      clampFloat(settings.heatOnDeltaC, MIN_DELTA_C, MAX_DELTA_C),
+      settings.unitsFahrenheit);
+  settings.holdDeltaC = snapDeltaC(
+      clampFloat(settings.holdDeltaC, MIN_DELTA_C, MAX_DELTA_C),
+      settings.unitsFahrenheit);
   if (settings.holdDeltaC > settings.coolOnDeltaC) {
     settings.holdDeltaC = settings.coolOnDeltaC;
   }
@@ -427,14 +484,16 @@ inline void sanitizeSettings(Settings &settings) {
   }
   settings.pumpMinOffSeconds = clampU32(settings.pumpMinOffSeconds, 0, 1800);
   settings.pumpMinRunSeconds = clampU32(settings.pumpMinRunSeconds, 0, 600);
-  settings.tempOffsetC =
-      clampFloat(settings.tempOffsetC, MIN_OFFSET_C, MAX_OFFSET_C);
+  settings.tempOffsetC = snapDeltaC(
+      clampFloat(settings.tempOffsetC, MIN_OFFSET_C, MAX_OFFSET_C),
+      settings.unitsFahrenheit);
 
   if (isnan(settings.liveTargetC)) {
     settings.liveTargetC = activeProfile(settings).targetC;
   }
-  settings.liveTargetC =
-      clampFloat(settings.liveTargetC, MIN_TARGET_C, MAX_TARGET_C);
+  settings.liveTargetC = snapTempC(
+      clampFloat(settings.liveTargetC, MIN_TARGET_C, MAX_TARGET_C),
+      settings.unitsFahrenheit);
 
   uint8_t modeValue = static_cast<uint8_t>(settings.mode);
   if (modeValue > static_cast<uint8_t>(UserMode::CoolOnly)) {

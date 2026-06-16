@@ -506,7 +506,7 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     setCurrentTargetC(settings,
                       currentTargetC(settings) +
                           (filteredDelta *
-                           (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)));
+                           (displayStepC(settings.unitsFahrenheit))));
     _setpointFocusUntilMs = millis() + SETPOINT_FOCUS_MS;
     requestSave();
     _dirty = true;
@@ -787,7 +787,7 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     setActiveTargetC(
         settings,
         activeTargetC(settings) +
-            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)));
+            (delta * (displayStepC(settings.unitsFahrenheit))));
     break;
   case 2: {
     int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
@@ -800,19 +800,19 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   case 3:
     settings.coolOnDeltaC = clampFloat(
         settings.coolOnDeltaC +
-            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+            (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_DELTA_C, MAX_DELTA_C);
     break;
   case 4:
     settings.heatOnDeltaC = clampFloat(
         settings.heatOnDeltaC +
-            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+            (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_DELTA_C, MAX_DELTA_C);
     break;
   case 5:
     settings.holdDeltaC = clampFloat(
         settings.holdDeltaC +
-            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+            (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_DELTA_C, MAX_DELTA_C);
     if (settings.holdDeltaC > settings.coolOnDeltaC) {
       settings.holdDeltaC = settings.coolOnDeltaC;
@@ -842,7 +842,7 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   case 8:
     settings.tempOffsetC = clampFloat(
         settings.tempOffsetC +
-            (delta * (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)),
+            (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_OFFSET_C, MAX_OFFSET_C);
     break;
   case 9:
@@ -1691,19 +1691,19 @@ String DisplayUI::temperatureNumber(float tempC, bool unitsFahrenheit) const {
   if (isnan(tempC)) {
     return "--.-";
   }
-  return String(unitsFahrenheit ? cToF(tempC) : tempC, 1);
+  return String(toDisplayTemp(tempC, unitsFahrenheit), 1);
 }
 
 const char *DisplayUI::temperatureUnit(bool unitsFahrenheit) const {
-  return unitsFahrenheit ? "F" : "C";
+  return unitLabel(unitsFahrenheit);
 }
 
 String DisplayUI::formatTemperature(float tempC, bool unitsFahrenheit) const {
   if (isnan(tempC)) {
     return "--.-";
   }
-  float displayed = unitsFahrenheit ? cToF(tempC) : tempC;
-  return String(displayed, 1) + temperatureUnit(unitsFahrenheit);
+  return String(toDisplayTemp(tempC, unitsFahrenheit), 1) +
+         temperatureUnit(unitsFahrenheit);
 }
 
 const char *DisplayUI::quickActionLabel(QuickAction action) const {
@@ -1738,18 +1738,15 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
   case 2:
     return modeText(settings.mode);
   case 3:
-    return String(settings.unitsFahrenheit ? deltaCToF(settings.coolOnDeltaC)
-                                           : settings.coolOnDeltaC,
+    return String(toDisplayDelta(settings.coolOnDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
   case 4:
-    return String(settings.unitsFahrenheit ? deltaCToF(settings.heatOnDeltaC)
-                                           : settings.heatOnDeltaC,
+    return String(toDisplayDelta(settings.heatOnDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
   case 5:
-    return String(settings.unitsFahrenheit ? deltaCToF(settings.holdDeltaC)
-                                           : settings.holdDeltaC,
+    return String(toDisplayDelta(settings.holdDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
   case 6:
@@ -1757,8 +1754,7 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
   case 7:
     return String(settings.pumpMinRunSeconds) + "s";
   case 8:
-    return String(settings.unitsFahrenheit ? deltaCToF(settings.tempOffsetC)
-                                           : settings.tempOffsetC,
+    return String(toDisplayDelta(settings.tempOffsetC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
   case 9:
@@ -1796,28 +1792,28 @@ String DisplayUI::defaultMenuValue(uint8_t index,
   case MENU_MODE:
     return modeText(UserMode::Off);
   case MENU_COOL_ON:
-    return String(settings.unitsFahrenheit ? DEFAULT_COOL_ON_DELTA_F
-                                           : DEFAULT_COOL_ON_DELTA_C,
-                  1) +
+    return String(
+               toDisplayDelta(DEFAULT_COOL_ON_DELTA_C, settings.unitsFahrenheit),
+               1) +
            temperatureUnit(settings.unitsFahrenheit);
   case MENU_HEAT_ON:
-    return String(settings.unitsFahrenheit ? DEFAULT_HEAT_ON_DELTA_F
-                                           : DEFAULT_HEAT_ON_DELTA_C,
-                  1) +
+    return String(
+               toDisplayDelta(DEFAULT_HEAT_ON_DELTA_C, settings.unitsFahrenheit),
+               1) +
            temperatureUnit(settings.unitsFahrenheit);
   case MENU_HOLD_BAND:
-    return String(settings.unitsFahrenheit ? DEFAULT_HOLD_DELTA_F
-                                           : DEFAULT_HOLD_DELTA_C,
-                  1) +
+    return String(
+               toDisplayDelta(DEFAULT_HOLD_DELTA_C, settings.unitsFahrenheit),
+               1) +
            temperatureUnit(settings.unitsFahrenheit);
   case MENU_COOLING_OFF:
     return String(DEFAULT_PUMP_MIN_OFF_SECONDS) + "s";
   case MENU_COOLING_RUN:
     return String(DEFAULT_PUMP_MIN_RUN_SECONDS) + "s";
   case MENU_OFFSET:
-    return String(settings.unitsFahrenheit ? DEFAULT_TEMP_OFFSET_F
-                                           : DEFAULT_TEMP_OFFSET_C,
-                  1) +
+    return String(
+               toDisplayDelta(DEFAULT_TEMP_OFFSET_C, settings.unitsFahrenheit),
+               1) +
            temperatureUnit(settings.unitsFahrenheit);
   default:
     return "";
