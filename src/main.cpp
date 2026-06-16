@@ -17,6 +17,13 @@ DisplayUI ui;
 
 uint32_t lastSerialLogMs = 0;
 
+void prepareForFirmwareUpdate() {
+  Serial.println(F("Firmware update requested; forcing outputs OFF"));
+  settings.mode = UserMode::Off;
+  controller.forceOutputsOff(millis());
+  storage.saveNow(settings);
+}
+
 void logStatus(uint32_t nowMs) {
   if (nowMs - lastSerialLogMs < 2000) {
     return;
@@ -62,6 +69,8 @@ void setup() {
 #endif
 
   ui.begin();
+  delay(BOOT_SPLASH_MS);
+
   storage.begin();
   bool loaded = storage.load(settings);
   sanitizeSettings(settings);
@@ -69,6 +78,7 @@ void setup() {
                         : F("Using safe defaults"));
 
   temperatureSensor.begin(millis());
+  network.setFirmwareUpdateSafetyCallback(prepareForFirmwareUpdate);
   network.begin(settings);
 }
 

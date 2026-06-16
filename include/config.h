@@ -27,17 +27,23 @@
 #define FERM_WIFI_PASSWORD ""
 #endif
 
-#ifndef FERM_WIFI_HOSTNAME
-#define FERM_WIFI_HOSTNAME "ferment-dial"
+#ifndef FERM_WIFI_HOSTNAME_BASE
+#ifdef FERM_WIFI_HOSTNAME
+#define FERM_WIFI_HOSTNAME_BASE FERM_WIFI_HOSTNAME
+#else
+#define FERM_WIFI_HOSTNAME_BASE "fermentdial"
+#endif
 #endif
 
 namespace ferm {
 
-constexpr const char *FIRMWARE_NAME = "Dial Ferment";
+constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
-constexpr uint16_t SETTINGS_VERSION = 4;
+constexpr uint16_t SETTINGS_VERSION = 6;
 constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;
+constexpr uint16_t SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE = 4;
+constexpr uint16_t SETTINGS_VERSION_FERMENTER_NAME_STORAGE = 5;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -48,6 +54,7 @@ constexpr uint8_t PIN_PUMP_TRIGGER = 1;
 constexpr bool MOSFET_ACTIVE_HIGH = true;
 
 constexpr uint32_t TEMP_READ_INTERVAL_MS = 1500;
+constexpr uint32_t BOOT_SPLASH_MS = 1600;
 constexpr uint32_t SETTINGS_SAVE_DEBOUNCE_MS = 5000;
 constexpr uint32_t UI_REDRAW_INTERVAL_MS = 250;
 constexpr uint32_t UI_TIMEOUT_MS = 30000;
@@ -65,8 +72,8 @@ constexpr float deltaCToF(float deltaC) { return deltaC * 9.0f / 5.0f; }
 
 constexpr float DEFAULT_TARGET_F = 68.0f;
 constexpr float DEFAULT_SOFT_CRASH_TARGET_F = 55.0f;
-constexpr float DEFAULT_CRASH_TARGET_F = 38.0f;
-constexpr float DEFAULT_LAGER_TARGET_F = 50.0f;
+constexpr float DEFAULT_CRASH_TARGET_F = 37.0f;
+constexpr float DEFAULT_LAGER_TARGET_F = 55.0f;
 constexpr float DEFAULT_CUSTOM1_TARGET_F = 72.0f;
 constexpr float DEFAULT_CUSTOM2_TARGET_F = 64.0f;
 constexpr float DEFAULT_COOL_ON_DELTA_F = 0.5f;
@@ -85,6 +92,7 @@ constexpr uint32_t DEFAULT_PUMP_MIN_OFF_SECONDS = 120;
 constexpr uint32_t DEFAULT_PUMP_MIN_RUN_SECONDS = 30;
 constexpr float DEFAULT_TEMP_OFFSET_F = 0.0f;
 constexpr float DEFAULT_TEMP_OFFSET_C = deltaFToC(DEFAULT_TEMP_OFFSET_F);
+constexpr const char *DEFAULT_FERMENTER_NAME = "Fermenter";
 
 constexpr float MIN_VALID_TEMP_F = 20.0f;
 constexpr float MAX_VALID_TEMP_F = 120.0f;
@@ -113,6 +121,7 @@ constexpr float GAUGE_MIN_C = 0.0f;
 constexpr float GAUGE_MAX_C = 35.0f;
 
 constexpr uint8_t PROFILE_COUNT = 6;
+constexpr size_t MAX_FERMENTER_NAME_LENGTH = 24;
 constexpr size_t MAX_PROFILE_NAME_LENGTH = 15;
 
 enum class UserMode : uint8_t {
@@ -159,6 +168,7 @@ struct ProfileSettings {
 
 struct Settings {
   uint16_t version = SETTINGS_VERSION;
+  String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
@@ -340,6 +350,14 @@ inline UserMode nextMode(UserMode mode) {
 
 inline void sanitizeSettings(Settings &settings) {
   settings.version = SETTINGS_VERSION;
+  settings.fermenterName.trim();
+  if (settings.fermenterName.length() == 0) {
+    settings.fermenterName = DEFAULT_FERMENTER_NAME;
+  }
+  if (settings.fermenterName.length() > MAX_FERMENTER_NAME_LENGTH) {
+    settings.fermenterName =
+        settings.fermenterName.substring(0, MAX_FERMENTER_NAME_LENGTH);
+  }
   if (settings.activeProfile >= PROFILE_COUNT) {
     settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
   }

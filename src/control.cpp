@@ -191,6 +191,14 @@ void FermentationController::cancelOutputTest(uint32_t nowMs,
                RuntimeState::Idle);
 }
 
+void FermentationController::forceOutputsOff(uint32_t nowMs) {
+  _outputTest = OutputTestKind::None;
+  Settings safeSettings;
+  safeSettings.mode = UserMode::Off;
+  applyOutputs(nowMs, safeSettings, false, false, false, FaultCode::None,
+               RuntimeState::Off);
+}
+
 void FermentationController::applyOutputs(uint32_t nowMs,
                                           const Settings &settings,
                                           bool heaterRequested,

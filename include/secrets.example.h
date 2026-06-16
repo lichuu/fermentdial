@@ -5,4 +5,4 @@
 
 #define FERM_WIFI_SSID "your-wifi-name"
 #define FERM_WIFI_PASSWORD "your-wifi-password"
-#define FERM_WIFI_HOSTNAME "ferment-dial"
+#define FERM_WIFI_HOSTNAME_BASE "fermentdial"

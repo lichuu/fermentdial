@@ -12,6 +12,32 @@ String profileTargetKey(uint8_t index) {
   return String("profTgt") + String(index);
 }
 
+bool targetNear(float actualC, float expectedC) {
+  return fabsf(actualC - expectedC) < 0.12f;
+}
+
+bool migrateDefaultProfileTarget(Settings &settings, ProfileSlot slot,
+                                 float staleTargetC, float newTargetC) {
+  const uint8_t index = static_cast<uint8_t>(slot);
+  if (!settings.profiles[index].name.equals(defaultProfileName(index)) ||
+      !targetNear(settings.profiles[index].targetC, staleTargetC)) {
+    return false;
+  }
+  settings.profiles[index].targetC = newTargetC;
+  return true;
+}
+
+bool migrateProfileDefaults(Settings &settings) {
+  bool changed = false;
+  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Crash,
+                                         fToC(38.0f), DEFAULT_CRASH_TARGET_C);
+  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Crash,
+                                         fToC(39.9f), DEFAULT_CRASH_TARGET_C);
+  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Lager,
+                                         fToC(50.0f), DEFAULT_LAGER_TARGET_C);
+  return changed;
+}
+
 } // namespace
 
 void SettingsStorage::begin() { _prefs.begin("fermctl", false); }
@@ -63,12 +89,16 @@ bool SettingsStorage::load(Settings &settings) {
     return true;
   }
 
-  if (version != SETTINGS_VERSION) {
+  if (version != SETTINGS_VERSION &&
+      version != SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE &&
+      version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE) {
     sanitizeSettings(settings);
     return false;
   }
 
   settings.version = version;
+  settings.fermenterName =
+      _prefs.getString("fermName", DEFAULT_FERMENTER_NAME);
   settings.activeProfile =
       _prefs.getUChar("profile", static_cast<uint8_t>(ProfileSlot::Ferment));
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
@@ -89,6 +119,14 @@ bool SettingsStorage::load(Settings &settings) {
   settings.tempOffsetC = _prefs.getFloat("offsetC", DEFAULT_TEMP_OFFSET_C);
   settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
   sanitizeSettings(settings);
+  if (version == SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE) {
+    if (migrateProfileDefaults(settings)) {
+      sanitizeSettings(settings);
+    }
+  }
+  if (version != SETTINGS_VERSION) {
+    saveNow(settings);
+  }
   return true;
 }
 
@@ -109,6 +147,7 @@ void SettingsStorage::saveNow(const Settings &settings) {
   sanitizeSettings(copy);
 
   _prefs.putUShort("version", SETTINGS_VERSION);
+  _prefs.putString("fermName", copy.fermenterName);
   _prefs.putUChar("profile", copy.activeProfile);
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     _prefs.putString(profileNameKey(i).c_str(), copy.profiles[i].name);

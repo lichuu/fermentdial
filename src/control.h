@@ -40,6 +40,7 @@ public:
   bool requestOutputTest(OutputTestKind kind, uint32_t nowMs,
                          const Settings &settings, bool sensorValid);
   void cancelOutputTest(uint32_t nowMs, const Settings &settings);
+  void forceOutputsOff(uint32_t nowMs);
 
   RuntimeState runtimeState() const { return _runtimeState; }
   FaultCode faultCode() const { return _faultCode; }

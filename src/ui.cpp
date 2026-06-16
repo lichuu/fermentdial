@@ -6,7 +6,25 @@ namespace ferm {
 
 namespace {
 
-constexpr uint8_t MENU_COUNT = 15;
+enum MenuIndex : uint8_t {
+  MENU_PROFILE = 0,
+  MENU_TARGET = 1,
+  MENU_MODE = 2,
+  MENU_COOL_ON = 3,
+  MENU_HEAT_ON = 4,
+  MENU_HOLD_BAND = 5,
+  MENU_COOLING_OFF = 6,
+  MENU_COOLING_RUN = 7,
+  MENU_OFFSET = 8,
+  MENU_UNITS = 9,
+  MENU_WIFI = 10,
+  MENU_MQTT = 11,
+  MENU_HEATER_TEST = 12,
+  MENU_PUMP_TEST = 13,
+  MENU_ABOUT = 14,
+};
+
+constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
@@ -65,14 +83,27 @@ void DisplayUI::begin() {
   _lastEncoder = M5Dial.Encoder.read();
   _lastActivityMs = millis();
 
-  _canvas.fillScreen(COLOR_BLUE);
-  _canvas.setTextColor(TFT_WHITE, TFT_BLACK);
-  _canvas.setTextSize(2);
-  _canvas.drawString(FIRMWARE_NAME, _canvas.width() / 2,
-                     _canvas.height() / 2 - 18);
-  _canvas.setTextSize(1);
-  _canvas.drawString(String("v") + FIRMWARE_VERSION, _canvas.width() / 2,
-                     _canvas.height() / 2 + 18);
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  _canvas.fillScreen(COLOR_BG);
+  drawArcSeg(104, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 6);
+  drawArcSeg(104, GA_START, GA_START + 60.0f, COLOR_COOL, 6);
+  drawArcSeg(104, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
+             COLOR_HEAT, 6);
+  _canvas.fillSmoothCircle(cx, cy - 54, 5, COLOR_GOLD);
+
+  _canvas.fillSmoothRoundRect(cx - 82, cy - 25, 164, 50, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 82, cy - 25, 164, 50, 14, COLOR_BLUE);
+
+  _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
+  _canvas.drawString(FIRMWARE_NAME, cx, cy - 5, &fonts::DejaVu18);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString(String("v") + FIRMWARE_VERSION, cx, cy + 42,
+                     &fonts::DejaVu12);
+  _canvas.fillSmoothCircle(cx - 24, cy + 66, 3, COLOR_COOL);
+  _canvas.fillSmoothCircle(cx, cy + 66, 3, COLOR_OK);
+  _canvas.fillSmoothCircle(cx + 24, cy + 66, 3, COLOR_HEAT);
   _canvas.pushSprite(0, 0);
 }
 
@@ -228,27 +259,29 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     _toastUntilMs = nowMs + 1500;
     requestSave();
   } else if (_screen == Screen::Menu) {
-    if (_menuIndex <= 8) {
-      if (_menuIndex == 8) {
-        settings.unitsFahrenheit = !settings.unitsFahrenheit;
-        _toast = String("Units: ") + temperatureUnit(settings.unitsFahrenheit);
-        _toastUntilMs = nowMs + 1500;
-        requestSave();
-        resetSettingsEncoderFilters();
-        _dirty = true;
-        return;
-      }
+    if (_menuIndex <= MENU_OFFSET) {
       _editIndex = _menuIndex;
       _screen = Screen::Edit;
       resetSettingsEncoderFilters();
-    } else if (_menuIndex == 9) {
+    } else if (_menuIndex == MENU_UNITS) {
+      settings.unitsFahrenheit = !settings.unitsFahrenheit;
+      _toast = String("Units: ") + temperatureUnit(settings.unitsFahrenheit);
+      _toastUntilMs = nowMs + 1500;
+      requestSave();
+      resetSettingsEncoderFilters();
+      _dirty = true;
+      return;
+    } else if (_menuIndex == MENU_WIFI) {
       _wifiSetupRequested = true;
-      _toast = "Starting setup AP";
+      _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
+      _toastUntilMs = nowMs + 3500;
+    } else if (_menuIndex == MENU_MQTT) {
+      _toast = FERM_ENABLE_NETWORK ? "MQTT not enabled" : "Network disabled";
       _toastUntilMs = nowMs + 2000;
-    } else if (_menuIndex == 12 || _menuIndex == 13) {
+    } else if (_menuIndex == MENU_HEATER_TEST || _menuIndex == MENU_PUMP_TEST) {
       _screen = Screen::ConfirmTest;
       resetSettingsEncoderFilters();
-    } else if (_menuIndex == 14) {
+    } else if (_menuIndex == MENU_ABOUT) {
       _screen = Screen::About;
       resetSettingsEncoderFilters();
     }
@@ -258,7 +291,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     requestSave();
   } else if (_screen == Screen::ConfirmTest) {
     _pendingOutputTest =
-        _menuIndex == 12 ? OutputTestKind::Heater : OutputTestKind::Pump;
+        _menuIndex == MENU_HEATER_TEST ? OutputTestKind::Heater
+                                       : OutputTestKind::Pump;
     _screen = Screen::Main;
     resetSettingsEncoderFilters();
   } else if (_screen == Screen::About) {
@@ -501,14 +535,10 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   _canvas.setTextColor(stateCol, bg);
   _canvas.drawString(stateLine, cx, cy + 34, &fonts::FreeSansBold12pt7b);
 
-  // 7. target readout / demo note in the bottom gap
+  // 7. fermenter name in the bottom gap
   if (!editing) {
-    if (model.demoSensor) {
-      _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-      _canvas.drawString("DEMO - outputs off", cx, cy + 56, &fonts::DejaVu12);
-    } else {
-      drawTargetTemperature(cx, cy + 56, targetC, unitsF, COLOR_TEXT_MUTED, bg);
-    }
+    _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
+    _canvas.drawString(settings.fermenterName, cx, cy + 56, &fonts::DejaVu12);
   }
   drawOutputChips(model);
 }
@@ -716,6 +746,11 @@ void DisplayUI::drawOutputChips(const UiModel &model) {
       drawSnowflake(x, y, 8, glyph);
     }
   }
+  if (model.demoSensor) {
+    _canvas.setTextDatum(middle_center);
+    _canvas.setTextColor(COLOR_GOLD, COLOR_BG);
+    _canvas.drawString("DEMO", cx, y + 20, &fonts::DejaVu12);
+  }
 }
 
 void DisplayUI::drawMenu(const Settings &settings,
@@ -757,10 +792,12 @@ void DisplayUI::drawMenu(const Settings &settings,
                      &fonts::DejaVu18);
 
   const char *hint = "tap to select";
-  if (_menuIndex == 8) {
+  if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
-  } else if (_menuIndex == 9) {
-    hint = "tap to start AP";
+  } else if (_menuIndex == MENU_WIFI) {
+    hint = network.status == "Setup AP" ? "AP is active" : "tap to start AP";
+  } else if (_menuIndex == MENU_MQTT) {
+    hint = FERM_ENABLE_NETWORK ? "not enabled yet" : "network disabled";
   }
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(hint, cx, cy + 78, &fonts::DejaVu12);
@@ -795,8 +832,8 @@ void DisplayUI::drawConfirmTest() {
   _canvas.drawString("Confirm test", _canvas.width() / 2, 61);
   _canvas.setTextSize(1);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(_menuIndex == 12 ? "Heater ON for 5 sec"
-                                      : "Pump ON for 5 sec",
+  _canvas.drawString(_menuIndex == MENU_HEATER_TEST ? "Heater ON for 5 sec"
+                                                    : "Pump ON for 5 sec",
                      _canvas.width() / 2, 108);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString("Mode cannot be OFF", _canvas.width() / 2, 134);
@@ -805,15 +842,26 @@ void DisplayUI::drawConfirmTest() {
 }
 
 void DisplayUI::drawAbout() {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  drawArcSeg(104, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 5);
+  drawArcSeg(104, GA_START, GA_START + 60.0f, COLOR_COOL, 5);
+  drawArcSeg(104, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
+             COLOR_HEAT, 5);
+
+  _canvas.fillSmoothRoundRect(cx - 90, cy - 43, 180, 86, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 90, cy - 43, 180, 86, 14, COLOR_BLUE);
+
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextSize(2);
-  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(FIRMWARE_NAME, _canvas.width() / 2, 74);
-  _canvas.setTextSize(1);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, _canvas.width() / 2,
-                     108);
-  _canvas.drawString("M5Stack Dial / ESP32-S3", _canvas.width() / 2, 132);
+  _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
+  _canvas.drawString(FIRMWARE_NAME, cx, cy - 22, &fonts::DejaVu18);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, cx, cy + 6,
+                     &fonts::DejaVu12);
+  _canvas.setTextColor(COLOR_TEXT, COLOR_PANEL);
+  _canvas.drawString("M5Stack Dial / ESP32-S3", cx, cy + 30,
+                     &fonts::DejaVu12);
 }
 
 void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,

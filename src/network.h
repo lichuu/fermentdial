@@ -18,6 +18,7 @@ struct NetworkSnapshot {
   bool wifiEnabled = false;
   bool wifiConfigured = false;
   String ipAddress = "";
+  String hostname = "";
   String ssid = "";
   String status = "WiFi OFF";
 };
@@ -25,6 +26,7 @@ struct NetworkSnapshot {
 struct WebStatus {
   bool tempValid = false;
   float tempC = NAN;
+  String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
@@ -40,9 +42,33 @@ struct WebStatus {
   bool demoSensor = false;
 };
 
+enum class InfluxExportTarget : uint8_t {
+  V1 = 1,
+  V2 = 2,
+  V3 = 3,
+  VictoriaMetrics = 4,
+};
+
+struct InfluxConfig {
+  bool enabled = false;
+  InfluxExportTarget target = InfluxExportTarget::V1;
+  String url = "";
+  String database = "fermentdial";
+  String retentionPolicy = "";
+  String username = "";
+  String password = "";
+  String org = "";
+  String bucket = "fermentdial";
+  String token = "";
+  uint32_t intervalSeconds = 30;
+};
+
+using FirmwareUpdateSafetyCallback = void (*)();
+
 class NetworkManager {
 public:
   void begin(const Settings &settings);
+  void setFirmwareUpdateSafetyCallback(FirmwareUpdateSafetyCallback callback);
   void update(uint32_t nowMs, Settings &settings);
   void publishState(uint32_t nowMs, const Settings &settings,
                     const TemperatureSensor &sensor,
@@ -53,10 +79,22 @@ public:
 
 private:
   NetworkSnapshot _snapshot;
+  FirmwareUpdateSafetyCallback _firmwareUpdateSafetyCallback = nullptr;
+  bool _firmwareUpdateInProgress = false;
+  bool _firmwareUpdateHadError = false;
+  bool _firmwareUpdateOk = false;
+  String _firmwareUpdateError = "";
   bool _settingsChanged = false;
   uint32_t _lastPublishMs = 0;
   uint32_t _lastWifiAttemptMs = 0;
+  uint32_t _lastInfluxPublishMs = 0;
   WebStatus _webStatus;
+  InfluxConfig _influx;
+  int _lastInfluxStatusCode = 0;
+  String _lastInfluxStatus = "Disabled";
+  String _wifiSsid;
+  String _wifiPassword;
+  String _hostname;
 
 #if FERM_ENABLE_NETWORK
   Preferences _prefs;
@@ -64,18 +102,26 @@ private:
   DNSServer _dns;
   bool _apMode = false;
   bool _serverStarted = false;
-  String _wifiSsid;
-  String _wifiPassword;
 #endif
 
   void startWifi(uint32_t nowMs);
   void startSetupPortal();
   void startWebServer();
   void handleSettingsPost();
+  void handleDeviceSettingsPost();
+  void handleFirmwareUpload();
+  void handleInfluxSettingsPost();
+  void loadInfluxConfig();
+  void saveInfluxConfig();
+  void publishInflux(uint32_t nowMs);
+  String influxLineProtocol() const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson() const;
+  String metricsText() const;
   String pageHtml() const;
   String setupHtml() const;
+  String settingsHtml() const;
+  String firmwareHtml() const;
 
 #if FERM_ENABLE_NETWORK
   Settings *_settings = nullptr;
