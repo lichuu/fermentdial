@@ -283,8 +283,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
       _toastUntilMs = nowMs + 3500;
     } else if (_menuIndex == MENU_MQTT) {
-      _toast = FERM_ENABLE_NETWORK ? "MQTT not enabled" : "Network disabled";
-      _toastUntilMs = nowMs + 2000;
+      _toast = FERM_ENABLE_NETWORK ? "Set up MQTT in web UI" : "Network disabled";
+      _toastUntilMs = nowMs + 2500;
     } else if (_menuIndex == MENU_HEATER_TEST || _menuIndex == MENU_PUMP_TEST) {
       _screen = Screen::ConfirmTest;
       resetSettingsEncoderFilters();
@@ -804,7 +804,13 @@ void DisplayUI::drawMenu(const Settings &settings,
   } else if (_menuIndex == MENU_WIFI) {
     hint = network.status == "Setup AP" ? "AP is active" : "tap to start AP";
   } else if (_menuIndex == MENU_MQTT) {
-    hint = FERM_ENABLE_NETWORK ? "not enabled yet" : "network disabled";
+    if (!network.wifiEnabled) {
+      hint = "network disabled";
+    } else if (!network.mqttEnabled) {
+      hint = "enable in web UI";
+    } else {
+      hint = network.mqttConnected ? "broker connected" : "connecting...";
+    }
   }
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(hint, cx, cy + 78, &fonts::DejaVu12);
@@ -942,7 +948,13 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
     }
     return network.status;
   case 11:
-    return FERM_ENABLE_NETWORK ? "Enabled" : "Offline";
+    if (!network.wifiEnabled) {
+      return "Offline";
+    }
+    if (!network.mqttEnabled) {
+      return "Off";
+    }
+    return network.mqttConnected ? "Connected" : "Connecting";
   case 12:
   case 13:
     return "5s";

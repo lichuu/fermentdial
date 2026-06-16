@@ -158,6 +158,29 @@ bool isUrlSafe(char c) {
          c == '~';
 }
 
+// Sanitize a user-supplied base name so it is valid as both an InfluxDB
+// measurement and a Prometheus metric-name prefix. Invalid characters become
+// '_', empty falls back to "fermentdial", and a leading digit is prefixed so
+// the result is a legal Prometheus identifier.
+String sanitizeMetricBase(String value) {
+  value.trim();
+  String out = "";
+  out.reserve(value.length());
+  for (size_t i = 0; i < value.length(); ++i) {
+    char c = value.charAt(i);
+    bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_';
+    out += ok ? c : '_';
+  }
+  if (out.length() == 0) {
+    return "fermentdial";
+  }
+  if (out.charAt(0) >= '0' && out.charAt(0) <= '9') {
+    out = "_" + out;
+  }
+  return out;
+}
+
 String urlEncode(const String &value) {
   const char *hex = "0123456789ABCDEF";
   String encoded = "";
@@ -257,6 +280,7 @@ void NetworkManager::begin(const Settings &settings) {
 #if FERM_ENABLE_NETWORK
   _prefs.begin("net", false);
   loadInfluxConfig();
+  loadMqttConfig();
   _wifiSsid = _prefs.getString("ssid", FERM_WIFI_SSID);
   _wifiPassword = _prefs.getString("pass", FERM_WIFI_PASSWORD);
   _snapshot.wifiConfigured = _wifiSsid.length() > 0;
@@ -272,8 +296,10 @@ void NetworkManager::begin(const Settings &settings) {
     startSetupPortal();
   }
 
-  // TODO Stage 4: add MQTT client and Home Assistant discovery.
-  // Local control must continue if Wi-Fi/MQTT/Home Assistant is unavailable.
+  // MQTT publishing is driven from update()/publishMqtt(). Home Assistant
+  // discovery is not implemented yet; local control continues regardless of
+  // Wi-Fi/MQTT availability.
+  _mqtt.setBufferSize(2048);
 #endif
 
 }
@@ -286,6 +312,7 @@ void NetworkManager::setFirmwareUpdateSafetyCallback(
 void NetworkManager::update(uint32_t nowMs, Settings &settings) {
 #if FERM_ENABLE_NETWORK
   _settings = &settings;
+  _snapshot.mqttEnabled = _mqttConfig.enabled;
   const String nextHostname = networkHostname(settings.fermenterName);
   if (nextHostname != _hostname) {
     _hostname = nextHostname;
@@ -315,8 +342,18 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
     }
   }
 
-  // TODO Stage 4: process MQTT setpoint/mode commands.
-  // Never let MQTT override safety rules; it should only mutate Settings.
+  if (_mqttConfig.enabled && _snapshot.wifiConnected &&
+      _mqttConfig.host.length() > 0) {
+    if (!_mqtt.connected()) {
+      mqttConnect(nowMs);
+    }
+    _mqtt.loop();
+  } else if (_mqtt.connected()) {
+    _mqtt.disconnect();
+  }
+  _snapshot.mqttConnected = _mqtt.connected();
+  // TODO: subscribe to setpoint/mode commands. MQTT must never override
+  // safety rules; it should only mutate Settings.
 #else
   (void)settings;
   (void)nowMs;
@@ -353,6 +390,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
 
 #if FERM_ENABLE_NETWORK
   publishInflux(nowMs);
+  publishMqtt(nowMs);
 #endif
 }
 
@@ -424,6 +462,8 @@ void NetworkManager::startWebServer() {
              [this]() { handleDeviceSettingsPost(); });
   _server.on("/settings/influx", HTTP_POST,
              [this]() { handleInfluxSettingsPost(); });
+  _server.on("/settings/mqtt", HTTP_POST,
+             [this]() { handleMqttSettingsPost(); });
   _server.on("/metrics", HTTP_GET, [this]() {
     _server.send(200, "text/plain; version=0.0.4; charset=utf-8",
                  metricsText());
@@ -635,6 +675,9 @@ void NetworkManager::handleInfluxSettingsPost() {
   if (_influx.bucket.length() == 0) {
     _influx.bucket = "fermentdial";
   }
+  if (_server.hasArg("influxMeasurement")) {
+    _influx.measurement = sanitizeMetricBase(_server.arg("influxMeasurement"));
+  }
   saveInfluxConfig();
   _lastInfluxStatus = _influx.enabled ? "Saved" : "Disabled";
   _server.sendHeader("Location", "/settings", true);
@@ -658,6 +701,8 @@ void NetworkManager::loadInfluxConfig() {
   _influx.org = _prefs.getString("influxOrg", "");
   _influx.bucket = _prefs.getString("influxBucket", "fermentdial");
   _influx.token = _prefs.getString("influxToken", "");
+  _influx.measurement =
+      sanitizeMetricBase(_prefs.getString("influxMeas", "fermentdial"));
   _influx.intervalSeconds = _prefs.getUInt("influxEvery", 30);
   if (_influx.intervalSeconds < 10) {
     _influx.intervalSeconds = 10;
@@ -681,6 +726,7 @@ void NetworkManager::saveInfluxConfig() {
   _prefs.putString("influxOrg", _influx.org);
   _prefs.putString("influxBucket", _influx.bucket);
   _prefs.putString("influxToken", _influx.token);
+  _prefs.putString("influxMeas", _influx.measurement);
   _prefs.putUInt("influxEvery", _influx.intervalSeconds);
 #endif
 }
@@ -716,7 +762,7 @@ String NetworkManager::influxLineProtocol() const {
                           String(static_cast<uint8_t>(_webStatus.faultCode)) +
                           "i");
 
-  String line = "fermentdial";
+  String line = _influx.measurement;
   line += ",fermenter=" + influxEscape(_webStatus.fermenterName);
   line += ",profile=" + influxEscape(profile.name);
   line += " ";
@@ -806,6 +852,176 @@ void NetworkManager::publishInflux(uint32_t nowMs) {
     _lastInfluxStatus = "POST failed " + String(code);
   }
   http.end();
+#else
+  (void)nowMs;
+#endif
+}
+
+namespace {
+String mqttBaseTopic(const MqttConfig &config) {
+  String base = config.baseTopic;
+  base.trim();
+  if (base.length() == 0) {
+    base = "fermentdial";
+  }
+  while (base.endsWith("/")) {
+    base = base.substring(0, base.length() - 1);
+  }
+  return base;
+}
+} // namespace
+
+void NetworkManager::loadMqttConfig() {
+#if FERM_ENABLE_NETWORK
+  _mqttConfig.enabled = _prefs.getBool("mqttEn", false);
+  _mqttConfig.host = _prefs.getString("mqttHost", "");
+  _mqttConfig.port = _prefs.getUShort("mqttPort", 1883);
+  _mqttConfig.username = _prefs.getString("mqttUser", "");
+  _mqttConfig.password = _prefs.getString("mqttPass", "");
+  _mqttConfig.baseTopic = _prefs.getString("mqttTopic", "fermentdial");
+  _mqttConfig.intervalSeconds = _prefs.getUInt("mqttEvery", 30);
+  if (_mqttConfig.baseTopic.length() == 0) {
+    _mqttConfig.baseTopic = "fermentdial";
+  }
+  if (_mqttConfig.port == 0) {
+    _mqttConfig.port = 1883;
+  }
+  if (_mqttConfig.intervalSeconds < 5) {
+    _mqttConfig.intervalSeconds = 5;
+  }
+  if (_mqttConfig.intervalSeconds > 3600) {
+    _mqttConfig.intervalSeconds = 3600;
+  }
+  _lastMqttStatus = _mqttConfig.enabled ? "Waiting" : "Disabled";
+#endif
+}
+
+void NetworkManager::saveMqttConfig() {
+#if FERM_ENABLE_NETWORK
+  _prefs.putBool("mqttEn", _mqttConfig.enabled);
+  _prefs.putString("mqttHost", _mqttConfig.host);
+  _prefs.putUShort("mqttPort", _mqttConfig.port);
+  _prefs.putString("mqttUser", _mqttConfig.username);
+  _prefs.putString("mqttPass", _mqttConfig.password);
+  _prefs.putString("mqttTopic", _mqttConfig.baseTopic);
+  _prefs.putUInt("mqttEvery", _mqttConfig.intervalSeconds);
+#endif
+}
+
+void NetworkManager::handleMqttSettingsPost() {
+#if FERM_ENABLE_NETWORK
+  _mqttConfig.enabled = _server.hasArg("mqttEnabled");
+  if (_server.hasArg("mqttHost")) {
+    _mqttConfig.host = _server.arg("mqttHost");
+    _mqttConfig.host.trim();
+  }
+  if (_server.hasArg("mqttPort")) {
+    uint32_t port = _server.arg("mqttPort").toInt();
+    if (port == 0 || port > 65535) {
+      port = 1883;
+    }
+    _mqttConfig.port = static_cast<uint16_t>(port);
+  }
+  if (_server.hasArg("mqttUsername")) {
+    _mqttConfig.username = _server.arg("mqttUsername");
+    _mqttConfig.username.trim();
+  }
+  if (_server.hasArg("mqttPassword") &&
+      _server.arg("mqttPassword").length() > 0) {
+    _mqttConfig.password = _server.arg("mqttPassword");
+  }
+  if (_server.hasArg("clearMqttPassword")) {
+    _mqttConfig.password = "";
+  }
+  if (_server.hasArg("mqttTopic")) {
+    _mqttConfig.baseTopic = _server.arg("mqttTopic");
+    _mqttConfig.baseTopic.trim();
+  }
+  if (_mqttConfig.baseTopic.length() == 0) {
+    _mqttConfig.baseTopic = "fermentdial";
+  }
+  if (_server.hasArg("mqttInterval")) {
+    uint32_t interval = _server.arg("mqttInterval").toInt();
+    if (interval < 5) {
+      interval = 5;
+    }
+    if (interval > 3600) {
+      interval = 3600;
+    }
+    _mqttConfig.intervalSeconds = interval;
+  }
+  saveMqttConfig();
+  // Force a fresh connection so the new broker/topic take effect immediately.
+  _mqtt.disconnect();
+  _lastMqttAttemptMs = 0;
+  _lastMqttPublishMs = 0;
+  _lastMqttStatus = _mqttConfig.enabled ? "Saved" : "Disabled";
+  _server.sendHeader("Location", "/settings", true);
+  _server.send(303, "text/plain", "");
+#endif
+}
+
+void NetworkManager::mqttConnect(uint32_t nowMs) {
+#if FERM_ENABLE_NETWORK
+  if (nowMs - _lastMqttAttemptMs < 5000UL) {
+    return;
+  }
+  _lastMqttAttemptMs = nowMs;
+
+  _mqtt.setServer(_mqttConfig.host.c_str(), _mqttConfig.port);
+
+  const String base = mqttBaseTopic(_mqttConfig);
+  const String availabilityTopic = base + "/availability";
+  const String clientId = _hostname.length() > 0 ? _hostname : String("fermentdial");
+
+  bool ok;
+  if (_mqttConfig.username.length() > 0) {
+    ok = _mqtt.connect(clientId.c_str(), _mqttConfig.username.c_str(),
+                       _mqttConfig.password.c_str(), availabilityTopic.c_str(),
+                       0, true, "offline");
+  } else {
+    ok = _mqtt.connect(clientId.c_str(), nullptr, nullptr,
+                       availabilityTopic.c_str(), 0, true, "offline");
+  }
+
+  if (ok) {
+    _mqtt.publish(availabilityTopic.c_str(), "online", true);
+    _lastMqttStatus = "Connected";
+  } else {
+    _lastMqttStatus = "Connect failed (" + String(_mqtt.state()) + ")";
+  }
+#else
+  (void)nowMs;
+#endif
+}
+
+void NetworkManager::publishMqtt(uint32_t nowMs) {
+#if FERM_ENABLE_NETWORK
+  if (!_mqttConfig.enabled) {
+    _lastMqttStatus = "Disabled";
+    return;
+  }
+  if (!_snapshot.wifiConnected || _apMode) {
+    _lastMqttStatus = "Waiting for Wi-Fi";
+    return;
+  }
+  if (_mqttConfig.host.length() == 0) {
+    _lastMqttStatus = "No broker";
+    return;
+  }
+  if (!_mqtt.connected()) {
+    return; // update() drives reconnect with backoff
+  }
+  const uint32_t intervalMs = _mqttConfig.intervalSeconds * 1000UL;
+  if (nowMs - _lastMqttPublishMs < intervalMs) {
+    return;
+  }
+  _lastMqttPublishMs = nowMs;
+
+  const String stateTopic = mqttBaseTopic(_mqttConfig) + "/state";
+  const String payload = statusJson();
+  const bool ok = _mqtt.publish(stateTopic.c_str(), payload.c_str(), true);
+  _lastMqttStatus = ok ? "Published" : "Publish failed (payload too large?)";
 #else
   (void)nowMs;
 #endif
@@ -1011,47 +1227,48 @@ String NetworkManager::metricsText() const {
       "fermenter=\"" + prometheusLabelEscape(_webStatus.fermenterName) +
       "\",profile=\"" + prometheusLabelEscape(profile.name) + "\"";
 
+  const String p = _influx.measurement;
   String metrics = "";
-  metrics += "# HELP fermentdial_firmware_info Firmware build info.\n";
-  metrics += "# TYPE fermentdial_firmware_info gauge\n";
-  metrics += "fermentdial_firmware_info{version=\"" +
+  metrics += "# HELP " + p + "_firmware_info Firmware build info.\n";
+  metrics += "# TYPE " + p + "_firmware_info gauge\n";
+  metrics += p + "_firmware_info{version=\"" +
              prometheusLabelEscape(FIRMWARE_VERSION) + "\"} 1\n";
-  metrics += "# HELP fermentdial_sensor_valid Sensor validity, 1 when valid.\n";
-  metrics += "# TYPE fermentdial_sensor_valid gauge\n";
-  metrics += "fermentdial_sensor_valid{" + labels + "} " +
+  metrics += "# HELP " + p + "_sensor_valid Sensor validity, 1 when valid.\n";
+  metrics += "# TYPE " + p + "_sensor_valid gauge\n";
+  metrics += p + "_sensor_valid{" + labels + "} " +
              String(_webStatus.tempValid ? 1 : 0) + "\n";
   if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
-    metrics += "# HELP fermentdial_temperature_celsius Current temperature.\n";
-    metrics += "# TYPE fermentdial_temperature_celsius gauge\n";
-    metrics += "fermentdial_temperature_celsius{" + labels + "} " +
+    metrics += "# HELP " + p + "_temperature_celsius Current temperature.\n";
+    metrics += "# TYPE " + p + "_temperature_celsius gauge\n";
+    metrics += p + "_temperature_celsius{" + labels + "} " +
                String(_webStatus.tempC, 3) + "\n";
   }
-  metrics += "# HELP fermentdial_target_celsius Active target temperature.\n";
-  metrics += "# TYPE fermentdial_target_celsius gauge\n";
-  metrics += "fermentdial_target_celsius{" + labels + "} " +
+  metrics += "# HELP " + p + "_target_celsius Active target temperature.\n";
+  metrics += "# TYPE " + p + "_target_celsius gauge\n";
+  metrics += p + "_target_celsius{" + labels + "} " +
              String(profile.targetC, 3) + "\n";
-  metrics += "# HELP fermentdial_heater_on Heater output state.\n";
-  metrics += "# TYPE fermentdial_heater_on gauge\n";
-  metrics += "fermentdial_heater_on{" + labels + "} " +
+  metrics += "# HELP " + p + "_heater_on Heater output state.\n";
+  metrics += "# TYPE " + p + "_heater_on gauge\n";
+  metrics += p + "_heater_on{" + labels + "} " +
              String(_webStatus.heaterOn ? 1 : 0) + "\n";
-  metrics += "# HELP fermentdial_pump_on Pump output state.\n";
-  metrics += "# TYPE fermentdial_pump_on gauge\n";
-  metrics += "fermentdial_pump_on{" + labels + "} " +
+  metrics += "# HELP " + p + "_pump_on Pump output state.\n";
+  metrics += "# TYPE " + p + "_pump_on gauge\n";
+  metrics += p + "_pump_on{" + labels + "} " +
              String(_webStatus.pumpOn ? 1 : 0) + "\n";
-  metrics += "# HELP fermentdial_mode Current control mode as an enum.\n";
-  metrics += "# TYPE fermentdial_mode gauge\n";
-  metrics += "fermentdial_mode{" + labels + ",mode=\"" +
+  metrics += "# HELP " + p + "_mode Current control mode as an enum.\n";
+  metrics += "# TYPE " + p + "_mode gauge\n";
+  metrics += p + "_mode{" + labels + ",mode=\"" +
              prometheusLabelEscape(modeTopicText(_webStatus.mode)) + "\"} " +
              String(userModeNumber(_webStatus.mode)) + "\n";
-  metrics += "# HELP fermentdial_runtime_state Current runtime state as an enum.\n";
-  metrics += "# TYPE fermentdial_runtime_state gauge\n";
-  metrics += "fermentdial_runtime_state{" + labels + ",state=\"" +
+  metrics += "# HELP " + p + "_runtime_state Current runtime state as an enum.\n";
+  metrics += "# TYPE " + p + "_runtime_state gauge\n";
+  metrics += p + "_runtime_state{" + labels + ",state=\"" +
              prometheusLabelEscape(stateText(_webStatus.runtimeState)) +
              "\"} " + String(runtimeStateNumber(_webStatus.runtimeState)) +
              "\n";
-  metrics += "# HELP fermentdial_fault_code Current fault code as an enum.\n";
-  metrics += "# TYPE fermentdial_fault_code gauge\n";
-  metrics += "fermentdial_fault_code{" + labels + ",fault=\"" +
+  metrics += "# HELP " + p + "_fault_code Current fault code as an enum.\n";
+  metrics += "# TYPE " + p + "_fault_code gauge\n";
+  metrics += p + "_fault_code{" + labels + ",fault=\"" +
              prometheusLabelEscape(faultText(_webStatus.faultCode)) + "\"} " +
              String(static_cast<uint8_t>(_webStatus.faultCode)) + "\n";
   return metrics;
@@ -1220,7 +1437,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <p class="hint">Scrape <code>http://)HTML";
   html += htmlEscape(_snapshot.ipAddress.length() > 0 ? _snapshot.ipAddress
                                                        : apSsid);
-  html += R"HTML(/metrics</code>. Values are emitted in Celsius and output states are 0/1 gauges.</p>
+  html += R"HTML(/metrics</code>. Values are emitted in Celsius and output states are 0/1 gauges. The measurement / metric name set under Influx Export is also used as the Prometheus metric prefix.</p>
 </section>
 <section class="panel"><h2>Influx Export</h2>
 <form method="post" action="/settings/influx">
@@ -1241,6 +1458,9 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
   html += selected(_influx.target, InfluxExportTarget::VictoriaMetrics);
   html += R"HTML(>VictoriaMetrics</option>
 </select></label>
+<label>Measurement / metric name<input name="influxMeasurement" value=")HTML";
+  html += htmlEscape(_influx.measurement);
+  html += R"HTML("></label>
 <label>Base URL<input name="influxUrl" placeholder="http://host:8086" value=")HTML";
   html += htmlEscape(_influx.url);
   html += R"HTML("></label>
@@ -1281,6 +1501,42 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <p class="hint">Last export: )HTML";
   html += htmlEscape(_lastInfluxStatus);
   html += R"HTML(. VictoriaMetrics uses Influx line protocol at <code>/write</code> unless the URL already includes an Influx write path.</p>
+</section>
+<section class="panel"><h2>MQTT / Home Assistant</h2>
+<form method="post" action="/settings/mqtt">
+<label><input type="checkbox" name="mqttEnabled")HTML";
+  html += checked(_mqttConfig.enabled);
+  html += R"HTML(>Enable MQTT publishing</label>
+<div class="row">
+<label>Broker host<input name="mqttHost" placeholder="192.168.1.10" value=")HTML";
+  html += htmlEscape(_mqttConfig.host);
+  html += R"HTML("></label>
+<label>Port<input name="mqttPort" inputmode="numeric" value=")HTML";
+  html += String(_mqttConfig.port);
+  html += R"HTML("></label>
+</div>
+<div class="row">
+<label>Username<input name="mqttUsername" value=")HTML";
+  html += htmlEscape(_mqttConfig.username);
+  html += R"HTML("></label>
+<label>Password<input name="mqttPassword" type="password" placeholder="leave blank to keep saved"></label>
+</div>
+<label><input type="checkbox" name="clearMqttPassword">Clear saved password</label>
+<label>Base topic<input name="mqttTopic" value=")HTML";
+  html += htmlEscape(_mqttConfig.baseTopic);
+  html += R"HTML("></label>
+<label>Interval seconds<input name="mqttInterval" inputmode="numeric" value=")HTML";
+  html += String(_mqttConfig.intervalSeconds);
+  html += R"HTML("></label>
+<button type="submit">Save MQTT settings</button>
+</form>
+<p class="hint">Publishes the status JSON to <code>)HTML";
+  html += htmlEscape(mqttBaseTopic(_mqttConfig));
+  html += R"HTML(/state</code> (retained), with availability on <code>)HTML";
+  html += htmlEscape(mqttBaseTopic(_mqttConfig));
+  html += R"HTML(/availability</code>. Status: )HTML";
+  html += htmlEscape(_lastMqttStatus);
+  html += R"HTML(</p>
 </section>
 <section class="panel"><h2>Firmware Update</h2>
 <p class="warn">Outputs turn off before upload starts. The controller reboots after a successful update.</p>

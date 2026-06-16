@@ -6,7 +6,9 @@
 #if FERM_ENABLE_NETWORK
 #include <DNSServer.h>
 #include <Preferences.h>
+#include <PubSubClient.h>
 #include <WebServer.h>
+#include <WiFiClient.h>
 #endif
 
 namespace ferm {
@@ -14,6 +16,7 @@ namespace ferm {
 struct NetworkSnapshot {
   bool wifiConnected = false;
   bool mqttConnected = false;
+  bool mqttEnabled = false;
   bool otaEnabled = false;
   bool wifiEnabled = false;
   bool wifiConfigured = false;
@@ -61,6 +64,17 @@ struct InfluxConfig {
   String org = "";
   String bucket = "fermentdial";
   String token = "";
+  String measurement = "fermentdial";
+  uint32_t intervalSeconds = 30;
+};
+
+struct MqttConfig {
+  bool enabled = false;
+  String host = "";
+  uint16_t port = 1883;
+  String username = "";
+  String password = "";
+  String baseTopic = "fermentdial";
   uint32_t intervalSeconds = 30;
 };
 
@@ -93,6 +107,10 @@ private:
   InfluxConfig _influx;
   int _lastInfluxStatusCode = 0;
   String _lastInfluxStatus = "Disabled";
+  MqttConfig _mqttConfig;
+  uint32_t _lastMqttPublishMs = 0;
+  uint32_t _lastMqttAttemptMs = 0;
+  String _lastMqttStatus = "Disabled";
   String _wifiSsid;
   String _wifiPassword;
   String _hostname;
@@ -103,6 +121,8 @@ private:
   DNSServer _dns;
   bool _apMode = false;
   bool _serverStarted = false;
+  WiFiClient _mqttClient;
+  PubSubClient _mqtt{_mqttClient};
 #endif
 
   void startWifi(uint32_t nowMs);
@@ -115,6 +135,11 @@ private:
   void loadInfluxConfig();
   void saveInfluxConfig();
   void publishInflux(uint32_t nowMs);
+  void handleMqttSettingsPost();
+  void loadMqttConfig();
+  void saveMqttConfig();
+  void mqttConnect(uint32_t nowMs);
+  void publishMqtt(uint32_t nowMs);
   String influxLineProtocol() const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson() const;
