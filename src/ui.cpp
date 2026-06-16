@@ -113,7 +113,12 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   processInput(nowMs, settings);
 
   if (_screen != Screen::Main && nowMs - _lastActivityMs > UI_TIMEOUT_MS) {
+    if (_screen == Screen::Edit && _editSnapshotValid) {
+      settings = _editSnapshot;
+      _editSnapshotValid = false;
+    }
     _screen = Screen::Main;
+    resetSettingsEncoderFilters();
     _dirty = true;
   }
 
@@ -219,7 +224,14 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
 
   if (_screen == Screen::Edit) {
     if (touch.y > (h * 2) / 3) {
-      handleShortPress(nowMs, settings);
+      const int16_t w = M5Dial.Display.width();
+      if (touch.x < w / 3) {
+        resetCurrentValue(settings);
+      } else if (touch.x < (w * 2) / 3) {
+        cancelEdit(settings);
+      } else {
+        saveEdit(settings);
+      }
     } else {
       handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR
                                                          : EDIT_ENCODER_DIVISOR,
@@ -267,9 +279,7 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     requestSave();
   } else if (_screen == Screen::Menu) {
     if (_menuIndex <= MENU_OFFSET) {
-      _editIndex = _menuIndex;
-      _screen = Screen::Edit;
-      resetSettingsEncoderFilters();
+      beginEdit(_menuIndex, settings);
     } else if (_menuIndex == MENU_UNITS) {
       settings.unitsFahrenheit = !settings.unitsFahrenheit;
       _toast = String("Units: ") + temperatureUnit(settings.unitsFahrenheit);
@@ -293,9 +303,7 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       resetSettingsEncoderFilters();
     }
   } else if (_screen == Screen::Edit) {
-    _screen = Screen::Menu;
-    resetSettingsEncoderFilters();
-    requestSave();
+    saveEdit(settings);
   } else if (_screen == Screen::ConfirmTest) {
     _pendingOutputTest =
         _menuIndex == MENU_HEATER_TEST ? OutputTestKind::Heater
@@ -310,13 +318,42 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
 }
 
 void DisplayUI::handleLongPress(Settings &settings) {
-  (void)settings;
   if (_screen == Screen::Main) {
     _screen = Screen::Menu;
+  } else if (_screen == Screen::Edit) {
+    cancelEdit(settings);
+    return;
   } else {
     _screen = Screen::Main;
   }
   resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::beginEdit(uint8_t index, const Settings &settings) {
+  _editIndex = index;
+  _editSnapshot = settings;
+  _editSnapshotValid = true;
+  _screen = Screen::Edit;
+  resetSettingsEncoderFilters();
+}
+
+void DisplayUI::cancelEdit(Settings &settings) {
+  if (_editSnapshotValid) {
+    settings = _editSnapshot;
+  }
+  _editSnapshotValid = false;
+  _screen = Screen::Menu;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::saveEdit(Settings &settings) {
+  (void)settings;
+  _editSnapshotValid = false;
+  _screen = Screen::Menu;
+  resetSettingsEncoderFilters();
+  requestSave();
   _dirty = true;
 }
 
@@ -399,6 +436,48 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   default:
     break;
   }
+}
+
+void DisplayUI::resetCurrentValue(Settings &settings) {
+  switch (_editIndex) {
+  case MENU_PROFILE:
+    settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+    break;
+  case MENU_TARGET:
+    setActiveTargetC(settings, defaultProfileTargetC(settings.activeProfile));
+    break;
+  case MENU_MODE:
+    settings.mode = UserMode::Off;
+    break;
+  case MENU_COOL_ON:
+    settings.coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
+    if (settings.holdDeltaC > settings.coolOnDeltaC) {
+      settings.holdDeltaC = settings.coolOnDeltaC;
+    }
+    break;
+  case MENU_HEAT_ON:
+    settings.heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
+    if (settings.holdDeltaC > settings.heatOnDeltaC) {
+      settings.holdDeltaC = settings.heatOnDeltaC;
+    }
+    break;
+  case MENU_HOLD_BAND:
+    settings.holdDeltaC = DEFAULT_HOLD_DELTA_C;
+    break;
+  case MENU_COOLING_OFF:
+    settings.pumpMinOffSeconds = DEFAULT_PUMP_MIN_OFF_SECONDS;
+    break;
+  case MENU_COOLING_RUN:
+    settings.pumpMinRunSeconds = DEFAULT_PUMP_MIN_RUN_SECONDS;
+    break;
+  case MENU_OFFSET:
+    settings.tempOffsetC = DEFAULT_TEMP_OFFSET_C;
+    break;
+  default:
+    break;
+  }
+  resetSettingsEncoderFilters();
+  _dirty = true;
 }
 
 int32_t DisplayUI::filteredSettingsDelta(int32_t delta, int32_t &accumulator,
@@ -848,9 +927,26 @@ void DisplayUI::drawEdit(const Settings &settings) {
                                                           : "rotate to change",
                      cx, cy + 36, &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 48, cy + 56, 96, 30, 15, COLOR_BLUE);
+  const int16_t buttonY = cy + 56;
+  const int16_t buttonW = 66;
+  const int16_t buttonH = 30;
+  _canvas.fillSmoothRoundRect(cx - 108, buttonY, buttonW, buttonH, 15,
+                              COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 108, buttonY, buttonW, buttonH, 15, COLOR_BLUE);
+  _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
+  _canvas.drawString("Reset", cx - 75, cy + 71, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 33, buttonY, buttonW, buttonH, 15,
+                              COLOR_PANEL_DARK);
+  _canvas.drawRoundRect(cx - 33, buttonY, buttonW, buttonH, 15,
+                        COLOR_TEXT_MUTED);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
+  _canvas.drawString("Back", cx, cy + 71, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx + 42, buttonY, buttonW, buttonH, 15,
+                              COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_BLUE);
-  _canvas.drawString("Save", cx, cy + 71, &fonts::DejaVu18);
+  _canvas.drawString("Save", cx + 75, cy + 71, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawConfirmTest() {
