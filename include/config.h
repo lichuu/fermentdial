@@ -44,11 +44,12 @@ namespace ferm {
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
-constexpr uint16_t SETTINGS_VERSION = 6;
+constexpr uint16_t SETTINGS_VERSION = 7;
 constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;
 constexpr uint16_t SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE = 4;
 constexpr uint16_t SETTINGS_VERSION_FERMENTER_NAME_STORAGE = 5;
+constexpr uint16_t SETTINGS_VERSION_PRELIVE_TARGET_STORAGE = 6;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -61,10 +62,13 @@ constexpr bool MOSFET_ACTIVE_HIGH = true;
 constexpr uint32_t TEMP_READ_INTERVAL_MS = 1500;
 constexpr uint32_t BOOT_SPLASH_MS = 1600;
 constexpr uint32_t SETTINGS_SAVE_DEBOUNCE_MS = 5000;
-constexpr uint32_t UI_REDRAW_INTERVAL_MS = 250;
+constexpr uint32_t UI_REDRAW_INTERVAL_MS = 100;
 constexpr uint32_t UI_TIMEOUT_MS = 30000;
 constexpr uint32_t DISPLAY_DIM_MS = 60000;
 constexpr uint32_t OUTPUT_TEST_MS = 5000;
+// How long the main screen stays in gold "SET TARGET" focus after the last
+// encoder turn before reverting to the live temperature readout.
+constexpr uint32_t SETPOINT_FOCUS_MS = 2500;
 constexpr uint8_t SENSOR_FAULT_READ_COUNT = 3;
 
 constexpr float cToF(float tempC) { return (tempC * 9.0f / 5.0f) + 32.0f; }
@@ -181,6 +185,9 @@ struct Settings {
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  // Live operating setpoint. Profiles hold recallable presets; this is the
+  // value the controller actually regulates to and what the dial nudges.
+  float liveTargetC = DEFAULT_TARGET_C;
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;
@@ -335,6 +342,20 @@ inline void setActiveTargetC(Settings &settings, float targetC) {
       clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
 }
 
+// Live setpoint the controller regulates to (separate from profile presets).
+inline float currentTargetC(const Settings &settings) {
+  return settings.liveTargetC;
+}
+
+inline void setCurrentTargetC(Settings &settings, float targetC) {
+  settings.liveTargetC = clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
+}
+
+// Load the active profile's preset into the live setpoint (recall a preset).
+inline void applyActiveProfileTarget(Settings &settings) {
+  settings.liveTargetC = activeProfile(settings).targetC;
+}
+
 inline const char *profileRuntimeText(const Settings &settings,
                                       RuntimeState state) {
   if (state == RuntimeState::Cooling &&
@@ -408,6 +429,12 @@ inline void sanitizeSettings(Settings &settings) {
   settings.pumpMinRunSeconds = clampU32(settings.pumpMinRunSeconds, 0, 600);
   settings.tempOffsetC =
       clampFloat(settings.tempOffsetC, MIN_OFFSET_C, MAX_OFFSET_C);
+
+  if (isnan(settings.liveTargetC)) {
+    settings.liveTargetC = activeProfile(settings).targetC;
+  }
+  settings.liveTargetC =
+      clampFloat(settings.liveTargetC, MIN_TARGET_C, MAX_TARGET_C);
 
   uint8_t modeValue = static_cast<uint8_t>(settings.mode);
   if (modeValue > static_cast<uint8_t>(UserMode::CoolOnly)) {

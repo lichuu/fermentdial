@@ -32,7 +32,7 @@ void TemperatureSensor::update(uint32_t nowMs, const Settings &settings) {
   constexpr float periodMs = 30000.0f;
   float phase =
       static_cast<float>(nowMs % static_cast<uint32_t>(periodMs)) / periodMs;
-  _temperatureC = activeTargetC(settings) +
+  _temperatureC = currentTargetC(settings) +
                   (sinf(phase * TWO_PI) * deltaFToC(1.2f)) +
                   settings.tempOffsetC;
   _rawTemperatureC = _temperatureC;
@@ -139,7 +139,7 @@ void FermentationController::update(uint32_t nowMs, const Settings &settings,
   bool heaterRequested = false;
   bool pumpRequested = false;
 
-  const float targetC = activeTargetC(settings);
+  const float targetC = currentTargetC(settings);
   const float heatStartThreshold = targetC - settings.heatOnDeltaC;
   const float heatStopThreshold = targetC - settings.holdDeltaC;
   const float coolStartThreshold = targetC + settings.coolOnDeltaC;

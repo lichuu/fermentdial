@@ -37,7 +37,7 @@ void logStatus(uint32_t nowMs) {
     Serial.print(F("invalid"));
   }
   Serial.print(F(" targetC="));
-  Serial.print(activeTargetC(settings), 1);
+  Serial.print(currentTargetC(settings), 1);
   Serial.print(F(" profile="));
   Serial.print(activeProfile(settings).name);
   Serial.print(F(" mode="));

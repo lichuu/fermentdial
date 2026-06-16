@@ -64,6 +64,7 @@ bool SettingsStorage::load(Settings &settings) {
     settings.tempOffsetC =
         deltaFToC(_prefs.getFloat("offsetF", DEFAULT_TEMP_OFFSET_F));
     settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
+    settings.liveTargetC = activeTargetC(settings);
     sanitizeSettings(settings);
     saveNow(settings);
     return true;
@@ -84,6 +85,7 @@ bool SettingsStorage::load(Settings &settings) {
         _prefs.getUInt("pumpRun", DEFAULT_PUMP_MIN_RUN_SECONDS);
     settings.tempOffsetC = _prefs.getFloat("offsetC", DEFAULT_TEMP_OFFSET_C);
     settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
+    settings.liveTargetC = activeTargetC(settings);
     sanitizeSettings(settings);
     saveNow(settings);
     return true;
@@ -91,7 +93,8 @@ bool SettingsStorage::load(Settings &settings) {
 
   if (version != SETTINGS_VERSION &&
       version != SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE &&
-      version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE) {
+      version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE &&
+      version != SETTINGS_VERSION_PRELIVE_TARGET_STORAGE) {
     sanitizeSettings(settings);
     return false;
   }
@@ -107,6 +110,8 @@ bool SettingsStorage::load(Settings &settings) {
     settings.profiles[i].targetC =
         _prefs.getFloat(profileTargetKey(i).c_str(), defaultProfileTargetC(i));
   }
+  // Live setpoint (v7+). Older stores fall back to the active profile preset.
+  settings.liveTargetC = _prefs.getFloat("liveTgt", activeTargetC(settings));
   settings.coolOnDeltaC = _prefs.getFloat("coolOn", DEFAULT_COOL_ON_DELTA_C);
   settings.heatOnDeltaC = _prefs.getFloat("heatOn", DEFAULT_HEAT_ON_DELTA_C);
   settings.holdDeltaC = _prefs.getFloat("hold", DEFAULT_HOLD_DELTA_C);
@@ -154,6 +159,7 @@ void SettingsStorage::saveNow(const Settings &settings) {
     _prefs.putString(profileNameKey(i).c_str(), copy.profiles[i].name);
     _prefs.putFloat(profileTargetKey(i).c_str(), copy.profiles[i].targetC);
   }
+  _prefs.putFloat("liveTgt", copy.liveTargetC);
   _prefs.putFloat("coolOn", copy.coolOnDeltaC);
   _prefs.putFloat("heatOn", copy.heatOnDeltaC);
   _prefs.putFloat("hold", copy.holdDeltaC);

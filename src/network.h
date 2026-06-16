@@ -32,6 +32,7 @@ struct WebStatus {
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  float liveTargetC = DEFAULT_TARGET_C;
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;

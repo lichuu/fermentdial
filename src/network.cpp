@@ -269,6 +269,7 @@ void NetworkManager::begin(const Settings &settings) {
     _webStatus.profiles[i] = settings.profiles[i];
   }
   _webStatus.activeProfile = activeProfileIndex(settings);
+  _webStatus.liveTargetC = currentTargetC(settings);
   _webStatus.coolOnDeltaC = settings.coolOnDeltaC;
   _webStatus.heatOnDeltaC = settings.heatOnDeltaC;
   _webStatus.holdDeltaC = settings.holdDeltaC;
@@ -370,6 +371,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
     _webStatus.profiles[i] = settings.profiles[i];
   }
   _webStatus.activeProfile = activeProfileIndex(settings);
+  _webStatus.liveTargetC = currentTargetC(settings);
   _webStatus.coolOnDeltaC = settings.coolOnDeltaC;
   _webStatus.heatOnDeltaC = settings.heatOnDeltaC;
   _webStatus.holdDeltaC = settings.holdDeltaC;
@@ -769,7 +771,7 @@ String NetworkManager::influxLineProtocol() const {
   if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
     appendField(fields, "temp_c=" + String(_webStatus.tempC, 3));
   }
-  appendField(fields, "target_c=" + String(profile.targetC, 3));
+  appendField(fields, "target_c=" + String(_webStatus.liveTargetC, 3));
   appendField(fields, "cool_on_delta_c=" + String(_webStatus.coolOnDeltaC, 3));
   appendField(fields, "heat_on_delta_c=" + String(_webStatus.heatOnDeltaC, 3));
   appendField(fields, "hold_delta_c=" + String(_webStatus.holdDeltaC, 3));
@@ -1079,13 +1081,14 @@ void NetworkManager::handleSettingsPost() {
       return;
     }
     _settings->activeProfile = static_cast<uint8_t>(requestedProfile);
+    applyActiveProfileTarget(*_settings);  // recall the profile's preset
     changed = true;
   }
 
   if (_server.hasArg("target")) {
     float target = _server.arg("target").toFloat();
-    setActiveTargetC(*_settings,
-                     _settings->unitsFahrenheit ? fToC(target) : target);
+    setCurrentTargetC(*_settings,
+                      _settings->unitsFahrenheit ? fToC(target) : target);
     changed = true;
   }
 
@@ -1181,7 +1184,7 @@ String NetworkManager::statusJson() const {
       _webStatus.unitsFahrenheit ? cToF(_webStatus.tempC) : _webStatus.tempC;
   const uint8_t profileIndex =
       _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
-  const float targetC = _webStatus.profiles[profileIndex].targetC;
+  const float targetC = _webStatus.liveTargetC;  // live setpoint, not preset
   const float target = _webStatus.unitsFahrenheit ? cToF(targetC) : targetC;
   const float coolOn = _webStatus.unitsFahrenheit
                            ? deltaCToF(_webStatus.coolOnDeltaC)
@@ -1281,7 +1284,7 @@ String NetworkManager::metricsText() const {
   metrics += "# HELP " + p + "_target_celsius Active target temperature.\n";
   metrics += "# TYPE " + p + "_target_celsius gauge\n";
   metrics += p + "_target_celsius{" + labels + "} " +
-             String(profile.targetC, 3) + "\n";
+             String(_webStatus.liveTargetC, 3) + "\n";
   metrics += "# HELP " + p + "_heater_on Heater output state.\n";
   metrics += "# TYPE " + p + "_heater_on gauge\n";
   metrics += p + "_heater_on{" + labels + "} " +

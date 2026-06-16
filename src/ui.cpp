@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include "fonts/dejavu_sans_bold_44_vlw.h"
+#include "fonts/help_glyph.h"
 
 namespace ferm {
 
@@ -29,6 +30,23 @@ constexpr uint8_t QUICK_ACTION_COUNT = 2;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+}
+
+// Scale an RGB565 colour toward black, for pressed-button feedback.
+constexpr uint16_t dim565(uint16_t c, uint8_t num = 9, uint8_t den = 16) {
+  return static_cast<uint16_t>(
+      (((((c >> 11) & 0x1F) * num / den) & 0x1F) << 11) |
+      (((((c >> 5) & 0x3F) * num / den) & 0x3F) << 5) |
+      ((((c & 0x1F) * num / den) & 0x1F)));
+}
+
+// Alpha-blend foreground over background (a = 0..255), for AA glyph blitting.
+constexpr uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a) {
+  return static_cast<uint16_t>(
+      (((((fg >> 11) & 0x1F) * a + ((bg >> 11) & 0x1F) * (255 - a)) / 255)
+       << 11) |
+      (((((fg >> 5) & 0x3F) * a + ((bg >> 5) & 0x3F) * (255 - a)) / 255) << 5) |
+      ((((fg & 0x1F) * a + (bg & 0x1F) * (255 - a)) / 255)));
 }
 
 // Appliance-style palette adapted for the round M5Stack Dial.
@@ -200,6 +218,17 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   auto touch = M5Dial.Touch.getDetail();
+
+  // Track the live press point so buttons can show pressed-state feedback.
+  // Redraw on press begin/end; while held stationary the sprite persists.
+  const bool pressed = touch.isPressed();
+  if (pressed != _touchPressActive) {
+    _touchPressActive = pressed;
+    _dirty = true;
+  }
+  _pressX = pressed ? touch.x : -1;
+  _pressY = pressed ? touch.y : -1;
+
   if (_screen == Screen::Menu && touch.isFlicking()) {
     markActivity(nowMs);
     scrollMenuByTouch(touch.deltaY());
@@ -234,7 +263,22 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
 
   const int16_t h = M5Dial.Display.height();
   if (_screen == Screen::Main) {
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    // Help badge carve-out (matches the "?" rendered in drawMain).
+    if (touch.x >= cx - 98 && touch.x <= cx - 70 && touch.y >= cy - 14 &&
+        touch.y <= cy + 14) {
+      _screen = Screen::Help;
+      _dirty = true;
+      return;
+    }
     openQuickMenu(settings);
+    return;
+  }
+
+  if (_screen == Screen::Help) {
+    _screen = Screen::Main;
+    _dirty = true;
     return;
   }
 
@@ -273,10 +317,12 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
       cancelQuickFlow();
       return;
     }
-    if (touch.y > h / 2) {
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    // Apply is the right button of the confirm action row.
+    if (touch.x >= cx + 6 && touch.x <= cx + 90 && touch.y >= cy + 44 &&
+        touch.y <= cy + 70) {
       confirmQuickAction(settings);
-    } else {
-      cancelQuickFlow();
     }
     return;
   }
@@ -293,28 +339,37 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::Edit) {
-    if (touch.y > (h * 2) / 3) {
-      const int16_t w = M5Dial.Display.width();
-      if (touch.y > h - 36) {
-        cancelEdit(settings);
-      } else if (touch.x < w / 2) {
+    // Hit zones must match the rendered button rects in drawEdit().
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    const int16_t topY = cy + 34;   // Reset / Save row (height 24)
+    const int16_t backY = cy + 66;  // Back row (height 24)
+    if (touch.y >= topY && touch.y < topY + 24) {
+      if (touch.x < cx) {
         requestEditConfirm(EditConfirmAction::Reset);
       } else {
         requestEditConfirm(EditConfirmAction::Save);
       }
-    } else {
-      handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR
-                                                         : EDIT_ENCODER_DIVISOR,
+    } else if (touch.y >= backY && touch.y <= backY + 24) {
+      cancelEdit(settings);
+    } else if (touch.y < topY) {
+      // Tap the upper area to nudge the value: left = down, right = up.
+      handleEncoder(touch.x < cx ? -EDIT_ENCODER_DIVISOR : EDIT_ENCODER_DIVISOR,
                     settings);
     }
     return;
   }
 
   if (_screen == Screen::ConfirmEdit) {
-    if (touch.y > h / 2) {
-      confirmEditAction(settings);
-    } else {
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    // Same action-row rects as QuickConfirm: Cancel (left) / confirm (right).
+    if (touch.x >= cx - 90 && touch.x <= cx - 6 && touch.y >= cy + 44 &&
+        touch.y <= cy + 70) {
       cancelEditConfirm();
+    } else if (touch.x >= cx + 6 && touch.x <= cx + 90 && touch.y >= cy + 44 &&
+               touch.y <= cy + 70) {
+      confirmEditAction(settings);
     }
     return;
   }
@@ -437,7 +492,20 @@ void DisplayUI::scrollQuickByTouch(int16_t deltaY, const Settings &settings) {
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
   if (_screen == Screen::Main) {
-    openQuickMenu(settings);
+    // Rotating on the main screen nudges the active setpoint directly and
+    // shows the gold "SET TARGET" focus, thermostat-style.
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    setCurrentTargetC(settings,
+                      currentTargetC(settings) +
+                          (filteredDelta *
+                           (settings.unitsFahrenheit ? deltaFToC(0.1f) : 0.1f)));
+    _setpointFocusUntilMs = millis() + SETPOINT_FOCUS_MS;
+    requestSave();
+    _dirty = true;
     return;
   } else if (_screen == Screen::QuickMenu) {
     int32_t filteredDelta = filteredSettingsDelta(
@@ -477,7 +545,10 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
 
 void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Main) {
-    openQuickMenu(settings);
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+    return;
   } else if (_screen == Screen::QuickMenu) {
     selectQuickAction(settings);
   } else if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
@@ -522,13 +593,18 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   } else if (_screen == Screen::About) {
     _screen = Screen::Menu;
     resetSettingsEncoderFilters();
+  } else if (_screen == Screen::Help) {
+    _screen = Screen::Main;
+    resetSettingsEncoderFilters();
   }
   _dirty = true;
 }
 
 void DisplayUI::handleLongPress(Settings &settings) {
   if (_screen == Screen::Main) {
-    openQuickMenu(settings);
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
     return;
   } else if (_screen == Screen::QuickMenu) {
     _screen = Screen::Menu;
@@ -615,6 +691,7 @@ void DisplayUI::requestQuickConfirm() {
 void DisplayUI::confirmQuickAction(Settings &settings) {
   if (_pendingQuickAction == QuickAction::Profile) {
     settings.activeProfile = _pendingProfile;
+    applyActiveProfileTarget(settings);  // recall this profile's preset
     _toast = String("Profile: ") + activeProfile(settings).name;
   } else {
     settings.mode = _pendingMode;
@@ -652,7 +729,10 @@ void DisplayUI::cancelEdit(Settings &settings) {
 }
 
 void DisplayUI::saveEdit(Settings &settings) {
-  (void)settings;
+  // Selecting a profile or editing its target applies it to the live setpoint.
+  if (_editIndex == MENU_PROFILE || _editIndex == MENU_TARGET) {
+    applyActiveProfileTarget(settings);
+  }
   _editSnapshotValid = false;
   _screen = Screen::Menu;
   resetSettingsEncoderFilters();
@@ -863,6 +943,8 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
     drawConfirmEdit(settings);
   } else if (_screen == Screen::ConfirmTest) {
     drawConfirmTest();
+  } else if (_screen == Screen::Help) {
+    drawHelp();
   } else {
     drawAbout();
   }
@@ -901,7 +983,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   const bool editing = nowMs < _setpointFocusUntilMs;
   const bool fault = model.runtimeState == RuntimeState::Fault;
   const bool unitsF = settings.unitsFahrenheit;
-  const float targetC = activeTargetC(settings);
+  const float targetC = currentTargetC(settings);
   uint16_t accent = stateColor(model.runtimeState, model.faultCode);
   if (!fault && model.runtimeState == RuntimeState::Cooling &&
       activeProfileIndex(settings) == static_cast<uint8_t>(ProfileSlot::Crash)) {
@@ -986,6 +1068,14 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     _canvas.drawString(settings.fermenterName, cx, cy + 56, &fonts::DejaVu12);
   }
   drawOutputChips(model);
+
+  // Tappable help badge (left of centre, clear of the centred text stack).
+  // DejaVu Sans Bold "?" blitted from a pre-rendered alpha mask.
+  if (!editing) {
+    _canvas.fillSmoothCircle(cx - 84, cy, 13, COLOR_PANEL);
+    _canvas.drawCircle(cx - 84, cy, 13, COLOR_TEXT_MUTED);
+    drawHelpIcon(cx - 84, cy, COLOR_TEXT_MUTED, COLOR_PANEL);
+  }
 }
 
 void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
@@ -1003,24 +1093,21 @@ void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
   _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
   _canvas.drawString("QUICK", cx, cy - 64, &fonts::DejaVu18);
 
-  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
-  _canvas.drawString(quickActionLabel(other), cx,
-                     _quickIndex == 0 ? cy + 36 : cy - 36, &fonts::DejaVu12);
-
-  _canvas.fillSmoothRoundRect(cx - 90, cy - 22, 180, 48, 14, COLOR_BG);
-  _canvas.drawRoundRect(cx - 90, cy - 22, 180, 48, 14, COLOR_GOLD);
+  // Only one neighbour to show (two quick actions), so keep it directly below
+  // the focused card and pull the card up under the title to close the gap.
+  _canvas.fillSmoothRoundRect(cx - 90, cy - 38, 180, 48, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 90, cy - 38, 180, 48, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(quickActionLabel(action), cx, cy - 6,
+  _canvas.drawString(quickActionLabel(action), cx, cy - 22,
                      &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(quickActionValue(action, settings), cx, cy + 13,
+  _canvas.drawString(quickActionValue(action, settings), cx, cy - 3,
                      &fonts::DejaVu18);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("swipe left/right", cx, cy + 66,
-                     &fonts::DejaVu12);
-  drawPill(cx - 30, cy + 46, 60, 18, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
-           COLOR_TEXT_MUTED, 1);
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
+  _canvas.drawString(quickActionLabel(other), cx, cy + 32, &fonts::DejaVu12);
+
+  drawGhostButton(cx, cy + 54, 64, 20, "Cancel", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model) {
@@ -1053,10 +1140,7 @@ void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model)
       formatTemperature(profile.targetC, settings.unitsFahrenheit), cx,
       cy + 13, &fonts::DejaVu18);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("swipe to change", cx, cy + 66, &fonts::DejaVu12);
-  drawPill(cx - 30, cy + 46, 60, 18, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
-           COLOR_TEXT_MUTED, 1);
+  drawGhostButton(cx, cy + 54, 64, 20, "Cancel", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
@@ -1087,10 +1171,7 @@ void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
   _canvas.drawString(modeText(_pendingMode), cx, cy + 2,
                      &fonts::FreeSansBold18pt7b);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("swipe to change", cx, cy + 66, &fonts::DejaVu12);
-  drawPill(cx - 30, cy + 46, 60, 18, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
-           COLOR_TEXT_MUTED, 1);
+  drawGhostButton(cx, cy + 54, 64, 20, "Cancel", COLOR_TEXT_MUTED, &fonts::DejaVu12);
   (void)settings;
 }
 
@@ -1100,28 +1181,25 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
 
   drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.fillSmoothRoundRect(cx - 104, cy - 82, 208, 150, 15, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 104, cy - 82, 208, 150, 15, COLOR_GOLD);
+  _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_GOLD);
   _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
-  _canvas.drawString("CONFIRM", cx, cy - 62, &fonts::DejaVu18);
+  _canvas.drawString("CONFIRM", cx, cy - 64, &fonts::DejaVu18);
 
-  _canvas.fillSmoothRoundRect(cx - 92, cy - 24, 184, 70, 14, COLOR_BG);
-  _canvas.drawRoundRect(cx - 92, cy - 24, 184, 70, 14, COLOR_GOLD);
-  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 5,
+  _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_GOLD);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 16,
                      &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(quickPendingValue(settings), cx, cy + 14,
+  _canvas.drawString(quickPendingValue(settings), cx, cy + 6,
                      &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 55, cy + 44, 110, 28, 14, COLOR_GOLD);
-  _canvas.setTextColor(TFT_BLACK, COLOR_GOLD);
-  _canvas.drawString("Apply", cx, cy + 58, &fonts::DejaVu12);
-
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("tap top to cancel", cx, cy + 78, &fonts::DejaVu12);
-  drawPill(cx - 30, cy + 52, 60, 18, COLOR_PANEL_DARK, COLOR_GOLD, "Cancel",
-           COLOR_TEXT_MUTED, 1);
+  // Action row: Cancel (left, ghost) and Apply (right, filled gold).
+  drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
+                  &fonts::DejaVu12);
+  drawSolidButton(cx + 48, cy + 57, 84, 26, "Apply", COLOR_GOLD, TFT_BLACK,
+                  &fonts::DejaVu12);
 }
 
 bool DisplayUI::ensureLargeFont() {
@@ -1297,6 +1375,23 @@ void DisplayUI::drawSnowflake(int16_t cx, int16_t cy, int16_t size,
   }
 }
 
+void DisplayUI::drawHelpIcon(int16_t cx, int16_t cy, uint16_t color,
+                             uint16_t bg) {
+  // Blit the pre-rendered DejaVu Sans Bold "?" alpha mask, centred and
+  // anti-aliased over the badge fill.
+  const int16_t x0 = cx - HELP_GLYPH_W / 2;
+  const int16_t y0 = cy - HELP_GLYPH_H / 2;
+  for (int16_t gy = 0; gy < HELP_GLYPH_H; gy++) {
+    for (int16_t gx = 0; gx < HELP_GLYPH_W; gx++) {
+      const uint8_t a = HELP_GLYPH_ALPHA[gy * HELP_GLYPH_W + gx];
+      if (a == 0) {
+        continue;
+      }
+      _canvas.drawPixel(x0 + gx, y0 + gy, blend565(color, bg, a));
+    }
+  }
+}
+
 void DisplayUI::drawOutputChips(const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t y = _canvas.height() / 2 + 78;
@@ -1396,40 +1491,31 @@ void DisplayUI::drawEdit(const Settings &settings) {
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
-  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 58, &fonts::DejaVu18);
+  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 68, &fonts::DejaVu18);
 
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(menuValue(_editIndex, settings), cx, cy - 6,
+  _canvas.drawString(menuValue(_editIndex, settings), cx, cy - 30,
                      &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(editDefaultLine(settings), cx, cy + 22, &fonts::DejaVu12);
+  _canvas.drawString(editDefaultLine(settings), cx, cy - 2, &fonts::DejaVu12);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString((_editIndex == 0 || _editIndex == 2)
                          ? "swipe/rotate to choose"
                          : "swipe/rotate to change",
-                     cx, cy + 36, &fonts::DejaVu12);
+                     cx, cy + 18, &fonts::DejaVu12);
 
-  const int16_t topY = cy + 45;
-  const int16_t backY = cy + 78;
+  const int16_t topY = cy + 34;
+  const int16_t backY = cy + 66;
   const int16_t buttonW = 82;
-  const int16_t buttonH = 26;
-  _canvas.fillSmoothRoundRect(cx - 88, topY, buttonW, buttonH, 13,
-                              COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 88, topY, buttonW, buttonH, 13, COLOR_BLUE);
-  _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
-  _canvas.drawString("Reset", cx - 47, topY + 13, &fonts::DejaVu12);
+  const int16_t buttonH = 24;
+  drawSolidButton(cx - 47, topY + 12, buttonW, buttonH, "Reset", COLOR_PANEL,
+                  COLOR_ACCENT, &fonts::DejaVu12, COLOR_BLUE);
+  drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, "Save", COLOR_BLUE,
+                  TFT_WHITE, &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx + 6, topY, buttonW, buttonH, 13,
-                              COLOR_BLUE);
-  _canvas.setTextColor(TFT_WHITE, COLOR_BLUE);
-  _canvas.drawString("Save", cx + 47, topY + 13, &fonts::DejaVu12);
-
-  _canvas.fillSmoothRoundRect(cx - 48, backY, 96, 24, 12, COLOR_PANEL_DARK);
-  _canvas.drawRoundRect(cx - 48, backY, 96, 24, 12, COLOR_TEXT_MUTED);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
-  _canvas.drawString("Back", cx, backY + 12, &fonts::DejaVu12);
+  drawGhostButton(cx, backY + 12, 96, 24, "Back", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawConfirmEdit(const Settings &settings) {
@@ -1437,29 +1523,29 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
   const int16_t cy = _canvas.height() / 2;
   const bool reset = _pendingEditConfirm == EditConfirmAction::Reset;
 
+  const uint16_t accent = reset ? COLOR_GOLD : COLOR_BLUE;
+
+  // Mirror QuickConfirm's layout so both confirm screens read identically.
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextColor(reset ? COLOR_GOLD : COLOR_BLUE, COLOR_BG);
-  _canvas.drawString(reset ? "Confirm reset" : "Confirm save", cx, cy - 68,
+  _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, accent);
+  _canvas.setTextColor(accent, COLOR_PANEL);
+  _canvas.drawString(reset ? "Confirm reset" : "Confirm save", cx, cy - 64,
                      &fonts::DejaVu18);
 
-  _canvas.fillSmoothRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 96, cy - 38, 192, 74, 14,
-                        reset ? COLOR_GOLD : COLOR_BLUE);
-  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 18,
+  _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, accent);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 16,
                      &fonts::FreeSansBold12pt7b);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(editConfirmLine(settings), cx, cy + 8, &fonts::DejaVu12);
-
-  _canvas.fillSmoothRoundRect(cx - 55, cy + 52, 110, 28, 14,
-                              reset ? COLOR_GOLD : COLOR_BLUE);
-  _canvas.setTextColor(reset ? TFT_BLACK : TFT_WHITE,
-                       reset ? COLOR_GOLD : COLOR_BLUE);
-  _canvas.drawString(reset ? "Reset" : "Save", cx, cy + 66,
-                     &fonts::DejaVu12);
-
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap top to cancel", cx, cy + 92, &fonts::DejaVu12);
+  _canvas.drawString(editConfirmLine(settings), cx, cy + 6, &fonts::DejaVu12);
+
+  // Action row: Cancel (left, ghost) and Reset/Save (right, filled).
+  drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
+                  &fonts::DejaVu12);
+  drawSolidButton(cx + 48, cy + 57, 84, 26, reset ? "Reset" : "Save", accent,
+                  reset ? TFT_BLACK : TFT_WHITE, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawConfirmTest() {
@@ -1501,6 +1587,38 @@ void DisplayUI::drawAbout() {
                      &fonts::DejaVu12);
 }
 
+void DisplayUI::drawHelp() {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.fillSmoothRoundRect(cx - 104, cy - 86, 208, 172, 16, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 104, cy - 86, 208, 172, 16, COLOR_BLUE);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
+  _canvas.drawString("HELP", cx, cy - 66, &fonts::DejaVu18);
+
+  // Gesture legend: how to drive the controller from the main screen.
+  const char *gestures[][2] = {
+      {"Turn dial", "Set temp"},
+      {"Tap screen", "Quick menu"},
+      {"Press knob", "Settings"},
+  };
+  int16_t y = cy - 32;
+  for (auto &g : gestures) {
+    _canvas.setTextDatum(middle_left);
+    _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
+    _canvas.drawString(g[0], cx - 86, y, &fonts::DejaVu12);
+    _canvas.setTextDatum(middle_right);
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+    _canvas.drawString(g[1], cx + 86, y, &fonts::DejaVu12);
+    y += 26;
+  }
+
+  _canvas.setTextDatum(middle_center);
+  drawGhostButton(cx, cy + 64, 84, 24, "Close", COLOR_TEXT_MUTED,
+                  &fonts::DejaVu12);
+}
+
 void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
                          uint16_t fill, uint16_t outline, const String &text,
                          uint16_t textColor, uint8_t textSize) {
@@ -1512,14 +1630,49 @@ void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
   _canvas.drawString(text, x + w / 2, y + h / 2);
 }
 
+bool DisplayUI::pressInRect(int16_t x, int16_t y, int16_t w, int16_t h) const {
+  return _pressX >= x && _pressX < x + w && _pressY >= y && _pressY < y + h;
+}
+
+void DisplayUI::drawGhostButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
+                                const String &text, uint16_t outline,
+                                const lgfx::IFont *font) {
+  const int16_t x = cx - w / 2;
+  const int16_t y = cy - h / 2;
+  // Dark ghost button: lift the fill toward the panel tone when pressed so the
+  // (already dark) control still reads as activated.
+  const uint16_t fill = pressInRect(x, y, w, h) ? COLOR_PANEL : COLOR_PANEL_DARK;
+  _canvas.fillSmoothRoundRect(x, y, w, h, h / 2, fill);
+  _canvas.drawRoundRect(x, y, w, h, h / 2, outline);
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(outline, fill);
+  _canvas.drawString(text, cx, cy, font);
+}
+
+void DisplayUI::drawSolidButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
+                                const String &text, uint16_t fill,
+                                uint16_t textColor, const lgfx::IFont *font,
+                                uint16_t outline) {
+  const int16_t x = cx - w / 2;
+  const int16_t y = cy - h / 2;
+  const uint16_t shown = pressInRect(x, y, w, h) ? dim565(fill) : fill;
+  _canvas.fillSmoothRoundRect(x, y, w, h, h / 2, shown);
+  if (outline != 0) {
+    _canvas.drawRoundRect(x, y, w, h, h / 2, outline);
+  }
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(textColor, shown);
+  _canvas.drawString(text, cx, cy, font);
+}
+
 bool DisplayUI::quickCancelHit(int16_t x, int16_t y) const {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
-  const int16_t left = cx - 30;
-  const int16_t right = cx + 30;
-  const int16_t top = cy + 46;
-  const int16_t bottom = cy + 70;
-  return x >= left && x <= right && y >= top && y <= bottom;
+  if (_screen == Screen::QuickConfirm) {
+    // Cancel is the left button of the confirm action row.
+    return x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70;
+  }
+  return x >= cx - 32 && x <= cx + 32 && y >= cy + 44 && y <= cy + 64;
 }
 
 String DisplayUI::temperatureNumber(float tempC, bool unitsFahrenheit) const {
@@ -1661,9 +1814,10 @@ String DisplayUI::defaultMenuValue(uint8_t index,
 
 String DisplayUI::editDefaultLine(const Settings &settings) const {
   if (_editIndex == MENU_PROFILE) {
+    // Picking a profile reads as "this profile holds at N", so show the
+    // selected profile's target plainly rather than a reset preview.
     return String("Target ") +
-           formatTemperature(activeTargetC(settings), settings.unitsFahrenheit) +
-           " -> " + defaultMenuValue(_editIndex, settings);
+           formatTemperature(activeTargetC(settings), settings.unitsFahrenheit);
   }
   return String("Current ") + menuValue(_editIndex, settings) + " -> Default " +
          defaultMenuValue(_editIndex, settings);

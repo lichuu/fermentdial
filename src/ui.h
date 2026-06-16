@@ -44,6 +44,7 @@ class DisplayUI {
     ConfirmEdit,
     ConfirmTest,
     About,
+    Help,
   };
 
   enum class EditConfirmAction : uint8_t {
@@ -97,8 +98,18 @@ class DisplayUI {
   void drawConfirmEdit(const Settings &settings);
   void drawConfirmTest();
   void drawAbout();
+  void drawHelp();
   void drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
                 const String &text, uint16_t textColor, uint8_t textSize = 1);
+  void drawGhostButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
+                       const String &text, uint16_t outline,
+                       const lgfx::IFont *font);
+  void drawSolidButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
+                       const String &text, uint16_t fill, uint16_t textColor,
+                       const lgfx::IFont *font, uint16_t outline = 0);
+  // True when a finger is currently held within the given rect (top-left
+  // origin), used to render pressed-button feedback.
+  bool pressInRect(int16_t x, int16_t y, int16_t w, int16_t h) const;
   bool ensureLargeFont();
   void useDefaultFont();
   void drawTemperatureUnit(int16_t x, int16_t y, bool unitsFahrenheit,
@@ -117,6 +128,7 @@ class DisplayUI {
   void drawWifiIcon(int16_t cx, int16_t cy, int16_t size, uint8_t status, uint16_t bg);
   void drawHeatIcon(int16_t cx, int16_t cy, int16_t size, uint16_t color);
   void drawSnowflake(int16_t cx, int16_t cy, int16_t size, uint16_t color);
+  void drawHelpIcon(int16_t cx, int16_t cy, uint16_t color, uint16_t bg);
   void drawOutputChips(const UiModel &model);
   uint8_t wifiStatus(const NetworkSnapshot &network) const;
   String temperatureNumber(float tempC, bool unitsFahrenheit) const;
@@ -156,6 +168,9 @@ class DisplayUI {
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
   bool _longPressHandled = false;
+  bool _touchPressActive = false;
+  int16_t _pressX = -1;
+  int16_t _pressY = -1;
   bool _dimmed = false;
   uint8_t _appliedBrightness = 255;
   uint32_t _setpointFocusUntilMs = 0;
