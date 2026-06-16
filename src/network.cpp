@@ -14,11 +14,10 @@ namespace ferm {
 
 namespace {
 constexpr const char *SETUP_AP_SSID_PREFIX = "FermentDial-Setup";
-// Wi-Fi password for the temporary onboarding access point (only broadcast
-// before the device has joined a network).
-constexpr const char *SETUP_AP_PASSWORD = "fermentdial";
-// Default password for the web config pages over your LAN. Independent of the
-// setup-AP password; change it from Settings > Security.
+// The onboarding access point is open (no password) — it only exists before the
+// device has joined a network, carries no secrets, and reboots away after setup.
+// Default password for the web config pages over your LAN; change it from
+// Settings > Security.
 constexpr const char *DEFAULT_ADMIN_PASSWORD = "fermentdial";
 IPAddress SETUP_IP(192, 168, 4, 1);
 IPAddress SETUP_GATEWAY(192, 168, 4, 1);
@@ -466,7 +465,7 @@ void NetworkManager::startSetupPortal() {
   WiFi.disconnect(true, false);
   WiFi.mode(WIFI_AP_STA);
   WiFi.softAPConfig(SETUP_IP, SETUP_GATEWAY, SETUP_MASK);
-  WiFi.softAP(ssid.c_str(), SETUP_AP_PASSWORD);
+  WiFi.softAP(ssid.c_str());  // open network for onboarding
   _snapshot.ipAddress = WiFi.softAPIP().toString();
   _dns.start(53, "*", SETUP_IP);
   startWebServer();
@@ -1749,7 +1748,7 @@ async function scanWifi(){
   html += R"HTML(</p>
 <p class="hint">Setup AP: )HTML";
   html += htmlEscape(apSsid);
-  html += R"HTML( / password: fermentdial</p></section>
+  html += R"HTML( (open network)</p></section>
 <section class="panel"><h2>Prometheus</h2>
 <div class="status">/metrics</div>
 <p class="hint">Scrape <code>http://)HTML";
@@ -1916,7 +1915,7 @@ async function scanWifi(){
 </script>
 <p class="hint">Setup AP: )HTML";
   html += htmlEscape(setupApSsid());
-  html += R"HTML( / fermentdial</p>
+  html += R"HTML( (open network)</p>
 </div></main></body></html>)HTML";
   return html;
 }
