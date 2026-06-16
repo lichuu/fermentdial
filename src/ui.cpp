@@ -197,6 +197,11 @@ void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   auto touch = M5Dial.Touch.getDetail();
+  if (touch.wasFlicked()) {
+    handleSwipe(nowMs, settings, touch.distanceX(), touch.distanceY());
+    return;
+  }
+
   if (!touch.wasClicked()) {
     return;
   }
@@ -225,10 +230,10 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Edit) {
     if (touch.y > (h * 2) / 3) {
       const int16_t w = M5Dial.Display.width();
-      if (touch.x < w / 3) {
-        resetCurrentValue(settings);
-      } else if (touch.x < (w * 2) / 3) {
+      if (touch.y > h - 36) {
         cancelEdit(settings);
+      } else if (touch.x < w / 2) {
+        resetCurrentValue(settings);
       } else {
         saveEdit(settings);
       }
@@ -241,6 +246,68 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   handleShortPress(nowMs, settings);
+}
+
+void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
+                            int16_t dy) {
+  const int16_t absX = abs(dx);
+  const int16_t absY = abs(dy);
+  const bool horizontal = absX > absY;
+
+  markActivity(nowMs);
+
+  if (_screen == Screen::Main) {
+    if (horizontal) {
+      const float stepC = settings.unitsFahrenheit ? deltaFToC(0.5f) : 0.5f;
+      setActiveTargetC(settings, activeTargetC(settings) +
+                                     (dx > 0 ? stepC : -stepC));
+      _setpointFocusUntilMs = nowMs + 3000;
+      _toast = String("Target ") +
+               formatTemperature(activeTargetC(settings),
+                                 settings.unitsFahrenheit);
+      _toastUntilMs = nowMs + 1200;
+      requestSave();
+    } else if (dy < 0) {
+      _screen = Screen::Menu;
+      resetSettingsEncoderFilters();
+    }
+    _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::Menu) {
+    if (horizontal) {
+      if (dx > 0) {
+        handleShortPress(nowMs, settings);
+      } else {
+        _screen = Screen::Main;
+        resetSettingsEncoderFilters();
+      }
+    } else {
+      handleEncoder(dy < 0 ? -MENU_ENCODER_DIVISOR : MENU_ENCODER_DIVISOR,
+                    settings);
+    }
+    _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::Edit) {
+    if (horizontal) {
+      editCurrentValue(dx > 0 ? 1 : -1, settings);
+    } else if (dy < 0) {
+      resetCurrentValue(settings);
+    } else {
+      cancelEdit(settings);
+    }
+    _dirty = true;
+    return;
+  }
+
+  if (dx < 0 || dy > 0) {
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+  }
 }
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
@@ -892,7 +959,7 @@ void DisplayUI::drawMenu(const Settings &settings,
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, cy + 13,
                      &fonts::DejaVu18);
 
-  const char *hint = "tap to select";
+  const char *hint = "tap or swipe right";
   if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
   } else if (_menuIndex == MENU_WIFI) {
@@ -923,30 +990,30 @@ void DisplayUI::drawEdit(const Settings &settings) {
                      &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString((_editIndex == 0 || _editIndex == 2) ? "rotate to choose"
-                                                          : "rotate to change",
+  _canvas.drawString((_editIndex == 0 || _editIndex == 2)
+                         ? "swipe/rotate to choose"
+                         : "swipe/rotate to change",
                      cx, cy + 36, &fonts::DejaVu12);
 
-  const int16_t buttonY = cy + 56;
-  const int16_t buttonW = 66;
-  const int16_t buttonH = 30;
-  _canvas.fillSmoothRoundRect(cx - 108, buttonY, buttonW, buttonH, 15,
+  const int16_t topY = cy + 45;
+  const int16_t backY = cy + 78;
+  const int16_t buttonW = 82;
+  const int16_t buttonH = 26;
+  _canvas.fillSmoothRoundRect(cx - 88, topY, buttonW, buttonH, 13,
                               COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 108, buttonY, buttonW, buttonH, 15, COLOR_BLUE);
+  _canvas.drawRoundRect(cx - 88, topY, buttonW, buttonH, 13, COLOR_BLUE);
   _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
-  _canvas.drawString("Reset", cx - 75, cy + 71, &fonts::DejaVu12);
+  _canvas.drawString("Reset", cx - 47, topY + 13, &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 33, buttonY, buttonW, buttonH, 15,
-                              COLOR_PANEL_DARK);
-  _canvas.drawRoundRect(cx - 33, buttonY, buttonW, buttonH, 15,
-                        COLOR_TEXT_MUTED);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
-  _canvas.drawString("Back", cx, cy + 71, &fonts::DejaVu12);
-
-  _canvas.fillSmoothRoundRect(cx + 42, buttonY, buttonW, buttonH, 15,
+  _canvas.fillSmoothRoundRect(cx + 6, topY, buttonW, buttonH, 13,
                               COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_BLUE);
-  _canvas.drawString("Save", cx + 75, cy + 71, &fonts::DejaVu12);
+  _canvas.drawString("Save", cx + 47, topY + 13, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 48, backY, 96, 24, 12, COLOR_PANEL_DARK);
+  _canvas.drawRoundRect(cx - 48, backY, 96, 24, 12, COLOR_TEXT_MUTED);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
+  _canvas.drawString("Back", cx, backY + 12, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawConfirmTest() {
