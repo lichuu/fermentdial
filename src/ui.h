@@ -139,6 +139,7 @@ class DisplayUI {
   String quickPendingValue(const Settings &settings) const;
   String menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network = NetworkSnapshot{}) const;
   String defaultMenuValue(uint8_t index, const Settings &settings) const;
+  bool editHasReset() const;
   String editDefaultLine(const Settings &settings) const;
   String editConfirmLine(const Settings &settings) const;
   uint16_t stateColor(RuntimeState state, FaultCode fault) const;

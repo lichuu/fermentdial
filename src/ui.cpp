@@ -345,7 +345,11 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t topY = cy + 34;   // Reset / Save row (height 24)
     const int16_t backY = cy + 66;  // Back row (height 24)
     if (touch.y >= topY && touch.y < topY + 24) {
-      if (touch.x < cx) {
+      if (!editHasReset()) {
+        if (touch.x >= cx - 55 && touch.x <= cx + 55) {
+          requestEditConfirm(EditConfirmAction::Save);
+        }
+      } else if (touch.x < cx) {
         requestEditConfirm(EditConfirmAction::Reset);
       } else {
         requestEditConfirm(EditConfirmAction::Save);
@@ -1510,10 +1514,15 @@ void DisplayUI::drawEdit(const Settings &settings) {
   const int16_t backY = cy + 66;
   const int16_t buttonW = 82;
   const int16_t buttonH = 24;
-  drawSolidButton(cx - 47, topY + 12, buttonW, buttonH, "Reset", COLOR_PANEL,
-                  COLOR_ACCENT, &fonts::DejaVu12, COLOR_BLUE);
-  drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, "Save", COLOR_BLUE,
-                  TFT_WHITE, &fonts::DejaVu12);
+  if (editHasReset()) {
+    drawSolidButton(cx - 47, topY + 12, buttonW, buttonH, "Reset", COLOR_PANEL,
+                    COLOR_ACCENT, &fonts::DejaVu12, COLOR_BLUE);
+    drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, "Save", COLOR_BLUE,
+                    TFT_WHITE, &fonts::DejaVu12);
+  } else {
+    drawSolidButton(cx, topY + 12, 110, buttonH, "Save", COLOR_BLUE, TFT_WHITE,
+                    &fonts::DejaVu12);
+  }
 
   drawGhostButton(cx, backY + 12, 96, 24, "Back", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
@@ -1815,7 +1824,16 @@ String DisplayUI::defaultMenuValue(uint8_t index,
   }
 }
 
+bool DisplayUI::editHasReset() const {
+  // Mode just cycles OFF/AUTO/HEAT/COOL, so a "reset to OFF" adds nothing over
+  // rotating or swiping the value directly.
+  return _editIndex != MENU_MODE;
+}
+
 String DisplayUI::editDefaultLine(const Settings &settings) const {
+  if (!editHasReset()) {
+    return "";  // no Reset button, so no "Default ..." reset hint
+  }
   if (_editIndex == MENU_PROFILE) {
     // Picking a profile reads as "this profile holds at N", so show the
     // selected profile's target plainly rather than a reset preview.
