@@ -87,10 +87,10 @@ class DisplayUI {
 
   void draw(uint32_t nowMs, const Settings &settings, const UiModel &model);
   void drawMain(uint32_t nowMs, const Settings &settings, const UiModel &model);
-  void drawQuickMenu(const Settings &settings);
-  void drawQuickProfile(const Settings &settings);
-  void drawQuickMode(const Settings &settings);
-  void drawQuickConfirm(const Settings &settings);
+  void drawQuickMenu(const Settings &settings, const UiModel &model);
+  void drawQuickProfile(const Settings &settings, const UiModel &model);
+  void drawQuickMode(const Settings &settings, const UiModel &model);
+  void drawQuickConfirm(const Settings &settings, const UiModel &model);
   void drawMenu(const Settings &settings, const NetworkSnapshot &network);
   void drawEdit(const Settings &settings);
   void drawConfirmEdit(const Settings &settings);

@@ -525,7 +525,9 @@ void DisplayUI::handleLongPress(Settings &settings) {
   } else if (_screen == Screen::QuickProfile ||
              _screen == Screen::QuickMode ||
              _screen == Screen::QuickConfirm) {
-    cancelQuickFlow();
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
     return;
   } else if (_screen == Screen::Edit) {
     cancelEdit(settings);
@@ -836,13 +838,13 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
   if (_screen == Screen::Main) {
     drawMain(nowMs, settings, model);
   } else if (_screen == Screen::QuickMenu) {
-    drawQuickMenu(settings);
+    drawQuickMenu(settings, model);
   } else if (_screen == Screen::QuickProfile) {
-    drawQuickProfile(settings);
+    drawQuickProfile(settings, model);
   } else if (_screen == Screen::QuickMode) {
-    drawQuickMode(settings);
+    drawQuickMode(settings, model);
   } else if (_screen == Screen::QuickConfirm) {
-    drawQuickConfirm(settings);
+    drawQuickConfirm(settings, model);
   } else if (_screen == Screen::Menu) {
     drawMenu(settings, model.network);
   } else if (_screen == Screen::Edit) {
@@ -976,7 +978,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   drawOutputChips(model);
 }
 
-void DisplayUI::drawQuickMenu(const Settings &settings) {
+void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
   const QuickAction action =
@@ -984,29 +986,32 @@ void DisplayUI::drawQuickMenu(const Settings &settings) {
   const QuickAction other =
       _quickIndex == 0 ? QuickAction::Mode : QuickAction::Profile;
 
+  drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
-  _canvas.drawString("QUICK", cx, cy - 74, &fonts::DejaVu18);
+  _canvas.fillSmoothRoundRect(cx - 102, cy - 88, 204, 160, 16, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 102, cy - 88, 204, 160, 16, COLOR_BLUE);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
+  _canvas.drawString("QUICK", cx, cy - 68, &fonts::DejaVu18);
 
-  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
   _canvas.drawString(quickActionLabel(other), cx,
-                     _quickIndex == 0 ? cy + 48 : cy - 44, &fonts::DejaVu12);
+                     _quickIndex == 0 ? cy + 40 : cy - 40, &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_GOLD);
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(quickActionLabel(action), cx, cy - 9,
+  _canvas.drawString(quickActionLabel(action), cx, cy - 7,
                      &fonts::FreeSansBold12pt7b);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(quickActionValue(action, settings), cx, cy + 13,
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString(quickActionValue(action, settings), cx, cy + 15,
                      &fonts::DejaVu18);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap choose / hold settings", cx, cy + 78,
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString("tap choose / hold settings", cx, cy + 70,
                      &fonts::DejaVu12);
 }
 
-void DisplayUI::drawQuickProfile(const Settings &settings) {
+void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
   const uint8_t prev = _pendingProfile == 0 ? PROFILE_COUNT - 1
@@ -1014,29 +1019,33 @@ void DisplayUI::drawQuickProfile(const Settings &settings) {
   const uint8_t next = (_pendingProfile + 1) % PROFILE_COUNT;
   const ProfileSettings &profile = settings.profiles[_pendingProfile];
 
+  drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
-  _canvas.drawString("PROFILE", cx, cy - 74, &fonts::DejaVu18);
+  _canvas.fillSmoothRoundRect(cx - 106, cy - 88, 212, 160, 16, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 106, cy - 88, 212, 160, 16, COLOR_BLUE);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
+  _canvas.drawString("PROFILE", cx, cy - 68, &fonts::DejaVu18);
 
-  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
-  _canvas.drawString(settings.profiles[prev].name, cx, cy - 44,
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
+  _canvas.drawString(settings.profiles[prev].name, cx, cy - 40,
                      &fonts::DejaVu12);
-  _canvas.drawString(settings.profiles[next].name, cx, cy + 48,
+  _canvas.drawString(settings.profiles[next].name, cx, cy + 40,
                      &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_BLUE);
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(profile.name, cx, cy - 9, &fonts::FreeSansBold12pt7b);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(formatTemperature(profile.targetC, settings.unitsFahrenheit),
-                     cx, cy + 13, &fonts::DejaVu18);
-
+  _canvas.drawString(profile.name, cx, cy - 7, &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap to confirm", cx, cy + 78, &fonts::DejaVu12);
+  _canvas.drawString(
+      formatTemperature(profile.targetC, settings.unitsFahrenheit), cx,
+      cy + 15, &fonts::DejaVu18);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString("tap to confirm", cx, cy + 70, &fonts::DejaVu12);
 }
 
-void DisplayUI::drawQuickMode(const Settings &settings) {
+void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
   int32_t prev = static_cast<int32_t>(_pendingMode) - 1;
@@ -1045,50 +1054,56 @@ void DisplayUI::drawQuickMode(const Settings &settings) {
   }
   const int32_t next = (static_cast<int32_t>(_pendingMode) + 1) % 4;
 
+  drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
-  _canvas.drawString("MODE", cx, cy - 74, &fonts::DejaVu18);
+  _canvas.fillSmoothRoundRect(cx - 106, cy - 88, 212, 160, 16, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 106, cy - 88, 212, 160, 16, COLOR_BLUE);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
+  _canvas.drawString("MODE", cx, cy - 68, &fonts::DejaVu18);
 
-  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);
-  _canvas.drawString(modeText(static_cast<UserMode>(prev)), cx, cy - 44,
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
+  _canvas.drawString(modeText(static_cast<UserMode>(prev)), cx, cy - 40,
                      &fonts::DejaVu12);
-  _canvas.drawString(modeText(static_cast<UserMode>(next)), cx, cy + 48,
+  _canvas.drawString(modeText(static_cast<UserMode>(next)), cx, cy + 40,
                      &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_BLUE);
+  _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(modeText(_pendingMode), cx, cy - 4,
+  _canvas.drawString(modeText(_pendingMode), cx, cy - 7,
                      &fonts::FreeSansBold18pt7b);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap to confirm", cx, cy + 78, &fonts::DejaVu12);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString("tap to confirm", cx, cy + 70, &fonts::DejaVu12);
   (void)settings;
 }
 
-void DisplayUI::drawQuickConfirm(const Settings &settings) {
+void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
 
+  drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextColor(COLOR_GOLD, COLOR_BG);
-  _canvas.drawString("CONFIRM", cx, cy - 68, &fonts::DejaVu18);
+  _canvas.fillSmoothRoundRect(cx - 110, cy - 84, 220, 156, 16, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 110, cy - 84, 220, 156, 16, COLOR_GOLD);
+  _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
+  _canvas.drawString("CONFIRM", cx, cy - 64, &fonts::DejaVu18);
 
-  _canvas.fillSmoothRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_GOLD);
+  _canvas.fillSmoothRoundRect(cx - 96, cy - 26, 192, 74, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 96, cy - 26, 192, 74, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 18,
+  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 6,
                      &fonts::FreeSansBold12pt7b);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(quickPendingValue(settings), cx, cy + 8,
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString(quickPendingValue(settings), cx, cy + 16,
                      &fonts::DejaVu12);
 
-  _canvas.fillSmoothRoundRect(cx - 55, cy + 52, 110, 28, 14, COLOR_GOLD);
+  _canvas.fillSmoothRoundRect(cx - 55, cy + 46, 110, 28, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_BLACK, COLOR_GOLD);
-  _canvas.drawString("Apply", cx, cy + 66, &fonts::DejaVu12);
+  _canvas.drawString("Apply", cx, cy + 60, &fonts::DejaVu12);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap top to cancel", cx, cy + 92, &fonts::DejaVu12);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString("tap top to cancel", cx, cy + 82, &fonts::DejaVu12);
 }
 
 bool DisplayUI::ensureLargeFont() {
