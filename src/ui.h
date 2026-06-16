@@ -91,6 +91,7 @@ class DisplayUI {
   void drawQuickProfile(const Settings &settings, const UiModel &model);
   void drawQuickMode(const Settings &settings, const UiModel &model);
   void drawQuickConfirm(const Settings &settings, const UiModel &model);
+  bool quickCancelHit(int16_t x, int16_t y) const;
   void drawMenu(const Settings &settings, const NetworkSnapshot &network);
   void drawEdit(const Settings &settings);
   void drawConfirmEdit(const Settings &settings);

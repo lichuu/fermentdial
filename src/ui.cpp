@@ -239,6 +239,10 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::QuickMenu) {
+    if (quickCancelHit(touch.x, touch.y)) {
+      cancelQuickFlow();
+      return;
+    }
     if (touch.y < h / 3) {
       handleEncoder(-MENU_ENCODER_DIVISOR, settings);
     } else if (touch.y > (h * 2) / 3) {
@@ -250,6 +254,10 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
+    if (quickCancelHit(touch.x, touch.y)) {
+      cancelQuickFlow();
+      return;
+    }
     if (touch.y < h / 3) {
       handleEncoder(-MENU_ENCODER_DIVISOR, settings);
     } else if (touch.y > (h * 2) / 3) {
@@ -261,6 +269,10 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::QuickConfirm) {
+    if (quickCancelHit(touch.x, touch.y)) {
+      cancelQuickFlow();
+      return;
+    }
     if (touch.y > h / 2) {
       confirmQuickAction(settings);
     } else {
@@ -325,17 +337,7 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
 
   if (_screen == Screen::QuickMenu) {
     if (horizontal) {
-      if (dx > 0) {
-        selectQuickAction(settings);
-      } else {
-        cancelQuickFlow();
-      }
-    } else {
-      if (dy > 0) {
-        cancelQuickFlow();
-      } else {
-        moveQuickMenu(-1);
-      }
+      moveQuickMenu(dx > 0 ? 1 : -1);
     }
     _dirty = true;
     return;
@@ -1015,8 +1017,10 @@ void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
                      &fonts::DejaVu18);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("tap choose / hold settings", cx, cy + 66,
+  _canvas.drawString("swipe left/right", cx, cy + 66,
                      &fonts::DejaVu12);
+  drawPill(cx - 42, cy + 44, 84, 22, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
+           COLOR_TEXT_MUTED, 1);
 }
 
 void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model) {
@@ -1050,7 +1054,9 @@ void DisplayUI::drawQuickProfile(const Settings &settings, const UiModel &model)
       cy + 13, &fonts::DejaVu18);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("tap to confirm", cx, cy + 66, &fonts::DejaVu12);
+  _canvas.drawString("swipe to change", cx, cy + 66, &fonts::DejaVu12);
+  drawPill(cx - 42, cy + 44, 84, 22, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
+           COLOR_TEXT_MUTED, 1);
 }
 
 void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
@@ -1082,7 +1088,9 @@ void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
                      &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("tap to confirm", cx, cy + 66, &fonts::DejaVu12);
+  _canvas.drawString("swipe to change", cx, cy + 66, &fonts::DejaVu12);
+  drawPill(cx - 42, cy + 44, 84, 22, COLOR_PANEL_DARK, COLOR_BLUE, "Cancel",
+           COLOR_TEXT_MUTED, 1);
   (void)settings;
 }
 
@@ -1112,6 +1120,8 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
   _canvas.drawString("tap top to cancel", cx, cy + 78, &fonts::DejaVu12);
+  drawPill(cx - 42, cy + 50, 84, 22, COLOR_PANEL_DARK, COLOR_GOLD, "Cancel",
+           COLOR_TEXT_MUTED, 1);
 }
 
 bool DisplayUI::ensureLargeFont() {
@@ -1500,6 +1510,16 @@ void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
   _canvas.setTextSize(textSize);
   _canvas.setTextColor(textColor, fill);
   _canvas.drawString(text, x + w / 2, y + h / 2);
+}
+
+bool DisplayUI::quickCancelHit(int16_t x, int16_t y) const {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  const int16_t left = cx - 42;
+  const int16_t right = cx + 42;
+  const int16_t top = cy + 44;
+  const int16_t bottom = cy + 72;
+  return x >= left && x <= right && y >= top && y <= bottom;
 }
 
 String DisplayUI::temperatureNumber(float tempC, bool unitsFahrenheit) const {
