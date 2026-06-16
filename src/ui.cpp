@@ -1069,10 +1069,10 @@ void DisplayUI::drawQuickMode(const Settings &settings, const UiModel &model) {
 
   _canvas.fillSmoothRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 94, cy - 24, 188, 52, 14, COLOR_BLUE);
-  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
   _canvas.drawString(modeText(_pendingMode), cx, cy - 6, &fonts::DejaVu12);
 
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString("tap to confirm", cx, cy + 70, &fonts::DejaVu12);
   (void)settings;
 }
