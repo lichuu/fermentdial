@@ -114,7 +114,8 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   processInput(nowMs, settings);
 
   if (_screen != Screen::Main && nowMs - _lastActivityMs > UI_TIMEOUT_MS) {
-    if (_screen == Screen::Edit && _editSnapshotValid) {
+    if ((_screen == Screen::Edit || _screen == Screen::ConfirmEdit) &&
+        _editSnapshotValid) {
       settings = _editSnapshot;
       _editSnapshotValid = false;
     }
@@ -248,14 +249,23 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
       if (touch.y > h - 36) {
         cancelEdit(settings);
       } else if (touch.x < w / 2) {
-        resetCurrentValue(settings);
+        requestEditConfirm(EditConfirmAction::Reset);
       } else {
-        saveEdit(settings);
+        requestEditConfirm(EditConfirmAction::Save);
       }
     } else {
       handleEncoder(touch.x < M5Dial.Display.width() / 2 ? -EDIT_ENCODER_DIVISOR
                                                          : EDIT_ENCODER_DIVISOR,
                     settings);
+    }
+    return;
+  }
+
+  if (_screen == Screen::ConfirmEdit) {
+    if (touch.y > h / 2) {
+      confirmEditAction(settings);
+    } else {
+      cancelEditConfirm();
     }
     return;
   }
@@ -307,7 +317,7 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
     if (horizontal) {
       editCurrentValue(dx > 0 ? 1 : -1, settings);
     } else if (dy < 0) {
-      resetCurrentValue(settings);
+      requestEditConfirm(EditConfirmAction::Reset);
     } else {
       cancelEdit(settings);
     }
@@ -398,7 +408,9 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       resetSettingsEncoderFilters();
     }
   } else if (_screen == Screen::Edit) {
-    saveEdit(settings);
+    requestEditConfirm(EditConfirmAction::Save);
+  } else if (_screen == Screen::ConfirmEdit) {
+    confirmEditAction(settings);
   } else if (_screen == Screen::ConfirmTest) {
     _pendingOutputTest =
         _menuIndex == MENU_HEATER_TEST ? OutputTestKind::Heater
@@ -417,6 +429,9 @@ void DisplayUI::handleLongPress(Settings &settings) {
     _screen = Screen::Menu;
   } else if (_screen == Screen::Edit) {
     cancelEdit(settings);
+    return;
+  } else if (_screen == Screen::ConfirmEdit) {
+    cancelEditConfirm();
     return;
   } else {
     _screen = Screen::Main;
@@ -449,6 +464,34 @@ void DisplayUI::saveEdit(Settings &settings) {
   _screen = Screen::Menu;
   resetSettingsEncoderFilters();
   requestSave();
+  _dirty = true;
+}
+
+void DisplayUI::requestEditConfirm(EditConfirmAction action) {
+  _pendingEditConfirm = action;
+  _screen = Screen::ConfirmEdit;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::confirmEditAction(Settings &settings) {
+  if (_pendingEditConfirm == EditConfirmAction::Reset) {
+    resetCurrentValue(settings);
+    _screen = Screen::Edit;
+  } else if (_pendingEditConfirm == EditConfirmAction::Save) {
+    saveEdit(settings);
+  } else {
+    _screen = Screen::Edit;
+  }
+  _pendingEditConfirm = EditConfirmAction::None;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::cancelEditConfirm() {
+  _pendingEditConfirm = EditConfirmAction::None;
+  _screen = Screen::Edit;
+  resetSettingsEncoderFilters();
   _dirty = true;
 }
 
@@ -536,7 +579,8 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
 void DisplayUI::resetCurrentValue(Settings &settings) {
   switch (_editIndex) {
   case MENU_PROFILE:
-    settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+    setActiveTargetC(settings,
+                     defaultProfileTargetC(activeProfileIndex(settings)));
     break;
   case MENU_TARGET:
     setActiveTargetC(settings, defaultProfileTargetC(settings.activeProfile));
@@ -613,6 +657,8 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
     drawMenu(settings, model.network);
   } else if (_screen == Screen::Edit) {
     drawEdit(settings);
+  } else if (_screen == Screen::ConfirmEdit) {
+    drawConfirmEdit(settings);
   } else if (_screen == Screen::ConfirmTest) {
     drawConfirmTest();
   } else {
@@ -1019,6 +1065,9 @@ void DisplayUI::drawEdit(const Settings &settings) {
                      &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString(editDefaultLine(settings), cx, cy + 22, &fonts::DejaVu12);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString((_editIndex == 0 || _editIndex == 2)
                          ? "swipe/rotate to choose"
                          : "swipe/rotate to change",
@@ -1043,6 +1092,36 @@ void DisplayUI::drawEdit(const Settings &settings) {
   _canvas.drawRoundRect(cx - 48, backY, 96, 24, 12, COLOR_TEXT_MUTED);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL_DARK);
   _canvas.drawString("Back", cx, backY + 12, &fonts::DejaVu12);
+}
+
+void DisplayUI::drawConfirmEdit(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  const bool reset = _pendingEditConfirm == EditConfirmAction::Reset;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(reset ? COLOR_GOLD : COLOR_BLUE, COLOR_BG);
+  _canvas.drawString(reset ? "Confirm reset" : "Confirm save", cx, cy - 68,
+                     &fonts::DejaVu18);
+
+  _canvas.fillSmoothRoundRect(cx - 96, cy - 38, 192, 74, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 96, cy - 38, 192, 74, 14,
+                        reset ? COLOR_GOLD : COLOR_BLUE);
+  _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
+  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 18,
+                     &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString(editConfirmLine(settings), cx, cy + 8, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 55, cy + 52, 110, 28, 14,
+                              reset ? COLOR_GOLD : COLOR_BLUE);
+  _canvas.setTextColor(reset ? TFT_BLACK : TFT_WHITE,
+                       reset ? COLOR_GOLD : COLOR_BLUE);
+  _canvas.drawString(reset ? "Reset" : "Save", cx, cy + 66,
+                     &fonts::DejaVu12);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("tap top to cancel", cx, cy + 92, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawConfirmTest() {
@@ -1170,6 +1249,69 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
   default:
     return "";
   }
+}
+
+String DisplayUI::defaultMenuValue(uint8_t index,
+                                   const Settings &settings) const {
+  switch (index) {
+  case MENU_PROFILE:
+  case MENU_TARGET:
+    return formatTemperature(defaultProfileTargetC(activeProfileIndex(settings)),
+                             settings.unitsFahrenheit);
+  case MENU_MODE:
+    return modeText(UserMode::Off);
+  case MENU_COOL_ON:
+    return String(settings.unitsFahrenheit ? DEFAULT_COOL_ON_DELTA_F
+                                           : DEFAULT_COOL_ON_DELTA_C,
+                  1) +
+           temperatureUnit(settings.unitsFahrenheit);
+  case MENU_HEAT_ON:
+    return String(settings.unitsFahrenheit ? DEFAULT_HEAT_ON_DELTA_F
+                                           : DEFAULT_HEAT_ON_DELTA_C,
+                  1) +
+           temperatureUnit(settings.unitsFahrenheit);
+  case MENU_HOLD_BAND:
+    return String(settings.unitsFahrenheit ? DEFAULT_HOLD_DELTA_F
+                                           : DEFAULT_HOLD_DELTA_C,
+                  1) +
+           temperatureUnit(settings.unitsFahrenheit);
+  case MENU_COOLING_OFF:
+    return String(DEFAULT_PUMP_MIN_OFF_SECONDS) + "s";
+  case MENU_COOLING_RUN:
+    return String(DEFAULT_PUMP_MIN_RUN_SECONDS) + "s";
+  case MENU_OFFSET:
+    return String(settings.unitsFahrenheit ? DEFAULT_TEMP_OFFSET_F
+                                           : DEFAULT_TEMP_OFFSET_C,
+                  1) +
+           temperatureUnit(settings.unitsFahrenheit);
+  default:
+    return "";
+  }
+}
+
+String DisplayUI::editDefaultLine(const Settings &settings) const {
+  if (_editIndex == MENU_PROFILE) {
+    return String("Target ") +
+           formatTemperature(activeTargetC(settings), settings.unitsFahrenheit) +
+           " -> " + defaultMenuValue(_editIndex, settings);
+  }
+  return String("Current ") + menuValue(_editIndex, settings) + " -> Default " +
+         defaultMenuValue(_editIndex, settings);
+}
+
+String DisplayUI::editConfirmLine(const Settings &settings) const {
+  if (_pendingEditConfirm == EditConfirmAction::Reset) {
+    if (_editIndex == MENU_PROFILE) {
+      return String(activeProfile(settings).name) + " target -> " +
+             defaultMenuValue(_editIndex, settings);
+    }
+    return String(menuValue(_editIndex, settings)) + " -> " +
+           defaultMenuValue(_editIndex, settings);
+  }
+  if (_editIndex == MENU_PROFILE) {
+    return String("Save ") + activeProfile(settings).name;
+  }
+  return String("Save ") + menuValue(_editIndex, settings);
 }
 
 uint16_t DisplayUI::stateColor(RuntimeState state, FaultCode fault) const {

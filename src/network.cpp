@@ -1380,21 +1380,27 @@ let activeDirty=false,profilesDirty=false;
 function markActiveDirty(){activeDirty=true;saveActiveBtn.classList.add('unsaved')}
 function markProfilesDirty(){profilesDirty=true;saveProfilesBtn.classList.add('unsaved')}
 function nudge(delta){const v=parseFloat(targetInput.value||'68');targetInput.value=(Math.round((v+delta)*10)/10).toFixed(1);markActiveDirty()}
-function resetActive(){const p=last&&last.profiles[+profileSelect.value];if(p){targetInput.value=p.default.toFixed(1);markActiveDirty()}}
-function saveActive(){activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value,target:targetInput.value})}
+function resetActive(){const p=last&&last.profiles[+profileSelect.value];if(p&&confirm('Reset '+p.name+' target to '+p.default.toFixed(1)+deg+last.unit+'?')){targetInput.value=p.default.toFixed(1);markActiveDirty()}}
+function saveActive(){const p=last&&last.profiles[+profileSelect.value];if(!p||!confirm('Save '+p.name+' target as '+targetInput.value+deg+last.unit+'?'))return;activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value,target:targetInput.value})}
 function selectProfile(){activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
 function saveControl(){post({coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value})}
 function saveProfiles(){
  const data={};
+ const changes=[];
  for(const p of last.profiles){
-  data['profile'+p.index+'Name']=document.getElementById('pName'+p.index).value;
-  data['profile'+p.index+'Target']=document.getElementById('pTarget'+p.index).value;
+  const name=document.getElementById('pName'+p.index).value;
+  const target=document.getElementById('pTarget'+p.index).value;
+  data['profile'+p.index+'Name']=name;
+  data['profile'+p.index+'Target']=target;
+  if(name!==p.name||Math.abs(parseFloat(target)-p.target)>0.04)changes.push(p.name+': '+p.target.toFixed(1)+deg+last.unit+' -> '+target+deg+last.unit+(name!==p.name?' / name -> '+name:''));
  }
+ if(!changes.length){profilesDirty=false;saveProfilesBtn.classList.remove('unsaved');return}
+ if(!confirm('Save profile changes?\n\n'+changes.join('\n')))return;
  profilesDirty=false;saveProfilesBtn.classList.remove('unsaved');
  post(data);
 }
-function resetProfile(i){const p=last&&last.profiles[i];if(p){document.getElementById('pTarget'+i).value=p.default.toFixed(1);markProfilesDirty()}}
+function resetProfile(i){const p=last&&last.profiles[i];if(p&&confirm('Reset '+p.name+' target to '+p.default.toFixed(1)+deg+last.unit+'?')){document.getElementById('pTarget'+i).value=p.default.toFixed(1);markProfilesDirty()}}
 function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
 function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');

@@ -37,8 +37,15 @@ class DisplayUI {
     Main,
     Menu,
     Edit,
+    ConfirmEdit,
     ConfirmTest,
     About,
+  };
+
+  enum class EditConfirmAction : uint8_t {
+    None,
+    Save,
+    Reset,
   };
 
   void processInput(uint32_t nowMs, Settings &settings);
@@ -51,6 +58,9 @@ class DisplayUI {
   void beginEdit(uint8_t index, const Settings &settings);
   void cancelEdit(Settings &settings);
   void saveEdit(Settings &settings);
+  void requestEditConfirm(EditConfirmAction action);
+  void confirmEditAction(Settings &settings);
+  void cancelEditConfirm();
   void editCurrentValue(int32_t delta, Settings &settings);
   void resetCurrentValue(Settings &settings);
   int32_t filteredSettingsDelta(int32_t delta, int32_t &accumulator, int32_t divisor);
@@ -62,6 +72,7 @@ class DisplayUI {
   void drawMain(uint32_t nowMs, const Settings &settings, const UiModel &model);
   void drawMenu(const Settings &settings, const NetworkSnapshot &network);
   void drawEdit(const Settings &settings);
+  void drawConfirmEdit(const Settings &settings);
   void drawConfirmTest();
   void drawAbout();
   void drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
@@ -90,6 +101,9 @@ class DisplayUI {
   const char *temperatureUnit(bool unitsFahrenheit) const;
   String formatTemperature(float tempC, bool unitsFahrenheit) const;
   String menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network = NetworkSnapshot{}) const;
+  String defaultMenuValue(uint8_t index, const Settings &settings) const;
+  String editDefaultLine(const Settings &settings) const;
+  String editConfirmLine(const Settings &settings) const;
   uint16_t stateColor(RuntimeState state, FaultCode fault) const;
   uint16_t stateBackground(RuntimeState state, FaultCode fault) const;
 
@@ -107,6 +121,7 @@ class DisplayUI {
   bool _saveRequested = false;
   bool _wifiSetupRequested = false;
   OutputTestKind _pendingOutputTest = OutputTestKind::None;
+  EditConfirmAction _pendingEditConfirm = EditConfirmAction::None;
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
