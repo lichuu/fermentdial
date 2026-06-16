@@ -445,11 +445,26 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
   }
 
   if (_toast.length() > 0 && nowMs < _toastUntilMs) {
-    _canvas.setTextDatum(bottom_center);
+    const lgfx::IFont *toastFont = &fonts::DejaVu12;
     _canvas.setTextSize(1);
-    _canvas.setTextColor(TFT_YELLOW, TFT_BLACK);
-    _canvas.drawString(_toast, _canvas.width() / 2, _canvas.height() - 10,
-                       &fonts::Font0);
+    const int16_t cx = _canvas.width() / 2;
+    const int16_t pad = 16;
+    const int16_t pillH = 30;
+    int16_t pillW = _canvas.textWidth(_toast, toastFont) + pad * 2;
+    const int16_t maxW = _canvas.width() - 24;
+    if (pillW > maxW) {
+      pillW = maxW;
+    }
+    // Keep the pill in the wide middle band of the round display (not the
+    // pinched bottom edge) so longer messages are not clipped.
+    const int16_t pillY = 170;
+    _canvas.fillSmoothRoundRect(cx - pillW / 2, pillY, pillW, pillH, pillH / 2,
+                                COLOR_PANEL);
+    _canvas.drawRoundRect(cx - pillW / 2, pillY, pillW, pillH, pillH / 2,
+                          COLOR_BLUE);
+    _canvas.setTextDatum(middle_center);
+    _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
+    _canvas.drawString(_toast, cx, pillY + pillH / 2, toastFont);
   }
 
   _canvas.pushSprite(0, 0);

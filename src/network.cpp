@@ -1224,9 +1224,13 @@ String NetworkManager::statusJson() const {
     const float profileTarget = _webStatus.unitsFahrenheit
                                     ? cToF(_webStatus.profiles[i].targetC)
                                     : _webStatus.profiles[i].targetC;
+    const float profileDefaultC = defaultProfileTargetC(i);
+    const float profileDefault =
+        _webStatus.unitsFahrenheit ? cToF(profileDefaultC) : profileDefaultC;
     json += "{\"index\":" + String(i) +
             ",\"name\":" + jsonString(_webStatus.profiles[i].name) +
-            ",\"target\":" + jsonFloat(profileTarget) + "}";
+            ",\"target\":" + jsonFloat(profileTarget) +
+            ",\"default\":" + jsonFloat(profileDefault) + "}";
   }
   json += "],";
   json += "\"coolOn\":" + jsonFloat(coolOn) + ",";
@@ -1323,7 +1327,7 @@ body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cool
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.card,.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:13px}.label{color:var(--muted);font-size:12px;text-transform:uppercase}.value{font-size:23px;font-weight:900;margin-top:4px}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}
 input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:12px}input,select{width:100%;background:#102126;color:var(--text)}input{text-align:center;font-size:22px;font-weight:900}.nameInput{text-align:left;font-size:20px}.fieldLabel{display:block;color:var(--muted);font-size:13px}button{background:#234858;color:var(--text);font-weight:900;cursor:pointer}button.primary{background:var(--blue);border-color:#3f819d;color:#fff}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px;gap:8px}.thresholds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.thresholds label{color:var(--muted);font-size:13px}
+.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 92px 42px;gap:6px}.reset{padding:8px 0;font-size:17px;line-height:1;background:#1b3540;border:1px solid var(--line);border-radius:8px;color:var(--accent);cursor:pointer}.unsaved{outline:2px solid var(--gold);outline-offset:1px}.thresholds{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.thresholds label{color:var(--muted);font-size:13px}
 a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}.thresholds{grid-template-columns:1fr}}
 </style></head>
 <body><main><div class="shell">
@@ -1344,14 +1348,17 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <div class="panel"><h2>Active Profile</h2>
 <select id="profileSelect" onchange="selectProfile()"></select>
 <div class="targetCtl" style="margin-top:10px">
-<button onclick="nudge(-0.1)">-</button><input id="targetInput" inputmode="decimal" step="0.1"><button onclick="nudge(0.1)">+</button>
-</div><button class="primary" style="width:100%;margin-top:10px" onclick="saveActive()">Save active profile</button></div>
+<button onclick="nudge(-0.1)">-</button><input id="targetInput" inputmode="decimal" step="0.1" oninput="markActiveDirty()"><button onclick="nudge(0.1)">+</button>
+</div><div style="display:grid;grid-template-columns:1fr 42px;gap:6px;margin-top:10px">
+<button id="saveActiveBtn" class="primary" onclick="saveActive()">Save active profile</button>
+<button class="reset" title="Reset to default" onclick="resetActive()">&#8634;</button>
+</div></div>
 <div class="panel"><h2>Mode</h2><div class="modes">
 <button id="btnOFF" class="danger" onclick="setMode('OFF')">OFF</button><button id="btnAUTO" onclick="setMode('AUTO')">AUTO</button>
 <button id="btnHEAT_ONLY" class="heat" onclick="setMode('HEAT_ONLY')">HEAT</button><button id="btnCOOL_ONLY" class="cool" onclick="setMode('COOL_ONLY')">COOL</button>
 </div></div>
 <div class="panel"><h2>Profiles</h2><div id="profileRows" class="profileRows"></div>
-<button class="primary" style="width:100%;margin-top:10px" onclick="saveProfiles()">Save profiles</button></div>
+<button id="saveProfilesBtn" class="primary" style="width:100%;margin-top:10px" onclick="saveProfiles()">Save profiles</button></div>
 <div class="panel"><h2>Control</h2><div class="thresholds">
 <label>Cool on <input id="coolOnInput" inputmode="decimal" step="0.1"></label>
 <label>Heat on <input id="heatOnInput" inputmode="decimal" step="0.1"></label>
@@ -1369,9 +1376,13 @@ async function post(data){
  await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:qs(data)});
  await tick();
 }
-function nudge(delta){const v=parseFloat(targetInput.value||'68');targetInput.value=(Math.round((v+delta)*10)/10).toFixed(1);saveActive()}
-function saveActive(){post({profile:profileSelect.value,target:targetInput.value})}
-function selectProfile(){post({profile:profileSelect.value})}
+let activeDirty=false,profilesDirty=false;
+function markActiveDirty(){activeDirty=true;saveActiveBtn.classList.add('unsaved')}
+function markProfilesDirty(){profilesDirty=true;saveProfilesBtn.classList.add('unsaved')}
+function nudge(delta){const v=parseFloat(targetInput.value||'68');targetInput.value=(Math.round((v+delta)*10)/10).toFixed(1);markActiveDirty()}
+function resetActive(){const p=last&&last.profiles[+profileSelect.value];if(p){targetInput.value=p.default.toFixed(1);markActiveDirty()}}
+function saveActive(){activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value,target:targetInput.value})}
+function selectProfile(){activeDirty=false;saveActiveBtn.classList.remove('unsaved');post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
 function saveControl(){post({coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value})}
 function saveProfiles(){
@@ -1380,13 +1391,15 @@ function saveProfiles(){
   data['profile'+p.index+'Name']=document.getElementById('pName'+p.index).value;
   data['profile'+p.index+'Target']=document.getElementById('pTarget'+p.index).value;
  }
+ profilesDirty=false;saveProfilesBtn.classList.remove('unsaved');
  post(data);
 }
+function resetProfile(i){const p=last&&last.profiles[i];if(p){document.getElementById('pTarget'+i).value=p.default.toFixed(1);markProfilesDirty()}}
 function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
 function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
  profileSelect.value=s.activeProfile;
- profileRows.innerHTML=s.profiles.map(p=>`<div class="profileRow"><input id="pName${p.index}" maxlength="15" value="${attr(p.name)}"><input id="pTarget${p.index}" inputmode="decimal" step="0.1" value="${p.target.toFixed(1)}"></div>`).join('');
+ profileRows.innerHTML=s.profiles.map(p=>`<div class="profileRow"><input id="pName${p.index}" maxlength="15" value="${attr(p.name)}" oninput="markProfilesDirty()"><input id="pTarget${p.index}" inputmode="decimal" step="0.1" value="${p.target.toFixed(1)}" oninput="markProfilesDirty()"><button class="reset" title="Reset to default" onclick="resetProfile(${p.index})">&#8634;</button></div>`).join('');
 }
 async function tick(){
  const r=await fetch('/api/status'); const s=await r.json();
@@ -1396,8 +1409,8 @@ async function tick(){
  document.querySelectorAll('.unit').forEach(e=>e.textContent=deg+s.unit);
  temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
  fermenterName.textContent=s.fermenterName; fermenterNameTop.textContent=s.fermenterName; fermenterNameHero.textContent=s.fermenterName;
- profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=s.profileName+' target '+s.target.toFixed(1)+deg+s.unit; if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
- if(!document.querySelector('.profileRow input:focus')&&document.activeElement!==profileSelect)renderProfiles(s);
+ profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=s.profileName+' target '+s.target.toFixed(1)+deg+s.unit; if(!activeDirty&&document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
+ if(!profilesDirty&&!document.querySelector('.profileRow input:focus')&&document.activeElement!==profileSelect)renderProfiles(s);
  if(document.activeElement!==coolOnInput)coolOnInput.value=s.coolOn.toFixed(1);
  if(document.activeElement!==heatOnInput)heatOnInput.value=s.heatOn.toFixed(1);
  if(document.activeElement!==holdInput)holdInput.value=s.hold.toFixed(1);
