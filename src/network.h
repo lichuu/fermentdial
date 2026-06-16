@@ -105,6 +105,14 @@ private:
   uint32_t _lastWifiAttemptMs = 0;
   uint32_t _lastInfluxPublishMs = 0;
   WebStatus _webStatus;
+  // Rolling temperature history for the dashboard sparkline: deci-degrees C,
+  // sampled at a fixed cadence so points are evenly spaced (no timestamps).
+  static constexpr uint8_t HISTORY_LEN = 120;
+  static constexpr uint32_t HISTORY_INTERVAL_MS = 30000;
+  int16_t _history[HISTORY_LEN] = {0};
+  uint8_t _historyCount = 0;
+  uint8_t _historyHead = 0;
+  uint32_t _lastSampleMs = 0;
   InfluxConfig _influx;
   int _lastInfluxStatusCode = 0;
   String _lastInfluxStatus = "Disabled";
@@ -145,6 +153,8 @@ private:
   String influxLineProtocol() const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson() const;
+  void recordHistory(uint32_t nowMs, bool valid, float tempC);
+  String historyJson() const;
   String metricsText() const;
   String pageHtml() const;
   String setupHtml() const;

@@ -1573,17 +1573,20 @@ void DisplayUI::drawAbout() {
   drawArcSeg(104, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
              COLOR_HEAT, 5);
 
-  _canvas.fillSmoothRoundRect(cx - 90, cy - 43, 180, 86, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 90, cy - 43, 180, 86, 14, COLOR_BLUE);
+  _canvas.fillSmoothRoundRect(cx - 92, cy - 50, 184, 100, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 92, cy - 50, 184, 100, 14, COLOR_BLUE);
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
-  _canvas.drawString(FIRMWARE_NAME, cx, cy - 22, &fonts::DejaVu18);
+  _canvas.drawString(FIRMWARE_NAME, cx, cy - 32, &fonts::DejaVu18);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, cx, cy + 6,
+  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, cx, cy - 8,
                      &fonts::DejaVu12);
   _canvas.setTextColor(COLOR_TEXT, COLOR_PANEL);
-  _canvas.drawString("M5Stack Dial / ESP32-S3", cx, cy + 30,
+  _canvas.drawString(String("commit ") + FIRMWARE_GIT_SHA, cx, cy + 12,
+                     &fonts::DejaVu12);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+  _canvas.drawString("M5Stack Dial / ESP32-S3", cx, cy + 32,
                      &fonts::DejaVu12);
 }
 

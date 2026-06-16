@@ -366,6 +366,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
                                   const FermentationController &controller) {
   _webStatus.tempValid = sensor.isValid();
   _webStatus.tempC = sensor.temperatureC();
+  recordHistory(nowMs, _webStatus.tempValid, _webStatus.tempC);
   _webStatus.fermenterName = settings.fermenterName;
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     _webStatus.profiles[i] = settings.profiles[i];
@@ -527,6 +528,9 @@ void NetworkManager::startWebServer() {
 #endif
   _server.on("/api/status", HTTP_GET,
              [this]() { _server.send(200, "application/json", statusJson()); });
+  _server.on("/api/history", HTTP_GET, [this]() {
+    _server.send(200, "application/json", historyJson());
+  });
   _server.on("/api/wifi/scan", HTTP_GET, [this]() { handleWifiScan(); });
   _server.on("/api/settings", HTTP_POST, [this]() { handleSettingsPost(); });
   _server.onNotFound([this]() {
@@ -1179,6 +1183,36 @@ bool NetworkManager::parseMode(const String &value, UserMode &mode) const {
   return false;
 }
 
+void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC) {
+  if (!valid || isnan(tempC)) {
+    return;  // only store real readings; gaps just leave the trace shorter
+  }
+  if (_historyCount > 0 && (nowMs - _lastSampleMs) < HISTORY_INTERVAL_MS) {
+    return;
+  }
+  _lastSampleMs = nowMs;
+  _history[_historyHead] = static_cast<int16_t>(lroundf(tempC * 10.0f));
+  _historyHead = (_historyHead + 1) % HISTORY_LEN;
+  if (_historyCount < HISTORY_LEN) {
+    _historyCount++;
+  }
+}
+
+String NetworkManager::historyJson() const {
+  // Oldest sample first so the client can plot left-to-right.
+  const uint8_t start =
+      _historyCount < HISTORY_LEN ? 0 : _historyHead;
+  String out = "{\"intervalMs\":" + String(HISTORY_INTERVAL_MS) + ",\"tempsC\":[";
+  for (uint8_t i = 0; i < _historyCount; ++i) {
+    if (i > 0) {
+      out += ",";
+    }
+    out += String(_history[(start + i) % HISTORY_LEN] / 10.0f, 1);
+  }
+  out += "]}";
+  return out;
+}
+
 String NetworkManager::statusJson() const {
   const float temperature =
       _webStatus.unitsFahrenheit ? cToF(_webStatus.tempC) : _webStatus.tempC;
@@ -1322,7 +1356,7 @@ String NetworkManager::pageHtml() const {
 main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
 .statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
-.hero{border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}
+.hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1}
 body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
 .heroTop{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px;text-transform:uppercase}.readout{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:12px}
 .tempBlock{min-width:0}.tempLine{display:flex;align-items:flex-start}.temp{font-size:78px;line-height:.9;font-weight:900;letter-spacing:0}.unit{font-size:28px;color:var(--accent);margin-left:7px;margin-top:8px}.state{font-size:25px;font-weight:900;margin-top:8px;color:var(--ok)}body[data-state=heating] .state{color:var(--heat)}body[data-state=cooling] .state,body[data-state=crashing] .state{color:var(--cool)}body[data-state=fault] .state{color:var(--fault)}
@@ -1336,6 +1370,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <body><main><div class="shell">
 <div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span></div></div>
 <section class="hero" id="hero">
+<canvas id="spark"></canvas>
 <div class="heroTop"><span id="fermenterNameHero">Fermenter</span><span id="targetHero">target --.-F</span></div>
 <div class="readout"><div class="tempBlock"><div class="tempLine"><span class="temp" id="temp">--.-</span><span class="unit">F</span></div>
 <div class="state" id="state">Loading</div><div class="sub" id="summary">Waiting for controller status</div></div>
@@ -1373,6 +1408,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 </div></main>
 <script>
 let last=null;
+let spark=[];
 const deg=String.fromCharCode(176);
 function qs(data){return new URLSearchParams(data).toString()}
 async function post(data){
@@ -1429,7 +1465,29 @@ async function tick(){
  summary.textContent=s.tempValid?s.mode+' mode':'Sensor fault - outputs forced off';
  for(const id of ['OFF','AUTO','HEAT_ONLY','COOL_ONLY'])document.getElementById('btn'+id).classList.toggle('active',s.mode===id);
 }
+function drawSpark(){
+ const c=document.getElementById('spark'); if(!c)return;
+ const w=c.clientWidth,h=c.clientHeight; if(!w||!h)return;
+ const dpr=window.devicePixelRatio||1;
+ if(c.width!==Math.round(w*dpr)){c.width=Math.round(w*dpr);} if(c.height!==Math.round(h*dpr)){c.height=Math.round(h*dpr);}
+ const g=c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+ const d=spark; if(!d||d.length<2)return;
+ let lo=Math.min.apply(null,d),hi=Math.max.apply(null,d);
+ if(hi-lo<0.5){const m=(hi+lo)/2; lo=m-0.5; hi=m+0.5;}
+ const pad=8, top=h*0.42; // keep the trace in the lower part, behind the text
+ const X=i=>i/(d.length-1)*w;
+ const Y=v=>(h-pad)-(v-lo)/(hi-lo)*((h-pad)-top);
+ g.beginPath(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?g.lineTo(px,py):g.moveTo(px,py);});
+ const area=new Path2D(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?area.lineTo(px,py):area.moveTo(px,py);}); area.lineTo(w,h); area.lineTo(0,h); area.closePath();
+ const fg=g.createLinearGradient(0,top,0,h); fg.addColorStop(0,'rgba(46,213,160,0.30)'); fg.addColorStop(1,'rgba(46,213,160,0)');
+ g.fillStyle=fg; g.fill(area);
+ const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'#2ee5a0'); lg.addColorStop(1,'#7fe6c8');
+ g.strokeStyle=lg; g.lineWidth=2; g.lineJoin='round'; g.lineCap='round'; g.stroke();
+}
+async function loadHistory(){try{const r=await fetch('/api/history'); const j=await r.json(); spark=j.tempsC||[]; drawSpark();}catch(e){}}
+addEventListener('resize',drawSpark);
 tick(); setInterval(tick,2000);
+loadHistory(); setInterval(loadHistory,30000);
 </script></body></html>)HTML";
 }
 
