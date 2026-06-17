@@ -129,6 +129,19 @@ String hydrometerAgeText(uint32_t nowMs, uint32_t lastSeenMs) {
   return String((nowMs - lastSeenMs) / 1000UL);
 }
 
+String hydrometerDeviceName(const HydrometerReading &reading, uint8_t index) {
+  if (reading.label.length() > 0) {
+    return reading.label;
+  }
+  if (reading.name.length() > 0) {
+    return reading.name;
+  }
+  if (reading.color.length() > 0) {
+    return hydrometerTypeText(reading.type) + " " + reading.color;
+  }
+  return String("Hydrometer ") + String(index + 1);
+}
+
 String jsonString(const String &value) {
   String escaped = "\"";
   for (size_t i = 0; i < value.length(); ++i) {
@@ -287,7 +300,31 @@ InfluxExportTarget parseInfluxTarget(String value) {
   return InfluxExportTarget::V1;
 }
 
+const char *exportPayloadScopeValue(ExportPayloadScope scope) {
+  switch (scope) {
+  case ExportPayloadScope::HydrometerOnly:
+    return "hydrometer";
+  case ExportPayloadScope::ControllerAndHydrometer:
+  default:
+    return "all";
+  }
+}
+
+ExportPayloadScope parseExportPayloadScope(String value) {
+  value.trim();
+  value.toLowerCase();
+  if (value == "hydrometer" || value == "hydrometer_only" ||
+      value == "hydro") {
+    return ExportPayloadScope::HydrometerOnly;
+  }
+  return ExportPayloadScope::ControllerAndHydrometer;
+}
+
 String selected(InfluxExportTarget actual, InfluxExportTarget expected) {
+  return actual == expected ? " selected" : "";
+}
+
+String selected(ExportPayloadScope actual, ExportPayloadScope expected) {
   return actual == expected ? " selected" : "";
 }
 
@@ -435,7 +472,7 @@ void NetworkManager::begin(const Settings &settings,
   // MQTT publishing is driven from update()/publishMqtt(). Home Assistant
   // discovery is not implemented yet; local control continues regardless of
   // Wi-Fi/MQTT availability.
-  _mqtt.setBufferSize(2048);
+  _mqtt.setBufferSize(4096);
 #endif
 
 }
@@ -1260,6 +1297,16 @@ String mqttBaseTopic(const MqttConfig &config) {
 void NetworkManager::loadMqttConfig() {
 #if FERM_ENABLE_NETWORK
   _mqttConfig.enabled = _prefs.getBool("mqttEn", false);
+  _mqttConfig.payloadScope = parseExportPayloadScope(
+      _prefs.getString("mqttScope", exportPayloadScopeValue(
+                                      ExportPayloadScope::ControllerAndHydrometer)));
+  _mqttConfig.haDiscovery = _prefs.getBool("mqttHaDisc", true);
+  _mqttConfig.discoveryPrefix =
+      _prefs.getString("mqttDiscPfx", "homeassistant");
+  _mqttConfig.discoveryPrefix.trim();
+  if (_mqttConfig.discoveryPrefix.length() == 0) {
+    _mqttConfig.discoveryPrefix = "homeassistant";
+  }
   _mqttConfig.host = _prefs.getString("mqttHost", "");
   _mqttConfig.port = _prefs.getUShort("mqttPort", 1883);
   _mqttConfig.username = _prefs.getString("mqttUser", "");
@@ -1285,6 +1332,10 @@ void NetworkManager::loadMqttConfig() {
 void NetworkManager::saveMqttConfig() {
 #if FERM_ENABLE_NETWORK
   _prefs.putBool("mqttEn", _mqttConfig.enabled);
+  _prefs.putString("mqttScope",
+                   exportPayloadScopeValue(_mqttConfig.payloadScope));
+  _prefs.putBool("mqttHaDisc", _mqttConfig.haDiscovery);
+  _prefs.putString("mqttDiscPfx", _mqttConfig.discoveryPrefix);
   _prefs.putString("mqttHost", _mqttConfig.host);
   _prefs.putUShort("mqttPort", _mqttConfig.port);
   _prefs.putString("mqttUser", _mqttConfig.username);
@@ -1297,6 +1348,18 @@ void NetworkManager::saveMqttConfig() {
 void NetworkManager::handleMqttSettingsPost() {
 #if FERM_ENABLE_NETWORK
   _mqttConfig.enabled = _server.hasArg("mqttEnabled");
+  if (_server.hasArg("mqttPayloadScope")) {
+    _mqttConfig.payloadScope =
+        parseExportPayloadScope(_server.arg("mqttPayloadScope"));
+  }
+  _mqttConfig.haDiscovery = _server.hasArg("mqttHaDiscovery");
+  if (_server.hasArg("mqttDiscoveryPrefix")) {
+    _mqttConfig.discoveryPrefix = _server.arg("mqttDiscoveryPrefix");
+    _mqttConfig.discoveryPrefix.trim();
+    if (_mqttConfig.discoveryPrefix.length() == 0) {
+      _mqttConfig.discoveryPrefix = "homeassistant";
+    }
+  }
   if (_server.hasArg("mqttHost")) {
     _mqttConfig.host = _server.arg("mqttHost");
     _mqttConfig.host.trim();
@@ -1339,6 +1402,8 @@ void NetworkManager::handleMqttSettingsPost() {
   saveMqttConfig();
   // Force a fresh connection so the new broker/topic take effect immediately.
   _mqtt.disconnect();
+  // Topic/prefix may have changed, so re-announce HA discovery configs.
+  haResetAnnounced();
   _lastMqttAttemptMs = 0;
   _lastMqttPublishMs = 0;
   _lastMqttStatus = _mqttConfig.enabled ? "Saved" : "Disabled";
@@ -1372,6 +1437,9 @@ void NetworkManager::mqttConnect(uint32_t nowMs) {
 
   if (ok) {
     _mqtt.publish(availabilityTopic.c_str(), "online", true);
+    // A fresh session (or broker restart) may have dropped retained discovery
+    // configs; re-announce them on the next hydrometer publish.
+    haResetAnnounced();
     _lastMqttStatus = "Connected";
   } else {
     _lastMqttStatus = "Connect failed (" + String(_mqtt.state()) + ")";
@@ -1404,6 +1472,11 @@ void NetworkManager::publishMqtt(uint32_t nowMs) {
   }
   _lastMqttPublishMs = nowMs;
 
+  if (_mqttConfig.payloadScope == ExportPayloadScope::HydrometerOnly) {
+    publishMqttHydrometers(nowMs);
+    return;
+  }
+
   const String stateTopic = mqttBaseTopic(_mqttConfig) + "/state";
   const String payload = statusJson(nowMs);
   const bool ok = _mqtt.publish(stateTopic.c_str(), payload.c_str(), true);
@@ -1416,6 +1489,9 @@ void NetworkManager::publishMqtt(uint32_t nowMs) {
 void NetworkManager::loadBrewfatherConfig() {
 #if FERM_ENABLE_NETWORK
   _brewfather.enabled = _prefs.getBool("bfEn", false);
+  _brewfather.payloadScope = parseExportPayloadScope(
+      _prefs.getString("bfScope", exportPayloadScopeValue(
+                                      ExportPayloadScope::ControllerAndHydrometer)));
   _brewfather.url =
       normalizeBrewfatherUrl(_prefs.getString("bfUrl", BREWFATHER_DEFAULT_URL));
   _brewfather.loggingId =
@@ -1437,6 +1513,8 @@ void NetworkManager::loadBrewfatherConfig() {
 void NetworkManager::saveBrewfatherConfig() {
 #if FERM_ENABLE_NETWORK
   _prefs.putBool("bfEn", _brewfather.enabled);
+  _prefs.putString("bfScope",
+                   exportPayloadScopeValue(_brewfather.payloadScope));
   _prefs.putString("bfUrl", _brewfather.url);
   _prefs.putString("bfId", _brewfather.loggingId);
   _prefs.putString("bfName", _brewfather.deviceName);
@@ -1447,6 +1525,10 @@ void NetworkManager::saveBrewfatherConfig() {
 void NetworkManager::handleBrewfatherSettingsPost() {
 #if FERM_ENABLE_NETWORK
   _brewfather.enabled = _server.hasArg("brewfatherEnabled");
+  if (_server.hasArg("brewfatherPayloadScope")) {
+    _brewfather.payloadScope =
+        parseExportPayloadScope(_server.arg("brewfatherPayloadScope"));
+  }
   if (_server.hasArg("brewfatherUrl")) {
     _brewfather.url = normalizeBrewfatherUrl(_server.arg("brewfatherUrl"));
   }
@@ -1459,14 +1541,15 @@ void NetworkManager::handleBrewfatherSettingsPost() {
     _brewfather.deviceName.trim();
   }
   if (_server.hasArg("brewfatherInterval")) {
-    uint32_t interval = _server.arg("brewfatherInterval").toInt();
-    if (interval < BREWFATHER_MIN_INTERVAL_SECONDS) {
+    // Parse signed so a negative entry clamps to the floor, not a huge uint.
+    long interval = _server.arg("brewfatherInterval").toInt();
+    if (interval < static_cast<long>(BREWFATHER_MIN_INTERVAL_SECONDS)) {
       interval = BREWFATHER_MIN_INTERVAL_SECONDS;
     }
-    if (interval > BREWFATHER_MAX_INTERVAL_SECONDS) {
+    if (interval > static_cast<long>(BREWFATHER_MAX_INTERVAL_SECONDS)) {
       interval = BREWFATHER_MAX_INTERVAL_SECONDS;
     }
-    _brewfather.intervalSeconds = interval;
+    _brewfather.intervalSeconds = static_cast<uint32_t>(interval);
   }
   saveBrewfatherConfig();
   _lastBrewfatherPublishMs = 0;
@@ -1496,7 +1579,13 @@ String NetworkManager::brewfatherPayload(uint32_t nowMs,
 
   String json = "{";
   appendJsonField(json, "\"name\":" + jsonString(deviceName));
-  if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
+  if (_brewfather.payloadScope == ExportPayloadScope::HydrometerOnly) {
+    if (selected.valid && !isnan(selected.temperatureC)) {
+      appendJsonNumber(json, "temp", selected.temperatureC, 2);
+      appendJsonField(json, "\"temp_unit\":\"C\"");
+      hasValue = true;
+    }
+  } else if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
     appendJsonNumber(json, "temp", _webStatus.tempC, 2);
     appendJsonField(json, "\"temp_unit\":\"C\"");
     hasValue = true;
@@ -1505,7 +1594,8 @@ String NetworkManager::brewfatherPayload(uint32_t nowMs,
     appendJsonField(json, "\"temp_unit\":\"C\"");
     hasValue = true;
   }
-  if (!isnan(_webStatus.liveTargetC)) {
+  if (_brewfather.payloadScope != ExportPayloadScope::HydrometerOnly &&
+      !isnan(_webStatus.liveTargetC)) {
     appendJsonNumber(json, "temp_target", _webStatus.liveTargetC, 2);
   }
   if (selected.valid && gravityIsValid(selected.gravity)) {
@@ -1521,13 +1611,47 @@ String NetworkManager::brewfatherPayload(uint32_t nowMs,
   }
   appendJsonField(json, "\"device_source\":" + jsonString(FIRMWARE_NAME));
   appendJsonField(json, "\"report_source\":" + jsonString(_hostname));
-  appendJsonField(json, "\"device_state\":" +
-                            jsonString(brewfatherDeviceState(
-                                _webStatus.runtimeState, _webStatus.mode,
-                                _webStatus.diacetylRestActive)));
-  appendJsonField(json, "\"comment\":" +
-                            jsonString(String("Profile ") +
-                                       _webStatus.profiles[profileIndex].name));
+  if (_brewfather.payloadScope == ExportPayloadScope::HydrometerOnly) {
+    appendJsonField(json, "\"comment\":" + jsonString("Hydrometer export"));
+  } else {
+    appendJsonField(json, "\"device_state\":" +
+                              jsonString(brewfatherDeviceState(
+                                  _webStatus.runtimeState, _webStatus.mode,
+                                  _webStatus.diacetylRestActive)));
+    appendJsonField(json, "\"comment\":" +
+                              jsonString(String("Profile ") +
+                                         _webStatus.profiles[profileIndex].name));
+  }
+  json += "}";
+  return json;
+}
+
+String NetworkManager::brewfatherHydrometerPayload(
+    const HydrometerReading &reading, const String &deviceName,
+    bool &hasValue) const {
+  hasValue = false;
+
+  String json = "{";
+  appendJsonField(json, "\"name\":" + jsonString(deviceName));
+  if (!isnan(reading.temperatureC)) {
+    appendJsonNumber(json, "temp", reading.temperatureC, 2);
+    appendJsonField(json, "\"temp_unit\":\"C\"");
+    hasValue = true;
+  }
+  if (gravityIsValid(reading.gravity)) {
+    appendJsonNumber(json, "gravity", reading.gravity, 3);
+    appendJsonField(json, "\"gravity_unit\":\"G\"");
+    hasValue = true;
+  }
+  if (!isnan(reading.batteryV)) {
+    appendJsonNumber(json, "battery", reading.batteryV, 2);
+  }
+  appendJsonField(json, "\"rssi\":" + String(reading.rssi));
+  appendJsonField(json, "\"device_source\":" + jsonString(FIRMWARE_NAME));
+  appendJsonField(json, "\"report_source\":" + jsonString(_hostname));
+  appendJsonField(json,
+                  "\"comment\":" +
+                      jsonString(hydrometerDeviceName(reading, 0)));
   json += "}";
   return json;
 }
@@ -1552,12 +1676,71 @@ void NetworkManager::publishBrewfather(uint32_t nowMs) {
       nowMs - _lastBrewfatherPublishMs < intervalMs) {
     return;
   }
-  _lastBrewfatherPublishMs = nowMs;
 
-  String endpoint = normalizeBrewfatherUrl(_brewfather.url);
+  String endpoint = _brewfather.url;
   if (_brewfather.loggingId.length() > 0 && endpoint.indexOf("id=") < 0) {
     endpoint += (endpoint.indexOf('?') >= 0 ? "&" : "?");
     endpoint += "id=" + urlEncode(_brewfather.loggingId);
+  }
+
+  if (_brewfather.payloadScope == ExportPayloadScope::HydrometerOnly) {
+    if (_hydrometer == nullptr) {
+      _lastBrewfatherStatus = "No hydrometer";
+      return;
+    }
+
+    uint8_t published = 0;
+    for (uint8_t i = 0; i < _hydrometer->deviceCount(); ++i) {
+      const HydrometerReading &reading = _hydrometer->device(i);
+      const bool stale =
+          reading.lastSeenMs == 0 ||
+          (nowMs - reading.lastSeenMs) > 5UL * 60UL * 1000UL;
+      if (!reading.valid || stale) {
+        continue;
+      }
+
+      String deviceName = _brewfather.deviceName;
+      deviceName.trim();
+      const String hydrometerName = hydrometerDeviceName(reading, i);
+      if (deviceName.length() == 0) {
+        deviceName = hydrometerName;
+      } else if (hydrometerName.length() > 0 &&
+                 deviceName.indexOf(hydrometerName) < 0) {
+        deviceName += " ";
+        deviceName += hydrometerName;
+      }
+
+      bool hasValue = false;
+      const String payload =
+          brewfatherHydrometerPayload(reading, deviceName, hasValue);
+      if (!hasValue) {
+        continue;
+      }
+
+      HTTPClient http;
+      if (!http.begin(endpoint)) {
+        _lastBrewfatherStatus = "Bad URL";
+        return;
+      }
+      http.addHeader("Content-Type", "application/json");
+
+      _lastBrewfatherPublishMs = nowMs;
+      const int code = http.POST(payload);
+      http.end();
+      _lastBrewfatherStatusCode = code;
+      if (code >= 200 && code < 300) {
+        ++published;
+        continue;
+      }
+      _lastBrewfatherStatus =
+          code > 0 ? "HTTP " + String(code) : "POST failed " + String(code);
+      return;
+    }
+
+    _lastBrewfatherStatus = published > 0
+                                ? "OK " + String(published) + " hydrometer(s)"
+                                : "No hydrometer value";
+    return;
   }
 
   bool hasValue = false;
@@ -1574,6 +1757,10 @@ void NetworkManager::publishBrewfather(uint32_t nowMs) {
   }
   http.addHeader("Content-Type", "application/json");
 
+  // Stamp only once we actually send: a value-less or bad-URL early return
+  // above must not consume the interval, but an attempted POST (success or
+  // transient failure) throttles retries to the configured cadence.
+  _lastBrewfatherPublishMs = nowMs;
   const int code = http.POST(payload);
   _lastBrewfatherStatusCode = code;
   if (code >= 200 && code < 300) {
@@ -1832,6 +2019,221 @@ bool NetworkManager::parseMode(const String &value, UserMode &mode) const {
     return true;
   }
   return false;
+}
+
+namespace {
+
+// Hydrometers go stale for export after 5 minutes without a fresh advert,
+// matching the BLE scanner's own expiry.
+constexpr uint32_t HYDROMETER_STALE_MS = 5UL * 60UL * 1000UL;
+
+bool hydrometerStale(const HydrometerReading &reading, uint32_t nowMs) {
+  return reading.lastSeenMs == 0 ||
+         (nowMs - reading.lastSeenMs) > HYDROMETER_STALE_MS;
+}
+
+// Turn a hydrometer key ("tilt:red", "rapt:aa:bb:cc..") into an MQTT- and
+// HA-safe slug ("tilt_red", "rapt_aabbcc..").
+String hydrometerSlug(const HydrometerReading &reading, uint8_t index) {
+  const String src =
+      reading.key.length() > 0 ? reading.key : String("hydro_") + String(index);
+  String slug;
+  slug.reserve(src.length());
+  for (size_t i = 0; i < src.length(); ++i) {
+    const char c = src.charAt(i);
+    if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_') {
+      slug += c;
+    } else if (c >= 'A' && c <= 'Z') {
+      slug += static_cast<char>(c - 'A' + 'a');
+    } else {
+      slug += '_';
+    }
+  }
+  return slug;
+}
+
+// One Home Assistant sensor entity per metric, keyed to a field in the
+// per-device state JSON via value_template.
+struct HaMetric {
+  const char *object;       // discovery object id + unique_id suffix
+  const char *name;         // entity name shown under the device
+  const char *valueKey;     // value_json key in the state payload
+  const char *deviceClass;  // HA device_class, or nullptr
+  const char *unit;         // unit_of_measurement, or nullptr
+  const char *stateClass;   // state_class, or nullptr
+  const char *icon;         // mdi icon, or nullptr
+  bool diagnostic;          // entity_category: diagnostic
+};
+
+constexpr HaMetric HA_METRICS[] = {
+    {"gravity", "Gravity", "gravity", nullptr, "SG", "measurement", "mdi:water",
+     false},
+    {"temperature", "Temperature", "temp", "temperature", "°C",
+     "measurement", nullptr, false},
+    {"abv", "ABV", "abv", nullptr, "%", "measurement", "mdi:glass-mug-variant",
+     false},
+    {"velocity", "Gravity velocity", "velocity", nullptr, "SG/day", nullptr,
+     "mdi:speedometer", false},
+    {"stable", "Stable time", "stable_s", "duration", "s", nullptr, nullptr,
+     false},
+    {"battery", "Battery", "battery", "voltage", "V", "measurement", nullptr,
+     true},
+    {"rssi", "Signal", "rssi", "signal_strength", "dBm", "measurement", nullptr,
+     true},
+};
+
+} // namespace
+
+String NetworkManager::mqttHydrometerState(const HydrometerReading &reading,
+                                           uint32_t nowMs) const {
+  // Field names here must match the value_template keys in publishHaDiscovery.
+  String json = "{";
+  appendJsonField(json, "\"gravity\":" + jsonFloat(reading.gravity, 4));
+  appendJsonField(json, "\"temp\":" + jsonFloat(reading.temperatureC, 2));
+  appendJsonField(json, "\"rssi\":" + String(reading.rssi));
+  appendJsonField(json, "\"battery\":" + jsonFloat(reading.batteryV, 2));
+  appendJsonField(json, "\"abv\":" + jsonFloat(reading.abv, 1));
+  appendJsonField(json, "\"velocity\":" +
+                            (reading.gravityVelocityValid
+                                 ? jsonFloat(reading.gravityVelocity, 4)
+                                 : String("null")));
+  appendJsonField(json, "\"stable_s\":" + String(reading.stableSeconds));
+  appendJsonField(json,
+                  "\"age_s\":" + hydrometerAgeText(nowMs, reading.lastSeenMs));
+  json += "}";
+  return json;
+}
+
+void NetworkManager::publishHaDiscovery(const HydrometerReading &reading,
+                                        const String &slug,
+                                        const String &stateTopic) {
+#if FERM_ENABLE_NETWORK
+  const String base = mqttBaseTopic(_mqttConfig);
+  const String availabilityTopic = base + "/availability";
+  const String bridgeId = String("fermentdial_") + deviceSuffix(false);
+  const String deviceId = bridgeId + "_" + slug;
+
+  // HA marks an entity unavailable if no state arrives within expire_after; we
+  // stop publishing stale readings, so keep this comfortably above the publish
+  // interval to avoid flapping.
+  uint32_t expire = _mqttConfig.intervalSeconds * 2 + 60;
+  if (expire < 600) {
+    expire = 600;
+  }
+
+  // Shared device block links every metric entity under one HA device, nested
+  // beneath the FermentDial bridge via via_device.
+  const String device =
+      "{\"ids\":[" + jsonString(deviceId) +
+      "],\"name\":" + jsonString(hydrometerDeviceName(reading, 0)) +
+      ",\"mf\":\"FermentDial\",\"mdl\":" +
+      jsonString(hydrometerTypeText(reading.type)) +
+      ",\"via_device\":" + jsonString(bridgeId) + "}";
+
+  for (const HaMetric &m : HA_METRICS) {
+    String cfg = "{";
+    appendJsonField(cfg, "\"name\":" + jsonString(m.name));
+    appendJsonField(cfg,
+                    "\"uniq_id\":" + jsonString(deviceId + "_" + m.object));
+    appendJsonField(cfg, "\"stat_t\":" + jsonString(stateTopic));
+    appendJsonField(cfg, "\"val_tpl\":" +
+                             jsonString(String("{{ value_json.") + m.valueKey +
+                                        " }}"));
+    appendJsonField(cfg, "\"avty_t\":" + jsonString(availabilityTopic));
+    appendJsonField(cfg, "\"exp_aft\":" + String(expire));
+    if (m.deviceClass != nullptr) {
+      appendJsonField(cfg, "\"dev_cla\":" + jsonString(m.deviceClass));
+    }
+    if (m.unit != nullptr) {
+      appendJsonField(cfg, "\"unit_of_meas\":" + jsonString(m.unit));
+    }
+    if (m.stateClass != nullptr) {
+      appendJsonField(cfg, "\"stat_cla\":" + jsonString(m.stateClass));
+    }
+    if (m.icon != nullptr) {
+      appendJsonField(cfg, "\"ic\":" + jsonString(m.icon));
+    }
+    if (m.diagnostic) {
+      appendJsonField(cfg, "\"ent_cat\":\"diagnostic\"");
+    }
+    appendJsonField(cfg, "\"dev\":" + device);
+    cfg += "}";
+
+    const String topic = _mqttConfig.discoveryPrefix + "/sensor/" + deviceId +
+                         "/" + m.object + "/config";
+    _mqtt.publish(topic.c_str(), cfg.c_str(), true);
+  }
+#else
+  (void)reading;
+  (void)slug;
+  (void)stateTopic;
+#endif
+}
+
+void NetworkManager::publishMqttHydrometers(uint32_t nowMs) {
+#if FERM_ENABLE_NETWORK
+  if (_hydrometer == nullptr) {
+    _lastMqttStatus = "No hydrometer";
+    return;
+  }
+  const String base = mqttBaseTopic(_mqttConfig);
+  uint8_t published = 0;
+  for (uint8_t i = 0; i < _hydrometer->deviceCount(); ++i) {
+    const HydrometerReading &reading = _hydrometer->device(i);
+    if (!reading.valid) {
+      continue;
+    }
+    const String slug = hydrometerSlug(reading, i);
+    const String stateTopic = base + "/hydrometer/" + slug + "/state";
+
+    // Announce each device's HA discovery configs once (re-announced on
+    // reconnect or settings change), then refresh only the state topic.
+    if (_mqttConfig.haDiscovery && !haAlreadyAnnounced(slug)) {
+      publishHaDiscovery(reading, slug, stateTopic);
+      haMarkAnnounced(slug);
+    }
+
+    // Skip stale readings so HA expires the entity instead of us refreshing it
+    // with old values.
+    if (hydrometerStale(reading, nowMs)) {
+      continue;
+    }
+    const String payload = mqttHydrometerState(reading, nowMs);
+    if (_mqtt.publish(stateTopic.c_str(), payload.c_str(), true)) {
+      ++published;
+    }
+  }
+  _lastMqttStatus =
+      published > 0 ? "Published " + String(published) + " hydrometer(s)"
+                    : "No fresh hydrometer";
+#else
+  (void)nowMs;
+#endif
+}
+
+bool NetworkManager::haAlreadyAnnounced(const String &slug) const {
+  for (uint8_t i = 0; i < _haAnnouncedCount; ++i) {
+    if (_haAnnounced[i] == slug) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void NetworkManager::haMarkAnnounced(const String &slug) {
+  if (haAlreadyAnnounced(slug)) {
+    return;
+  }
+  if (_haAnnouncedCount < HA_MAX_ANNOUNCED) {
+    _haAnnounced[_haAnnouncedCount++] = slug;
+  }
+}
+
+void NetworkManager::haResetAnnounced() {
+  for (uint8_t i = 0; i < HA_MAX_ANNOUNCED; ++i) {
+    _haAnnounced[i] = "";
+  }
+  _haAnnouncedCount = 0;
 }
 
 void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC) {
@@ -2576,6 +2978,15 @@ async function scanWifi(){
 <label><input type="checkbox" name="brewfatherEnabled")HTML";
   html += checked(_brewfather.enabled);
   html += R"HTML(>Enable Custom Stream logging</label>
+<label>Payload<select name="brewfatherPayloadScope">
+<option value="all")HTML";
+  html += selected(_brewfather.payloadScope,
+                   ExportPayloadScope::ControllerAndHydrometer);
+  html += R"HTML(>Controller + hydrometer</option>
+<option value="hydrometer")HTML";
+  html += selected(_brewfather.payloadScope, ExportPayloadScope::HydrometerOnly);
+  html += R"HTML(>Hydrometer only</option>
+</select></label>
 <label>Logging ID<input name="brewfatherLoggingId" placeholder="your-logging-id" value=")HTML";
   html += htmlEscape(_brewfather.loggingId);
   html += R"HTML("></label>
@@ -2590,7 +3001,7 @@ async function scanWifi(){
   html += R"HTML("></label>
 <button type="submit">Save Brewfather settings</button>
 </form>
-<p class="hint">Posts Custom Stream JSON no more than once every 15 minutes per device name. Use the ID from Settings &gt; Power-ups &gt; Custom Stream. Status: )HTML";
+<p class="hint">Posts Custom Stream JSON no more than once every 15 minutes per device name. Hydrometer only sends each fresh discovered Tilt/RAPT without controller target or state. Use the ID from Settings &gt; Power-ups &gt; Custom Stream. Status: )HTML";
   html += htmlEscape(_lastBrewfatherStatus);
   html += R"HTML(</p>
 </section>
@@ -2599,6 +3010,21 @@ async function scanWifi(){
 <label><input type="checkbox" name="mqttEnabled")HTML";
   html += checked(_mqttConfig.enabled);
   html += R"HTML(>Enable MQTT publishing</label>
+<label>Payload<select name="mqttPayloadScope">
+<option value="all")HTML";
+  html += selected(_mqttConfig.payloadScope,
+                   ExportPayloadScope::ControllerAndHydrometer);
+  html += R"HTML(>Controller + hydrometer</option>
+<option value="hydrometer")HTML";
+  html += selected(_mqttConfig.payloadScope, ExportPayloadScope::HydrometerOnly);
+  html += R"HTML(>Hydrometer only</option>
+</select></label>
+<label><input type="checkbox" name="mqttHaDiscovery")HTML";
+  html += checked(_mqttConfig.haDiscovery);
+  html += R"HTML(>Publish Home Assistant discovery (hydrometer only)</label>
+<label>Discovery prefix<input name="mqttDiscoveryPrefix" placeholder="homeassistant" value=")HTML";
+  html += htmlEscape(_mqttConfig.discoveryPrefix);
+  html += R"HTML("></label>
 <div class="row">
 <label>Broker host<input name="mqttHost" placeholder="192.168.1.10" value=")HTML";
   html += htmlEscape(_mqttConfig.host);
@@ -2626,7 +3052,9 @@ async function scanWifi(){
   html += htmlEscape(mqttBaseTopic(_mqttConfig));
   html += R"HTML(/state</code> (retained), with availability on <code>)HTML";
   html += htmlEscape(mqttBaseTopic(_mqttConfig));
-  html += R"HTML(/availability</code>. Status: )HTML";
+  html += R"HTML(/availability</code>. Hydrometer only publishes one retained state topic per discovered Tilt/RAPT under <code>)HTML";
+  html += htmlEscape(mqttBaseTopic(_mqttConfig));
+  html += R"HTML(/hydrometer/&lt;id&gt;/state</code>, and (when discovery is on) auto-creates a Home Assistant device with gravity, temperature, ABV, velocity, stability, battery, and signal entities. Status: )HTML";
   html += htmlEscape(_lastMqttStatus);
   html += R"HTML(</p>
 </section>

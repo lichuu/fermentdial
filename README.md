@@ -157,6 +157,7 @@ Wi-Fi builds can publish to Brewfather from the web UI under
 - Enable Custom Stream in Brewfather under `Settings -> Power-ups -> Custom Stream`.
 - Paste the logging ID into FermentDial, or paste the full stream URL and it will extract the `id=` value.
 - FermentDial posts controller temperature, target temperature, runtime state, and selected hydrometer gravity/battery/RSSI when present.
+- Set `Payload` to `Hydrometer only` to forward each fresh discovered Tilt/RAPT reading as its own Brewfather device. In that mode Brewfather receives hydrometer temperature/gravity/battery/RSSI without the controller target or runtime state.
 - Brewfather ignores posts more frequent than one per 15 minutes per device name, so the firmware enforces a 15 minute minimum interval.
 
 ## Modes
@@ -205,24 +206,21 @@ The settings menu includes hidden/manual bench tests:
 
 ## MQTT Topics
 
-MQTT is not enabled in this Stage 1/2 firmware. The planned topic layout is:
+Wi-Fi builds can publish MQTT from the web UI under
+`Settings -> Monitoring -> MQTT / Home Assistant`.
 
 | Topic | Direction | Payload |
 | --- | --- | --- |
-| `fermentdial/state` | publish | JSON state: `temperature`, `target`, `unit`, `profile`, `profiles`, `mode`, `runtime_state`, `heater`, `pump`, `fault` |
-| `fermentdial/state/temperature` | publish | current temperature in the published `unit` |
-| `fermentdial/state/target` | publish | target temperature in the published `unit` |
-| `fermentdial/state/profile` | publish | active profile index/name |
-| `fermentdial/state/unit` | publish | `F` or `C` |
-| `fermentdial/state/mode` | publish | `OFF`, `AUTO`, `HEAT_ONLY`, `COOL_ONLY` |
-| `fermentdial/state/runtime_state` | publish | `BOOT`, `OFF`, `IDLE`, `HEATING`, `COOLING`, `FAULT` |
-| `fermentdial/state/heater` | publish | `ON` or `OFF` |
-| `fermentdial/state/pump` | publish | `ON` or `OFF` |
-| `fermentdial/state/fault` | publish | `NONE`, `SENSOR`, or `INTERLOCK` |
-| `fermentdial/set/target` | subscribe | JSON `{"value":68.0,"unit":"F"}` or `{"value":20.0,"unit":"C"}` |
-| `fermentdial/set/mode` | subscribe | new user mode |
+| `fermentdial/availability` | publish | retained `online`/`offline` (LWT) |
+| `fermentdial/state` | publish | retained controller status JSON (`Controller + hydrometer` mode) |
+| `fermentdial/hydrometer/<id>/state` | publish | retained per-hydrometer JSON (`Hydrometer only` mode) |
+| `<discovery_prefix>/sensor/fermentdial_<id>/<metric>/config` | publish | retained Home Assistant discovery config |
 
-MQTT commands will only mutate settings. The controller still applies sensor fault, OFF mode, pump timing, and output interlock rules locally.
+The MQTT `Payload` setting defaults to `Controller + hydrometer`, which publishes the same status JSON used by the web dashboard to `fermentdial/state`: temperature, target, unit, profile data, mode/runtime state, outputs, faults, and hydrometer details.
+
+Set `Payload` to `Hydrometer only` to act as a multi-hydrometer bridge. Each discovered Tilt/RAPT gets its own retained state topic (`fermentdial/hydrometer/<id>/state`) carrying a compact `{gravity, temp, rssi, battery, abv, velocity, stable_s, age_s}` document. When `Publish Home Assistant discovery` is enabled, FermentDial also retains discovery configs under the configurable discovery prefix (default `homeassistant`) so each hydrometer auto-appears in HA as its own device — with gravity, temperature, ABV, gravity velocity, stable time, battery, and signal entities — nested beneath the FermentDial bridge. Staleness is handled by `expire_after`: a hydrometer that stops advertising goes unavailable in HA on its own, and discovery configs are re-announced on every reconnect. ABV, original gravity, and stability are only tracked for the hydrometer selected in settings; other bridged devices report those as null/zero.
+
+MQTT commands are not subscribed yet. Future commands must only mutate settings; the controller still applies sensor fault, OFF mode, pump timing, and output interlock rules locally.
 
 ## OTA Plan
 
