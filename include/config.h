@@ -69,6 +69,10 @@ constexpr uint32_t OUTPUT_TEST_MS = 5000;
 // How long the main screen stays in gold "SET TARGET" focus after the last
 // encoder turn before reverting to the live temperature readout.
 constexpr uint32_t SETPOINT_FOCUS_MS = 2500;
+// While adjusting the setpoint on the main screen the new value is only a
+// pending preview; if it isn't confirmed within this window it auto-cancels,
+// so an accidental bump of the dial reverts on its own.
+constexpr uint32_t SETPOINT_EDIT_TIMEOUT_MS = 8000;
 constexpr uint8_t SENSOR_FAULT_READ_COUNT = 3;
 
 constexpr float cToF(float tempC) { return (tempC * 9.0f / 5.0f) + 32.0f; }

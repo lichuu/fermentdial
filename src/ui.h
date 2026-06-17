@@ -66,6 +66,11 @@ class DisplayUI {
   void handleEncoder(int32_t delta, Settings &settings);
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
+  void commitPendingSetpoint(uint32_t nowMs, Settings &settings);
+  void cancelPendingSetpoint();
+  // Hit rects for the main-screen setpoint confirm/cancel buttons.
+  bool setpointConfirmHit(int16_t x, int16_t y) const;
+  bool setpointCancelHit(int16_t x, int16_t y) const;
   void openQuickMenu(const Settings &settings);
   void moveQuickMenu(int32_t delta);
   void selectQuickAction(const Settings &settings);
@@ -175,6 +180,10 @@ class DisplayUI {
   bool _dimmed = false;
   uint8_t _appliedBrightness = 255;
   uint32_t _setpointFocusUntilMs = 0;
+  // Main-screen setpoint adjustments are previewed, not committed, until the
+  // user confirms — guards against an accidental bump of the dial.
+  bool _setpointEditing = false;
+  float _pendingTargetC = 0.0f;
   bool _largeFontLoaded = false;
   String _toast = "";
   uint32_t _toastUntilMs = 0;

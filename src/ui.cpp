@@ -132,6 +132,12 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   M5Dial.update();
   processInput(nowMs, settings);
 
+  // An un-confirmed setpoint preview reverts on its own, so a stray bump of the
+  // dial never sticks.
+  if (_setpointEditing && nowMs >= _setpointFocusUntilMs) {
+    cancelPendingSetpoint();
+  }
+
   if (_screen != Screen::Main && nowMs - _lastActivityMs > UI_TIMEOUT_MS) {
     if ((_screen == Screen::Edit || _screen == Screen::ConfirmEdit) &&
         _editSnapshotValid) {
@@ -265,6 +271,15 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Main) {
     const int16_t cx = M5Dial.Display.width() / 2;
     const int16_t cy = h / 2;
+    if (_setpointEditing) {
+      // While previewing a setpoint, taps only hit the confirm/cancel row.
+      if (setpointConfirmHit(touch.x, touch.y)) {
+        commitPendingSetpoint(nowMs, settings);
+      } else if (setpointCancelHit(touch.x, touch.y)) {
+        cancelPendingSetpoint();
+      }
+      return;
+    }
     // Help badge carve-out (matches the "?" rendered in drawMain).
     if (touch.x >= cx - 98 && touch.x <= cx - 70 && touch.y >= cy - 14 &&
         touch.y <= cy + 14) {
@@ -390,6 +405,10 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
   markActivity(nowMs);
 
   if (_screen == Screen::Main) {
+    if (_setpointEditing) {
+      cancelPendingSetpoint();  // swipe away to dismiss the preview
+      return;
+    }
     openQuickMenu(settings);
     return;
   }
@@ -496,19 +515,23 @@ void DisplayUI::scrollQuickByTouch(int16_t deltaY, const Settings &settings) {
 
 void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
   if (_screen == Screen::Main) {
-    // Rotating on the main screen nudges the active setpoint directly and
-    // shows the gold "SET TARGET" focus, thermostat-style.
+    // Rotating on the main screen previews a new setpoint in gold but does not
+    // commit it — the user must confirm (button / on-screen check) or it
+    // auto-cancels, so an accidental bump of the dial can't change the target.
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
     if (filteredDelta == 0) {
       return;
     }
-    setCurrentTargetC(settings,
-                      currentTargetC(settings) +
-                          (filteredDelta *
-                           (displayStepC(settings.unitsFahrenheit))));
-    _setpointFocusUntilMs = millis() + SETPOINT_FOCUS_MS;
-    requestSave();
+    if (!_setpointEditing) {
+      _setpointEditing = true;
+      _pendingTargetC = currentTargetC(settings);
+    }
+    _pendingTargetC = clampFloat(
+        _pendingTargetC +
+            (filteredDelta * displayStepC(settings.unitsFahrenheit)),
+        MIN_TARGET_C, MAX_TARGET_C);
+    _setpointFocusUntilMs = millis() + SETPOINT_EDIT_TIMEOUT_MS;
     _dirty = true;
     return;
   } else if (_screen == Screen::QuickMenu) {
@@ -549,6 +572,10 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
 
 void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   if (_screen == Screen::Main) {
+    if (_setpointEditing) {
+      commitPendingSetpoint(nowMs, settings);  // press confirms the new setpoint
+      return;
+    }
     _screen = Screen::Menu;
     resetSettingsEncoderFilters();
     _dirty = true;
@@ -606,6 +633,10 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
 
 void DisplayUI::handleLongPress(Settings &settings) {
   if (_screen == Screen::Main) {
+    if (_setpointEditing) {
+      cancelPendingSetpoint();  // long-press discards the previewed setpoint
+      return;
+    }
     _screen = Screen::Menu;
     resetSettingsEncoderFilters();
     _dirty = true;
@@ -630,6 +661,43 @@ void DisplayUI::handleLongPress(Settings &settings) {
   }
   resetSettingsEncoderFilters();
   _dirty = true;
+}
+
+void DisplayUI::commitPendingSetpoint(uint32_t nowMs, Settings &settings) {
+  if (!_setpointEditing) {
+    return;
+  }
+  setCurrentTargetC(settings, _pendingTargetC);
+  _setpointEditing = false;
+  _setpointFocusUntilMs = 0;
+  requestSave();
+  _toast = String("Set ") +
+           formatTemperature(currentTargetC(settings), settings.unitsFahrenheit);
+  _toastUntilMs = nowMs + 1500;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::cancelPendingSetpoint() {
+  if (!_setpointEditing) {
+    return;
+  }
+  _setpointEditing = false;
+  _setpointFocusUntilMs = 0;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+bool DisplayUI::setpointCancelHit(int16_t x, int16_t y) const {
+  const int16_t cx = M5Dial.Display.width() / 2;
+  const int16_t cy = M5Dial.Display.height() / 2;
+  return x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70;
+}
+
+bool DisplayUI::setpointConfirmHit(int16_t x, int16_t y) const {
+  const int16_t cx = M5Dial.Display.width() / 2;
+  const int16_t cy = M5Dial.Display.height() / 2;
+  return x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70;
 }
 
 void DisplayUI::openQuickMenu(const Settings &settings) {
@@ -983,11 +1051,13 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
                          const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
+  (void)nowMs;
   const uint16_t bg = COLOR_BG;  // flat face; state reads from the arc colour
-  const bool editing = nowMs < _setpointFocusUntilMs;
+  const bool editing = _setpointEditing;  // previewing an un-confirmed setpoint
   const bool fault = model.runtimeState == RuntimeState::Fault;
   const bool unitsF = settings.unitsFahrenheit;
-  const float targetC = currentTargetC(settings);
+  const float targetC =
+      _setpointEditing ? _pendingTargetC : currentTargetC(settings);
   uint16_t accent = stateColor(model.runtimeState, model.faultCode);
   if (!fault && model.runtimeState == RuntimeState::Cooling &&
       activeProfileIndex(settings) == static_cast<uint8_t>(ProfileSlot::Crash)) {
@@ -1066,12 +1136,13 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   _canvas.setTextColor(stateCol, bg);
   _canvas.drawString(stateLine, cx, cy + 34, &fonts::FreeSansBold12pt7b);
 
-  // 7. fermenter name in the bottom gap
+  // 7. fermenter name + output chips in the bottom gap (hidden while the
+  // setpoint preview shows its confirm/cancel row in that space).
   if (!editing) {
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
     _canvas.drawString(settings.fermenterName, cx, cy + 56, &fonts::DejaVu12);
+    drawOutputChips(model);
   }
-  drawOutputChips(model);
 
   // Tappable help badge (left of centre, clear of the centred text stack).
   // DejaVu Sans Bold "?" blitted from a pre-rendered alpha mask.
@@ -1079,6 +1150,15 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     _canvas.fillSmoothCircle(cx - 84, cy, 13, COLOR_PANEL);
     _canvas.drawCircle(cx - 84, cy, 13, COLOR_TEXT_MUTED);
     drawHelpIcon(cx - 84, cy, COLOR_TEXT_MUTED, COLOR_PANEL);
+  } else {
+    // Confirm/cancel row for the previewed setpoint (rects match
+    // setpointCancelHit / setpointConfirmHit). Press = Set, swipe/timeout = no.
+    const bool cancelPressed = pressInRect(cx - 90, cy + 44, 84, 26);
+    drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel",
+                    cancelPressed ? TFT_WHITE : COLOR_TEXT_MUTED,
+                    &fonts::DejaVu12);
+    drawSolidButton(cx + 48, cy + 57, 84, 26, "Set", COLOR_GOLD, TFT_BLACK,
+                    &fonts::DejaVu12);
   }
 }
 
