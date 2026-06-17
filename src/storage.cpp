@@ -92,9 +92,12 @@ bool SettingsStorage::load(Settings &settings) {
   }
 
   if (version != SETTINGS_VERSION &&
+      version != 8 &&
       version != SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE &&
       version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE &&
-      version != SETTINGS_VERSION_PRELIVE_TARGET_STORAGE) {
+      version != SETTINGS_VERSION_PRELIVE_TARGET_STORAGE &&
+      version != SETTINGS_VERSION_DIACETYL_REST_STORAGE &&
+      version != SETTINGS_VERSION_HYDROMETER_STORAGE) {
     sanitizeSettings(settings);
     return false;
   }
@@ -112,6 +115,14 @@ bool SettingsStorage::load(Settings &settings) {
   }
   // Live setpoint (v7+). Older stores fall back to the active profile preset.
   settings.liveTargetC = _prefs.getFloat("liveTgt", activeTargetC(settings));
+  settings.diacetylRestActive = _prefs.getBool("dRestAct", false);
+  settings.diacetylRestTargetC =
+      _prefs.getFloat("dRestTgt", DEFAULT_DIACETYL_REST_TARGET_C);
+  settings.diacetylRestDurationSeconds = _prefs.getUInt(
+      "dRestDur", DEFAULT_DIACETYL_REST_DURATION_SECONDS);
+  settings.diacetylRestRemainingSeconds = _prefs.getUInt("dRestRem", 0);
+  settings.diacetylRestReturnProfile = _prefs.getUChar(
+      "dRestRet", static_cast<uint8_t>(ProfileSlot::Ferment));
   settings.coolOnDeltaC = _prefs.getFloat("coolOn", DEFAULT_COOL_ON_DELTA_C);
   settings.heatOnDeltaC = _prefs.getFloat("heatOn", DEFAULT_HEAT_ON_DELTA_C);
   settings.holdDeltaC = _prefs.getFloat("hold", DEFAULT_HOLD_DELTA_C);
@@ -124,6 +135,23 @@ bool SettingsStorage::load(Settings &settings) {
   settings.tempOffsetC = _prefs.getFloat("offsetC", DEFAULT_TEMP_OFFSET_C);
   settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
   settings.brightness = _prefs.getUChar("bright", DEFAULT_BRIGHTNESS);
+  settings.hydrometerBleEnabled = _prefs.getBool("hydroBle", true);
+  settings.hydrometerScanType = static_cast<HydrometerScanType>(
+      _prefs.getUChar("hydroScan",
+                      static_cast<uint8_t>(HydrometerScanType::Unknown)));
+  settings.hydrometerSelectionKey =
+      _prefs.getString("hydroSel", DEFAULT_HYDROMETER_SELECTION_KEY);
+  settings.hydrometerOriginalGravity =
+      _prefs.getFloat("hydroOg", NAN);
+  settings.hydrometerStableGravity =
+      _prefs.getFloat("hydroStableG", NAN);
+  settings.hydrometerStableSeconds =
+      _prefs.getUInt("hydroStableS", 0);
+  if (settings.diacetylRestActive &&
+      settings.diacetylRestRemainingSeconds == 0) {
+    settings.diacetylRestRemainingSeconds =
+        settings.diacetylRestDurationSeconds;
+  }
   sanitizeSettings(settings);
   if (version == SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE) {
     if (migrateProfileDefaults(settings)) {
@@ -160,6 +188,11 @@ void SettingsStorage::saveNow(const Settings &settings) {
     _prefs.putFloat(profileTargetKey(i).c_str(), copy.profiles[i].targetC);
   }
   _prefs.putFloat("liveTgt", copy.liveTargetC);
+  _prefs.putBool("dRestAct", copy.diacetylRestActive);
+  _prefs.putFloat("dRestTgt", copy.diacetylRestTargetC);
+  _prefs.putUInt("dRestDur", copy.diacetylRestDurationSeconds);
+  _prefs.putUInt("dRestRem", copy.diacetylRestRemainingSeconds);
+  _prefs.putUChar("dRestRet", copy.diacetylRestReturnProfile);
   _prefs.putFloat("coolOn", copy.coolOnDeltaC);
   _prefs.putFloat("heatOn", copy.heatOnDeltaC);
   _prefs.putFloat("hold", copy.holdDeltaC);
@@ -169,6 +202,13 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putFloat("offsetC", copy.tempOffsetC);
   _prefs.putBool("unitsF", copy.unitsFahrenheit);
   _prefs.putUChar("bright", copy.brightness);
+  _prefs.putBool("hydroBle", copy.hydrometerBleEnabled);
+  _prefs.putUChar("hydroScan",
+                  static_cast<uint8_t>(copy.hydrometerScanType));
+  _prefs.putString("hydroSel", copy.hydrometerSelectionKey);
+  _prefs.putFloat("hydroOg", copy.hydrometerOriginalGravity);
+  _prefs.putFloat("hydroStableG", copy.hydrometerStableGravity);
+  _prefs.putUInt("hydroStableS", copy.hydrometerStableSeconds);
   _pending = false;
 }
 

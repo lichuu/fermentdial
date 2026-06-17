@@ -15,6 +15,10 @@
 #define FERM_DEMO_SENSOR 0
 #endif
 
+#ifndef FERM_ENABLE_HYDROMETER_BLE
+#define FERM_ENABLE_HYDROMETER_BLE 0
+#endif
+
 #if __has_include("secrets.h")
 #include "secrets.h"
 #endif
@@ -44,12 +48,14 @@ namespace ferm {
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
-constexpr uint16_t SETTINGS_VERSION = 7;
+constexpr uint16_t SETTINGS_VERSION = 10;
 constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;
 constexpr uint16_t SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE = 4;
 constexpr uint16_t SETTINGS_VERSION_FERMENTER_NAME_STORAGE = 5;
 constexpr uint16_t SETTINGS_VERSION_PRELIVE_TARGET_STORAGE = 6;
+constexpr uint16_t SETTINGS_VERSION_DIACETYL_REST_STORAGE = 7;
+constexpr uint16_t SETTINGS_VERSION_HYDROMETER_STORAGE = 9;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -66,6 +72,8 @@ constexpr uint32_t UI_REDRAW_INTERVAL_MS = 100;
 constexpr uint32_t UI_TIMEOUT_MS = 30000;
 constexpr uint32_t DISPLAY_DIM_MS = 60000;
 constexpr uint32_t OUTPUT_TEST_MS = 5000;
+constexpr uint32_t DIACETYL_REST_SAVE_INTERVAL_MS = 60000;
+constexpr uint32_t HYDROMETER_SAVE_INTERVAL_MS = 60000;
 // How long the main screen stays in gold "SET TARGET" focus after the last
 // encoder turn before reverting to the live temperature readout.
 constexpr uint32_t SETPOINT_FOCUS_MS = 2500;
@@ -142,6 +150,11 @@ constexpr float DEFAULT_CRASH_TARGET_F = 37.0f;
 constexpr float DEFAULT_LAGER_TARGET_F = 55.0f;
 constexpr float DEFAULT_CUSTOM1_TARGET_F = 72.0f;
 constexpr float DEFAULT_CUSTOM2_TARGET_F = 64.0f;
+constexpr float DEFAULT_DIACETYL_REST_TARGET_F = 70.0f;
+constexpr uint32_t DEFAULT_DIACETYL_REST_DURATION_SECONDS = 48UL * 60UL * 60UL;
+constexpr uint32_t MIN_DIACETYL_REST_DURATION_SECONDS = 24UL * 60UL * 60UL;
+constexpr uint32_t MAX_DIACETYL_REST_DURATION_SECONDS = 96UL * 60UL * 60UL;
+constexpr uint32_t DIACETYL_REST_DURATION_STEP_SECONDS = 24UL * 60UL * 60UL;
 constexpr float DEFAULT_COOL_ON_DELTA_F = 0.5f;
 constexpr float DEFAULT_HEAT_ON_DELTA_F = 5.0f;
 constexpr float DEFAULT_HOLD_DELTA_F = 0.4f;
@@ -151,6 +164,8 @@ constexpr float DEFAULT_CRASH_TARGET_C = fToC(DEFAULT_CRASH_TARGET_F);
 constexpr float DEFAULT_LAGER_TARGET_C = fToC(DEFAULT_LAGER_TARGET_F);
 constexpr float DEFAULT_CUSTOM1_TARGET_C = fToC(DEFAULT_CUSTOM1_TARGET_F);
 constexpr float DEFAULT_CUSTOM2_TARGET_C = fToC(DEFAULT_CUSTOM2_TARGET_F);
+constexpr float DEFAULT_DIACETYL_REST_TARGET_C =
+    fToC(DEFAULT_DIACETYL_REST_TARGET_F);
 constexpr float DEFAULT_COOL_ON_DELTA_C = deltaFToC(DEFAULT_COOL_ON_DELTA_F);
 constexpr float DEFAULT_HEAT_ON_DELTA_C = deltaFToC(DEFAULT_HEAT_ON_DELTA_F);
 constexpr float DEFAULT_HOLD_DELTA_C = deltaFToC(DEFAULT_HOLD_DELTA_F);
@@ -159,6 +174,7 @@ constexpr uint32_t DEFAULT_PUMP_MIN_RUN_SECONDS = 30;
 constexpr float DEFAULT_TEMP_OFFSET_F = 0.0f;
 constexpr float DEFAULT_TEMP_OFFSET_C = deltaFToC(DEFAULT_TEMP_OFFSET_F);
 constexpr const char *DEFAULT_FERMENTER_NAME = "Fermenter";
+constexpr const char *DEFAULT_HYDROMETER_SELECTION_KEY = "";
 
 constexpr uint8_t DEFAULT_BRIGHTNESS = 255;
 constexpr uint8_t MIN_BRIGHTNESS = 30;
@@ -183,6 +199,8 @@ constexpr float MAX_DELTA_C = deltaFToC(MAX_DELTA_F);
 constexpr float MIN_OFFSET_C = deltaFToC(MIN_OFFSET_F);
 constexpr float MAX_OFFSET_C = deltaFToC(MAX_OFFSET_F);
 constexpr float MAX_SENSOR_JUMP_C = deltaFToC(MAX_SENSOR_JUMP_F);
+constexpr float MIN_VALID_GRAVITY = 0.900f;
+constexpr float MAX_VALID_GRAVITY = 1.200f;
 
 // Main-screen radial gauge spans a fixed absolute range (an on-dial
 // thermometer), not a target-relative window. 0-35 C is round in the control
@@ -223,6 +241,12 @@ enum class OutputTestKind : uint8_t {
   Pump = 2,
 };
 
+enum class HydrometerScanType : uint8_t {
+  Unknown = 0,
+  Tilt = 1,
+  Rapt = 2,
+};
+
 enum class ProfileSlot : uint8_t {
   Ferment = 0,
   SoftCrash = 1,
@@ -245,6 +269,12 @@ struct Settings {
   // Live operating setpoint. Profiles hold recallable presets; this is the
   // value the controller actually regulates to and what the dial nudges.
   float liveTargetC = DEFAULT_TARGET_C;
+  bool diacetylRestActive = false;
+  float diacetylRestTargetC = DEFAULT_DIACETYL_REST_TARGET_C;
+  uint32_t diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
+  uint32_t diacetylRestRemainingSeconds = 0;
+  uint8_t diacetylRestReturnProfile =
+      static_cast<uint8_t>(ProfileSlot::Ferment);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;
@@ -254,6 +284,12 @@ struct Settings {
   float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
   uint8_t brightness = DEFAULT_BRIGHTNESS;
+  bool hydrometerBleEnabled = true;
+  HydrometerScanType hydrometerScanType = HydrometerScanType::Unknown;
+  String hydrometerSelectionKey = DEFAULT_HYDROMETER_SELECTION_KEY;
+  float hydrometerOriginalGravity = NAN;
+  float hydrometerStableGravity = NAN;
+  uint32_t hydrometerStableSeconds = 0;
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
@@ -399,12 +435,24 @@ inline void setActiveTargetC(Settings &settings, float targetC) {
       clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
 }
 
+inline uint8_t diacetylRestReturnProfileIndex(const Settings &settings) {
+  return settings.diacetylRestReturnProfile < PROFILE_COUNT
+             ? settings.diacetylRestReturnProfile
+             : static_cast<uint8_t>(ProfileSlot::Ferment);
+}
+
 // Live setpoint the controller regulates to (separate from profile presets).
 inline float currentTargetC(const Settings &settings) {
-  return settings.liveTargetC;
+  return settings.diacetylRestActive ? settings.diacetylRestTargetC
+                                     : settings.liveTargetC;
 }
 
 inline void setCurrentTargetC(Settings &settings, float targetC) {
+  if (settings.diacetylRestActive) {
+    settings.diacetylRestTargetC =
+        clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
+    return;
+  }
   settings.liveTargetC = clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
 }
 
@@ -413,8 +461,69 @@ inline void applyActiveProfileTarget(Settings &settings) {
   settings.liveTargetC = activeProfile(settings).targetC;
 }
 
+inline void cancelDiacetylRest(Settings &settings) {
+  settings.diacetylRestActive = false;
+  settings.diacetylRestRemainingSeconds = 0;
+}
+
+inline void startDiacetylRest(Settings &settings) {
+  settings.diacetylRestActive = true;
+  settings.diacetylRestRemainingSeconds =
+      settings.diacetylRestDurationSeconds;
+  settings.diacetylRestTargetC =
+      clampFloat(settings.diacetylRestTargetC, MIN_TARGET_C, MAX_TARGET_C);
+}
+
+inline void completeDiacetylRest(Settings &settings) {
+  const uint8_t returnProfile = diacetylRestReturnProfileIndex(settings);
+  settings.diacetylRestActive = false;
+  settings.diacetylRestRemainingSeconds = 0;
+  settings.activeProfile = returnProfile;
+  applyActiveProfileTarget(settings);
+}
+
+inline bool gravityIsValid(float gravity) {
+  return !isnan(gravity) && gravity >= MIN_VALID_GRAVITY &&
+         gravity <= MAX_VALID_GRAVITY;
+}
+
+inline void resetHydrometerSession(Settings &settings) {
+  settings.hydrometerOriginalGravity = NAN;
+  settings.hydrometerStableGravity = NAN;
+  settings.hydrometerStableSeconds = 0;
+}
+
+inline HydrometerScanType hydrometerScanTypeFromKey(const String &key) {
+  if (key.startsWith("tilt:")) {
+    return HydrometerScanType::Tilt;
+  }
+  if (key.startsWith("rapt:")) {
+    return HydrometerScanType::Rapt;
+  }
+  return HydrometerScanType::Unknown;
+}
+
+inline void clearHydrometerSelection(Settings &settings) {
+  settings.hydrometerSelectionKey = DEFAULT_HYDROMETER_SELECTION_KEY;
+  resetHydrometerSession(settings);
+}
+
+inline const char *hydrometerScanTypeText(HydrometerScanType type) {
+  switch (type) {
+  case HydrometerScanType::Tilt:
+    return "TILT";
+  case HydrometerScanType::Rapt:
+    return "RAPT";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 inline const char *profileRuntimeText(const Settings &settings,
                                       RuntimeState state) {
+  if (settings.diacetylRestActive) {
+    return "D-REST";
+  }
   if (state == RuntimeState::Cooling &&
       activeProfileIndex(settings) ==
           static_cast<uint8_t>(ProfileSlot::Crash)) {
@@ -452,6 +561,10 @@ inline void sanitizeSettings(Settings &settings) {
   }
   if (settings.activeProfile >= PROFILE_COUNT) {
     settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  }
+  if (settings.diacetylRestReturnProfile >= PROFILE_COUNT) {
+    settings.diacetylRestReturnProfile =
+        static_cast<uint8_t>(ProfileSlot::Ferment);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     settings.profiles[i].name.trim();
@@ -491,6 +604,31 @@ inline void sanitizeSettings(Settings &settings) {
   settings.tempOffsetC = snapDeltaC(
       clampFloat(settings.tempOffsetC, MIN_OFFSET_C, MAX_OFFSET_C),
       settings.unitsFahrenheit);
+  settings.hydrometerSelectionKey.trim();
+  if (settings.hydrometerSelectionKey.length() > 64) {
+    settings.hydrometerSelectionKey =
+        settings.hydrometerSelectionKey.substring(0, 64);
+  }
+  if (settings.hydrometerScanType != HydrometerScanType::Unknown &&
+      settings.hydrometerScanType != HydrometerScanType::Tilt &&
+      settings.hydrometerScanType != HydrometerScanType::Rapt) {
+    settings.hydrometerScanType = HydrometerScanType::Unknown;
+  }
+  if (settings.hydrometerScanType == HydrometerScanType::Unknown) {
+    const HydrometerScanType inferred =
+        hydrometerScanTypeFromKey(settings.hydrometerSelectionKey);
+    if (inferred != HydrometerScanType::Unknown) {
+      settings.hydrometerScanType = inferred;
+    }
+  }
+  if (!gravityIsValid(settings.hydrometerOriginalGravity)) {
+    settings.hydrometerOriginalGravity = NAN;
+  }
+  if (!gravityIsValid(settings.hydrometerStableGravity)) {
+    settings.hydrometerStableGravity = NAN;
+  }
+  settings.hydrometerStableSeconds =
+      clampU32(settings.hydrometerStableSeconds, 0, 604800);
 
   if (isnan(settings.liveTargetC)) {
     settings.liveTargetC = activeProfile(settings).targetC;
@@ -498,6 +636,29 @@ inline void sanitizeSettings(Settings &settings) {
   settings.liveTargetC = snapTempC(
       clampFloat(settings.liveTargetC, MIN_TARGET_C, MAX_TARGET_C),
       settings.unitsFahrenheit);
+  settings.diacetylRestTargetC = snapTempC(
+      clampFloat(settings.diacetylRestTargetC, MIN_TARGET_C, MAX_TARGET_C),
+      settings.unitsFahrenheit);
+  settings.diacetylRestDurationSeconds =
+      clampU32(settings.diacetylRestDurationSeconds,
+               MIN_DIACETYL_REST_DURATION_SECONDS,
+               MAX_DIACETYL_REST_DURATION_SECONDS);
+  settings.diacetylRestDurationSeconds =
+      ((settings.diacetylRestDurationSeconds +
+        DIACETYL_REST_DURATION_STEP_SECONDS / 2) /
+       DIACETYL_REST_DURATION_STEP_SECONDS) *
+      DIACETYL_REST_DURATION_STEP_SECONDS;
+  settings.diacetylRestDurationSeconds =
+      clampU32(settings.diacetylRestDurationSeconds,
+               MIN_DIACETYL_REST_DURATION_SECONDS,
+               MAX_DIACETYL_REST_DURATION_SECONDS);
+  if (!settings.diacetylRestActive) {
+    settings.diacetylRestRemainingSeconds = 0;
+  } else {
+    settings.diacetylRestRemainingSeconds =
+        clampU32(settings.diacetylRestRemainingSeconds, 1,
+                 settings.diacetylRestDurationSeconds);
+  }
 
   uint8_t modeValue = static_cast<uint8_t>(settings.mode);
   if (modeValue > static_cast<uint8_t>(UserMode::CoolOnly)) {

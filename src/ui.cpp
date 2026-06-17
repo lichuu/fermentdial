@@ -10,19 +10,20 @@ namespace {
 enum MenuIndex : uint8_t {
   MENU_PROFILE = 0,
   MENU_TARGET = 1,
-  MENU_MODE = 2,
-  MENU_COOL_ON = 3,
-  MENU_HEAT_ON = 4,
-  MENU_HOLD_BAND = 5,
-  MENU_COOLING_OFF = 6,
-  MENU_COOLING_RUN = 7,
-  MENU_OFFSET = 8,
-  MENU_UNITS = 9,
-  MENU_WIFI = 10,
-  MENU_MQTT = 11,
-  MENU_HEATER_TEST = 12,
-  MENU_PUMP_TEST = 13,
-  MENU_ABOUT = 14,
+  MENU_DREST = 2,
+  MENU_MODE = 3,
+  MENU_COOL_ON = 4,
+  MENU_HEAT_ON = 5,
+  MENU_HOLD_BAND = 6,
+  MENU_COOLING_OFF = 7,
+  MENU_COOLING_RUN = 8,
+  MENU_OFFSET = 9,
+  MENU_UNITS = 10,
+  MENU_WIFI = 11,
+  MENU_MQTT = 12,
+  MENU_HEATER_TEST = 13,
+  MENU_PUMP_TEST = 14,
+  MENU_ABOUT = 15,
 };
 
 constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
@@ -82,9 +83,10 @@ constexpr float GA_SWEEP = 270.0f;      // clockwise to lower-right (hot)
 constexpr bool USE_OUTPUT_ICONS = true;
 
 constexpr const char *MENU_LABELS[MENU_COUNT] = {
-    "Profile",   "Target",      "Mode",        "Cool on",   "Heat on",
-    "Hold band", "Cooling off", "Cooling run", "Offset",    "Units",
-    "Wi-Fi",     "MQTT",        "Heater test", "Pump test", "About",
+    "Profile",   "Target",    "D-Rest",      "Mode",        "Cool on",
+    "Heat on",   "Hold band", "Cooling off", "Cooling run", "Offset",
+    "Units",     "Wi-Fi",     "MQTT",        "Heater test", "Pump test",
+    "About",
 };
 
 } // namespace
@@ -268,7 +270,7 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   markActivity(nowMs);
 
   const int16_t h = M5Dial.Display.height();
-  if (_screen == Screen::Main) {
+  if (_screen == Screen::Main || _screen == Screen::Hydrometer) {
     const int16_t cx = M5Dial.Display.width() / 2;
     const int16_t cy = h / 2;
     if (_setpointEditing) {
@@ -404,9 +406,14 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
 
   markActivity(nowMs);
 
-  if (_screen == Screen::Main) {
+  if (_screen == Screen::Main || _screen == Screen::Hydrometer) {
     if (_setpointEditing) {
-      cancelPendingSetpoint();  // swipe away to dismiss the preview
+      cancelPendingSetpoint();
+      return;
+    }
+    if (horizontal) {
+      _screen = (_screen == Screen::Main) ? Screen::Hydrometer : Screen::Main;
+      _dirty = true;
       return;
     }
     openQuickMenu(settings);
@@ -571,7 +578,7 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
 }
 
 void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
-  if (_screen == Screen::Main) {
+  if (_screen == Screen::Main || _screen == Screen::Hydrometer) {
     if (_setpointEditing) {
       commitPendingSetpoint(nowMs, settings);  // press confirms the new setpoint
       return;
@@ -587,7 +594,20 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   } else if (_screen == Screen::QuickConfirm) {
     confirmQuickAction(settings);
   } else if (_screen == Screen::Menu) {
-    if (_menuIndex <= MENU_OFFSET) {
+    if (_menuIndex == MENU_DREST) {
+      if (settings.diacetylRestActive) {
+        completeDiacetylRest(settings);
+        _toast = String("D-rest -> ") + activeProfile(settings).name;
+      } else {
+        startDiacetylRest(settings);
+        _toast = "D-rest started";
+      }
+      _toastUntilMs = nowMs + 1800;
+      requestSave();
+      resetSettingsEncoderFilters();
+      _dirty = true;
+      return;
+    } else if (_menuIndex <= MENU_OFFSET) {
       beginEdit(_menuIndex, settings);
     } else if (_menuIndex == MENU_UNITS) {
       settings.unitsFahrenheit = !settings.unitsFahrenheit;
@@ -762,6 +782,7 @@ void DisplayUI::requestQuickConfirm() {
 
 void DisplayUI::confirmQuickAction(Settings &settings) {
   if (_pendingQuickAction == QuickAction::Profile) {
+    cancelDiacetylRest(settings);
     settings.activeProfile = _pendingProfile;
     applyActiveProfileTarget(settings);  // recall this profile's preset
     _toast = String("Profile: ") + activeProfile(settings).name;
@@ -803,6 +824,7 @@ void DisplayUI::cancelEdit(Settings &settings) {
 void DisplayUI::saveEdit(Settings &settings) {
   // Selecting a profile or editing its target applies it to the live setpoint.
   if (_editIndex == MENU_PROFILE || _editIndex == MENU_TARGET) {
+    cancelDiacetylRest(settings);
     applyActiveProfileTarget(settings);
   }
   _editSnapshotValid = false;
@@ -842,7 +864,7 @@ void DisplayUI::cancelEditConfirm() {
 
 void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   switch (_editIndex) {
-  case 0: {
+  case MENU_PROFILE: {
     int32_t profile =
         static_cast<int32_t>(settings.activeProfile) + (delta > 0 ? 1 : -1);
     while (profile < 0) {
@@ -851,13 +873,13 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     settings.activeProfile = static_cast<uint8_t>(profile % PROFILE_COUNT);
     break;
   }
-  case 1:
+  case MENU_TARGET:
     setActiveTargetC(
         settings,
         activeTargetC(settings) +
             (delta * (displayStepC(settings.unitsFahrenheit))));
     break;
-  case 2: {
+  case MENU_MODE: {
     int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
     while (mode < 0) {
       mode += 4;
@@ -865,19 +887,19 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     settings.mode = static_cast<UserMode>(mode % 4);
     break;
   }
-  case 3:
+  case MENU_COOL_ON:
     settings.coolOnDeltaC = clampFloat(
         settings.coolOnDeltaC +
             (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_DELTA_C, MAX_DELTA_C);
     break;
-  case 4:
+  case MENU_HEAT_ON:
     settings.heatOnDeltaC = clampFloat(
         settings.heatOnDeltaC +
             (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_DELTA_C, MAX_DELTA_C);
     break;
-  case 5:
+  case MENU_HOLD_BAND:
     settings.holdDeltaC = clampFloat(
         settings.holdDeltaC +
             (delta * (displayStepC(settings.unitsFahrenheit))),
@@ -889,7 +911,7 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
       settings.holdDeltaC = settings.heatOnDeltaC;
     }
     break;
-  case 6: {
+  case MENU_COOLING_OFF: {
     int32_t next =
         static_cast<int32_t>(settings.pumpMinOffSeconds) + (delta * 5);
     if (next < 0) {
@@ -898,7 +920,7 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     settings.pumpMinOffSeconds = clampU32(static_cast<uint32_t>(next), 0, 1800);
     break;
   }
-  case 7: {
+  case MENU_COOLING_RUN: {
     int32_t next =
         static_cast<int32_t>(settings.pumpMinRunSeconds) + (delta * 5);
     if (next < 0) {
@@ -907,13 +929,13 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     settings.pumpMinRunSeconds = clampU32(static_cast<uint32_t>(next), 0, 600);
     break;
   }
-  case 8:
+  case MENU_OFFSET:
     settings.tempOffsetC = clampFloat(
         settings.tempOffsetC +
             (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_OFFSET_C, MAX_OFFSET_C);
     break;
-  case 9:
+  case MENU_UNITS:
     settings.unitsFahrenheit = !settings.unitsFahrenheit;
     break;
   default:
@@ -999,6 +1021,8 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
   _canvas.fillScreen(COLOR_BG);
   if (_screen == Screen::Main) {
     drawMain(nowMs, settings, model);
+  } else if (_screen == Screen::Hydrometer) {
+    drawHydrometer(nowMs, settings, model);
   } else if (_screen == Screen::QuickMenu) {
     drawQuickMenu(settings, model);
   } else if (_screen == Screen::QuickProfile) {
@@ -1096,7 +1120,9 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(editing ? COLOR_GOLD : COLOR_TEXT_MUTED, bg);
-  _canvas.drawString(activeProfile(settings).name, cx, cy - 52, &fonts::DejaVu18);
+  _canvas.drawString(settings.diacetylRestActive ? "D-Rest"
+                                                 : activeProfile(settings).name,
+                     cx, cy - 52, &fonts::DejaVu18);
 
   const float bigC = editing ? targetC : model.tempC;
   const String big =
@@ -1136,11 +1162,35 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   _canvas.setTextColor(stateCol, bg);
   _canvas.drawString(stateLine, cx, cy + 34, &fonts::FreeSansBold12pt7b);
 
+  String hydroLine = "";
+  if (model.hydrometer.selected && model.hydrometer.valid) {
+    hydroLine = "SG " + String(model.hydrometer.gravity, 3);
+    hydroLine += " | ";
+    if (model.hydrometer.stale) {
+      hydroLine += "stale";
+    } else {
+      const uint32_t ageS = model.hydrometer.lastSeenMs == 0
+                                ? 0
+                                : (nowMs - model.hydrometer.lastSeenMs) / 1000UL;
+      if (ageS < 60) {
+        hydroLine += String(ageS) + "s";
+      } else {
+        hydroLine += String(ageS / 60UL) + "m";
+      }
+    }
+  } else if (model.hydrometer.selected) {
+    hydroLine = "Hydrometer waiting";
+  }
+  if (hydroLine.length() > 0 && !editing) {
+    _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
+    _canvas.drawString(hydroLine, cx, cy + 46, &fonts::DejaVu12);
+  }
+
   // 7. fermenter name + output chips in the bottom gap (hidden while the
   // setpoint preview shows its confirm/cancel row in that space).
   if (!editing) {
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString(settings.fermenterName, cx, cy + 56, &fonts::DejaVu12);
+    _canvas.drawString(settings.fermenterName, cx, cy + 64, &fonts::DejaVu12);
     drawOutputChips(model);
   }
 
@@ -1160,6 +1210,78 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     drawSolidButton(cx + 48, cy + 57, 84, 26, "Set", COLOR_GOLD, TFT_BLACK,
                     &fonts::DejaVu12);
   }
+
+  drawPageDots(0, 2);
+}
+
+void DisplayUI::drawHydrometer(uint32_t nowMs, const Settings &settings,
+                               const UiModel &model) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+  const bool unitsF = settings.unitsFahrenheit;
+  const HydrometerReading &h = model.hydrometer;
+
+  _canvas.fillScreen(COLOR_BG);
+  drawWifiIcon(cx, cy - 82, 11, wifiStatus(model.network), COLOR_BG);
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_ACCENT, COLOR_BG);
+  _canvas.drawString("HYDROMETER", cx, cy - 70, &fonts::DejaVu18);
+
+  String title = h.selected && h.valid ? h.label : "No hydrometer";
+  if (h.selected && h.valid && h.name.length() > 0) {
+    title = h.name;
+  }
+  _canvas.setTextColor(h.valid ? COLOR_TEXT : COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString(title, cx, cy - 42, &fonts::DejaVu12);
+
+  String sg = h.valid ? "SG " + String(h.gravity, 3) : "SG --.--";
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString(sg, cx, cy - 4, &fonts::FreeSansBold18pt7b);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  String tempLine = h.valid ? formatTemperature(h.temperatureC, unitsF)
+                            : "Temp --.-";
+  if (h.valid) {
+    tempLine += "  RSSI ";
+    tempLine += String(h.rssi);
+    tempLine += " dBm";
+  }
+  _canvas.drawString(tempLine, cx, cy + 28, &fonts::DejaVu12);
+
+  String metaLine = "";
+  if (h.valid && gravityIsValid(h.originalGravity)) {
+    metaLine += "OG ";
+    metaLine += String(h.originalGravity, 3);
+  }
+  if (h.valid && !isnan(h.abv)) {
+    if (metaLine.length() > 0) {
+      metaLine += "  ";
+    }
+    metaLine += "ABV ";
+    metaLine += String(h.abv, 1);
+    metaLine += "%";
+  }
+  if (h.valid && h.stableSeconds > 0) {
+    if (metaLine.length() > 0) {
+      metaLine += "  ";
+    }
+    metaLine += "Stable ";
+    metaLine += String(h.stableSeconds / 3600.0f, 1);
+    metaLine += "h";
+  }
+  if (metaLine.length() == 0) {
+    metaLine = h.selected ? (h.stale ? "stale" : "waiting") : "No selection";
+  }
+  if (h.valid && h.stale) {
+    metaLine += "  stale";
+  }
+  _canvas.drawString(metaLine, cx, cy + 52, &fonts::DejaVu12);
+
+  if (h.valid && h.address.length() > 0) {
+    _canvas.drawString(h.address, cx, cy + 76, &fonts::DejaVu12);
+  }
+
+  drawPageDots(1, 2);
 }
 
 void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
@@ -1476,6 +1598,21 @@ void DisplayUI::drawHelpIcon(int16_t cx, int16_t cy, uint16_t color,
   }
 }
 
+void DisplayUI::drawPageDots(uint8_t activePage, uint8_t pageCount) {
+  if (pageCount == 0) {
+    return;
+  }
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t y = _canvas.height() - 14;
+  const int16_t gap = 14;
+  const int16_t startX = cx - ((static_cast<int16_t>(pageCount) - 1) * gap) / 2;
+  for (uint8_t i = 0; i < pageCount; ++i) {
+    const bool active = i == activePage;
+    _canvas.fillSmoothCircle(startX + i * gap, y, active ? 3 : 2,
+                             active ? COLOR_GOLD : COLOR_TRACK);
+  }
+}
+
 void DisplayUI::drawOutputChips(const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t y = _canvas.height() / 2 + 78;
@@ -1552,7 +1689,9 @@ void DisplayUI::drawMenu(const Settings &settings,
                      &fonts::DejaVu18);
 
   const char *hint = "swipe up/down";
-  if (_menuIndex == MENU_UNITS) {
+  if (_menuIndex == MENU_DREST) {
+    hint = settings.diacetylRestActive ? "tap to finish" : "tap to start";
+  } else if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
   } else if (_menuIndex == MENU_WIFI) {
     hint = network.status == "Setup AP" ? "AP is active" : "tap to start AP";
@@ -1693,6 +1832,7 @@ void DisplayUI::drawHelp() {
   const char *gestures[][2] = {
       {"Turn dial", "Set temp"},
       {"Tap screen", "Quick menu"},
+      {"Swipe left/right", "Pages"},
       {"Press knob", "Settings"},
   };
   int16_t y = cy - 32;
@@ -1786,6 +1926,21 @@ String DisplayUI::formatTemperature(float tempC, bool unitsFahrenheit) const {
          temperatureUnit(unitsFahrenheit);
 }
 
+String DisplayUI::diacetylRestRemainingText(const Settings &settings) const {
+  const uint32_t seconds = settings.diacetylRestActive
+                               ? settings.diacetylRestRemainingSeconds
+                               : settings.diacetylRestDurationSeconds;
+  const uint32_t hours = seconds / 3600UL;
+  const uint32_t minutes = (seconds % 3600UL) / 60UL;
+  if (hours > 0 && minutes > 0) {
+    return String(hours) + "h " + String(minutes) + "m";
+  }
+  if (hours > 0) {
+    return String(hours) + "h";
+  }
+  return String(minutes) + "m";
+}
+
 const char *DisplayUI::quickActionLabel(QuickAction action) const {
   return action == QuickAction::Profile ? "Profile" : "Mode";
 }
@@ -1811,40 +1966,44 @@ String DisplayUI::quickPendingValue(const Settings &settings) const {
 String DisplayUI::menuValue(uint8_t index, const Settings &settings,
                             const NetworkSnapshot &network) const {
   switch (index) {
-  case 0:
+  case MENU_PROFILE:
     return activeProfile(settings).name;
-  case 1:
+  case MENU_TARGET:
     return formatTemperature(activeTargetC(settings), settings.unitsFahrenheit);
-  case 2:
+  case MENU_DREST:
+    return settings.diacetylRestActive
+               ? diacetylRestRemainingText(settings)
+               : String("Start ") + diacetylRestRemainingText(settings);
+  case MENU_MODE:
     return modeText(settings.mode);
-  case 3:
+  case MENU_COOL_ON:
     return String(toDisplayDelta(settings.coolOnDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
-  case 4:
+  case MENU_HEAT_ON:
     return String(toDisplayDelta(settings.heatOnDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
-  case 5:
+  case MENU_HOLD_BAND:
     return String(toDisplayDelta(settings.holdDeltaC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
-  case 6:
+  case MENU_COOLING_OFF:
     return String(settings.pumpMinOffSeconds) + "s";
-  case 7:
+  case MENU_COOLING_RUN:
     return String(settings.pumpMinRunSeconds) + "s";
-  case 8:
+  case MENU_OFFSET:
     return String(toDisplayDelta(settings.tempOffsetC, settings.unitsFahrenheit),
                   1) +
            temperatureUnit(settings.unitsFahrenheit);
-  case 9:
+  case MENU_UNITS:
     return temperatureUnit(settings.unitsFahrenheit);
-  case 10:
+  case MENU_WIFI:
     if (!network.wifiEnabled) {
       return "Disabled";
     }
     return network.status;
-  case 11:
+  case MENU_MQTT:
     if (!network.wifiEnabled) {
       return "Offline";
     }
@@ -1852,10 +2011,10 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
       return "Off";
     }
     return network.mqttConnected ? "Connected" : "Connecting";
-  case 12:
-  case 13:
+  case MENU_HEATER_TEST:
+  case MENU_PUMP_TEST:
     return "5s";
-  case 14:
+  case MENU_ABOUT:
     return FIRMWARE_VERSION;
   default:
     return "";

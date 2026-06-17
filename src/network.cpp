@@ -103,6 +103,28 @@ String jsonFloat(float value, unsigned int decimals = 1) {
   return isnan(value) ? "null" : String(value, decimals);
 }
 
+String jsonIntOrNull(int32_t value, int32_t nullValue = INT32_MIN) {
+  return value == nullValue ? "null" : String(value);
+}
+
+String hydrometerTypeText(HydrometerType type) {
+  switch (type) {
+  case HydrometerType::Tilt:
+    return "TILT";
+  case HydrometerType::Rapt:
+    return "RAPT";
+  default:
+    return "UNKNOWN";
+  }
+}
+
+String hydrometerAgeText(uint32_t nowMs, uint32_t lastSeenMs) {
+  if (lastSeenMs == 0) {
+    return "null";
+  }
+  return String((nowMs - lastSeenMs) / 1000UL);
+}
+
 String jsonString(const String &value) {
   String escaped = "\"";
   for (size_t i = 0; i < value.length(); ++i) {
@@ -293,8 +315,10 @@ String cookieValue(const String &cookieHeader, const char *name) {
 
 } // namespace
 
-void NetworkManager::begin(const Settings &settings) {
+void NetworkManager::begin(const Settings &settings,
+                           const HydrometerManager &hydrometer) {
   _snapshot = NetworkSnapshot{};
+  _hydrometer = &hydrometer;
   _snapshot.wifiEnabled = FERM_ENABLE_NETWORK;
   _snapshot.otaEnabled = FERM_ENABLE_OTA;
   _hostname = networkHostname(settings.fermenterName);
@@ -305,12 +329,22 @@ void NetworkManager::begin(const Settings &settings) {
   }
   _webStatus.activeProfile = activeProfileIndex(settings);
   _webStatus.liveTargetC = currentTargetC(settings);
+  _webStatus.diacetylRestActive = settings.diacetylRestActive;
+  _webStatus.diacetylRestTargetC = settings.diacetylRestTargetC;
+  _webStatus.diacetylRestDurationSeconds =
+      settings.diacetylRestDurationSeconds;
+  _webStatus.diacetylRestRemainingSeconds =
+      settings.diacetylRestRemainingSeconds;
+  _webStatus.diacetylRestReturnProfile =
+      diacetylRestReturnProfileIndex(settings);
   _webStatus.coolOnDeltaC = settings.coolOnDeltaC;
   _webStatus.heatOnDeltaC = settings.heatOnDeltaC;
   _webStatus.holdDeltaC = settings.holdDeltaC;
   _webStatus.tempOffsetC = settings.tempOffsetC;
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
   _webStatus.brightness = settings.brightness;
+  _webStatus.hydrometerBleEnabled = settings.hydrometerBleEnabled;
+  _webStatus.hydrometerScanType = settings.hydrometerScanType;
   _webStatus.mode = settings.mode;
 
 #if FERM_ENABLE_NETWORK
@@ -400,7 +434,9 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
 
 void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
                                   const TemperatureSensor &sensor,
-                                  const FermentationController &controller) {
+                                  const FermentationController &controller,
+                                  const HydrometerManager &hydrometer) {
+  _hydrometer = &hydrometer;
   _webStatus.tempValid = sensor.isValid();
   _webStatus.tempC = sensor.temperatureC();
   recordHistory(nowMs, _webStatus.tempValid, _webStatus.tempC);
@@ -410,12 +446,21 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   }
   _webStatus.activeProfile = activeProfileIndex(settings);
   _webStatus.liveTargetC = currentTargetC(settings);
+  _webStatus.diacetylRestActive = settings.diacetylRestActive;
+  _webStatus.diacetylRestTargetC = settings.diacetylRestTargetC;
+  _webStatus.diacetylRestDurationSeconds =
+      settings.diacetylRestDurationSeconds;
+  _webStatus.diacetylRestRemainingSeconds =
+      settings.diacetylRestRemainingSeconds;
+  _webStatus.diacetylRestReturnProfile =
+      diacetylRestReturnProfileIndex(settings);
   _webStatus.coolOnDeltaC = settings.coolOnDeltaC;
   _webStatus.heatOnDeltaC = settings.heatOnDeltaC;
   _webStatus.holdDeltaC = settings.holdDeltaC;
   _webStatus.tempOffsetC = settings.tempOffsetC;
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
   _webStatus.brightness = settings.brightness;
+  _webStatus.hydrometerBleEnabled = settings.hydrometerBleEnabled;
   _webStatus.mode = settings.mode;
   _webStatus.runtimeState = controller.runtimeState();
   _webStatus.faultCode = controller.faultCode();
@@ -536,7 +581,7 @@ void NetworkManager::startWebServer() {
   });
   _server.on("/metrics", HTTP_GET, [this]() {
     _server.send(200, "text/plain; version=0.0.4; charset=utf-8",
-                 metricsText());
+                 metricsText(millis()));
   });
   _server.on("/wifi", HTTP_GET, [this]() {
     if (!requireAuth()) {
@@ -608,7 +653,9 @@ void NetworkManager::startWebServer() {
       [this]() { handleFirmwareUpload(); });
 #endif
   _server.on("/api/status", HTTP_GET,
-             [this]() { _server.send(200, "application/json", statusJson()); });
+             [this]() {
+               _server.send(200, "application/json", statusJson(millis()));
+             });
   _server.on("/api/history", HTTP_GET, [this]() {
     _server.send(200, "application/json", historyJson());
   });
@@ -968,16 +1015,27 @@ void NetworkManager::saveInfluxConfig() {
 #endif
 }
 
-String NetworkManager::influxLineProtocol() const {
+String NetworkManager::influxLineProtocol(uint32_t nowMs) const {
   const uint8_t profileIndex =
       _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
   const ProfileSettings &profile = _webStatus.profiles[profileIndex];
+  HydrometerReading selected;
+  if (_hydrometer != nullptr && _settings != nullptr) {
+    selected = _hydrometer->selectedReading(*_settings, nowMs);
+  }
 
   String fields = "";
   if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
     appendField(fields, "temp_c=" + String(_webStatus.tempC, 3));
   }
   appendField(fields, "target_c=" + String(_webStatus.liveTargetC, 3));
+  appendField(fields, "diacetyl_rest_active=" +
+                          String(_webStatus.diacetylRestActive ? "1i" : "0i"));
+  appendField(fields, "diacetyl_rest_target_c=" +
+                          String(_webStatus.diacetylRestTargetC, 3));
+  appendField(fields, "diacetyl_rest_remaining_s=" +
+                          String(_webStatus.diacetylRestRemainingSeconds) +
+                          "i");
   appendField(fields, "cool_on_delta_c=" + String(_webStatus.coolOnDeltaC, 3));
   appendField(fields, "heat_on_delta_c=" + String(_webStatus.heatOnDeltaC, 3));
   appendField(fields, "hold_delta_c=" + String(_webStatus.holdDeltaC, 3));
@@ -998,6 +1056,26 @@ String NetworkManager::influxLineProtocol() const {
   appendField(fields, "fault=" +
                           String(static_cast<uint8_t>(_webStatus.faultCode)) +
                           "i");
+  if (selected.valid) {
+    appendField(fields, "hydrometer_gravity=" + String(selected.gravity, 3));
+    appendField(fields, "hydrometer_temperature_c=" +
+                            String(selected.temperatureC, 3));
+    appendField(fields, "hydrometer_rssi=" + String(selected.rssi) + "i");
+    if (!isnan(selected.batteryV)) {
+      appendField(fields, "hydrometer_battery_v=" + String(selected.batteryV, 2));
+    }
+    if (!isnan(selected.originalGravity)) {
+      appendField(fields, "hydrometer_original_gravity=" +
+                              String(selected.originalGravity, 3));
+    }
+    if (!isnan(selected.abv)) {
+      appendField(fields, "hydrometer_abv=" + String(selected.abv, 2));
+    }
+    appendField(fields, "hydrometer_stable_s=" +
+                            String(selected.stableSeconds) + "i");
+    appendField(fields, "hydrometer_stale=" +
+                            String(selected.stale ? "1i" : "0i"));
+  }
 
   String line = _influx.measurement;
   line += ",fermenter=" + influxEscape(_webStatus.fermenterName);
@@ -1079,7 +1157,7 @@ void NetworkManager::publishInflux(uint32_t nowMs) {
     http.addHeader("Stream-Mode", "1");
   }
 
-  const int code = http.POST(influxLineProtocol());
+  const int code = http.POST(influxLineProtocol(nowMs));
   _lastInfluxStatusCode = code;
   if (code >= 200 && code < 300) {
     _lastInfluxStatus = "OK " + String(code);
@@ -1256,7 +1334,7 @@ void NetworkManager::publishMqtt(uint32_t nowMs) {
   _lastMqttPublishMs = nowMs;
 
   const String stateTopic = mqttBaseTopic(_mqttConfig) + "/state";
-  const String payload = statusJson();
+  const String payload = statusJson(nowMs);
   const bool ok = _mqtt.publish(stateTopic.c_str(), payload.c_str(), true);
   _lastMqttStatus = ok ? "Published" : "Publish failed (payload too large?)";
 #else
@@ -1286,6 +1364,7 @@ void NetworkManager::handleSettingsPost() {
                    "{\"ok\":false,\"error\":\"invalid profile\"}");
       return;
     }
+    cancelDiacetylRest(*_settings);
     _settings->activeProfile = static_cast<uint8_t>(requestedProfile);
     applyActiveProfileTarget(*_settings);  // recall the profile's preset
     changed = true;
@@ -1335,6 +1414,110 @@ void NetworkManager::handleSettingsPost() {
     changed = true;
   }
 
+  if (_server.hasArg("hydrometerBleEnabled")) {
+    _settings->hydrometerBleEnabled = _server.arg("hydrometerBleEnabled").toInt() != 0;
+    changed = true;
+  }
+
+  if (_server.hasArg("hydrometerScanType")) {
+    String scanTypeArg = _server.arg("hydrometerScanType");
+    scanTypeArg.trim();
+    scanTypeArg.toUpperCase();
+    HydrometerScanType scanType = HydrometerScanType::Unknown;
+    if (scanTypeArg == "TILT") {
+      scanType = HydrometerScanType::Tilt;
+    } else if (scanTypeArg == "RAPT") {
+      scanType = HydrometerScanType::Rapt;
+    }
+    if (scanType != HydrometerScanType::Unknown) {
+      _settings->hydrometerScanType = scanType;
+      clearHydrometerSelection(*_settings);
+      changed = true;
+    }
+  }
+
+  if (_server.hasArg("hydrometerSelectKey")) {
+    String selectedKey = _server.arg("hydrometerSelectKey");
+    selectedKey.trim();
+    if (selectedKey != _settings->hydrometerSelectionKey) {
+      _settings->hydrometerSelectionKey = selectedKey;
+      const HydrometerScanType inferredScanType =
+          hydrometerScanTypeFromKey(selectedKey);
+      if (inferredScanType != HydrometerScanType::Unknown &&
+          inferredScanType != _settings->hydrometerScanType) {
+        _settings->hydrometerScanType = inferredScanType;
+      }
+      resetHydrometerSession(*_settings);
+      changed = true;
+    }
+  }
+
+  if (_server.hasArg("hydrometerClearSelection")) {
+    if (_settings->hydrometerSelectionKey.length() > 0) {
+      clearHydrometerSelection(*_settings);
+      changed = true;
+    }
+  }
+
+  if (_server.hasArg("hydrometerResetOg")) {
+    resetHydrometerSession(*_settings);
+    changed = true;
+  }
+
+  if (_server.hasArg("dRestTarget")) {
+    _settings->diacetylRestTargetC =
+        fromDisplayTemp(_server.arg("dRestTarget").toFloat(), unitsF);
+    changed = true;
+  }
+
+  if (_server.hasArg("dRestHours")) {
+    const float hours = _server.arg("dRestHours").toFloat();
+    uint32_t seconds = static_cast<uint32_t>(lroundf(hours * 3600.0f));
+    seconds = clampU32(seconds, MIN_DIACETYL_REST_DURATION_SECONDS,
+                       MAX_DIACETYL_REST_DURATION_SECONDS);
+    _settings->diacetylRestDurationSeconds =
+        ((seconds + DIACETYL_REST_DURATION_STEP_SECONDS / 2) /
+         DIACETYL_REST_DURATION_STEP_SECONDS) *
+        DIACETYL_REST_DURATION_STEP_SECONDS;
+    if (_settings->diacetylRestActive &&
+        _settings->diacetylRestRemainingSeconds >
+            _settings->diacetylRestDurationSeconds) {
+      _settings->diacetylRestRemainingSeconds =
+          _settings->diacetylRestDurationSeconds;
+    }
+    changed = true;
+  }
+
+  if (_server.hasArg("dRestReturnProfile")) {
+    int requestedProfile = _server.arg("dRestReturnProfile").toInt();
+    if (requestedProfile < 0 || requestedProfile >= PROFILE_COUNT) {
+      _server.send(400, "application/json",
+                   "{\"ok\":false,\"error\":\"invalid D-rest return profile\"}");
+      return;
+    }
+    _settings->diacetylRestReturnProfile =
+        static_cast<uint8_t>(requestedProfile);
+    changed = true;
+  }
+
+  if (_server.hasArg("dRestAction")) {
+    String action = _server.arg("dRestAction");
+    action.trim();
+    action.toLowerCase();
+    if (action == "start") {
+      startDiacetylRest(*_settings);
+    } else if (action == "end") {
+      completeDiacetylRest(*_settings);
+    } else if (action == "cancel") {
+      cancelDiacetylRest(*_settings);
+    } else {
+      _server.send(400, "application/json",
+                   "{\"ok\":false,\"error\":\"invalid D-rest action\"}");
+      return;
+    }
+    changed = true;
+  }
+
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     String nameArg = String("profile") + String(i) + "Name";
     String targetArg = String("profile") + String(i) + "Target";
@@ -1352,10 +1535,31 @@ void NetworkManager::handleSettingsPost() {
   if (changed) {
     sanitizeSettings(*_settings);
     _webStatus.fermenterName = _settings->fermenterName;
+    for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
+      _webStatus.profiles[i] = _settings->profiles[i];
+    }
+    _webStatus.activeProfile = activeProfileIndex(*_settings);
+    _webStatus.liveTargetC = currentTargetC(*_settings);
+    _webStatus.diacetylRestActive = _settings->diacetylRestActive;
+    _webStatus.diacetylRestTargetC = _settings->diacetylRestTargetC;
+    _webStatus.diacetylRestDurationSeconds =
+        _settings->diacetylRestDurationSeconds;
+    _webStatus.diacetylRestRemainingSeconds =
+        _settings->diacetylRestRemainingSeconds;
+    _webStatus.diacetylRestReturnProfile =
+        diacetylRestReturnProfileIndex(*_settings);
+    _webStatus.coolOnDeltaC = _settings->coolOnDeltaC;
+    _webStatus.heatOnDeltaC = _settings->heatOnDeltaC;
+    _webStatus.holdDeltaC = _settings->holdDeltaC;
+    _webStatus.tempOffsetC = _settings->tempOffsetC;
+    _webStatus.unitsFahrenheit = _settings->unitsFahrenheit;
+    _webStatus.mode = _settings->mode;
+    _webStatus.hydrometerBleEnabled = _settings->hydrometerBleEnabled;
+    _webStatus.hydrometerScanType = _settings->hydrometerScanType;
     _settingsChanged = true;
   }
 
-  _server.send(200, "application/json", statusJson());
+  _server.send(200, "application/json", statusJson(millis()));
 #endif
 }
 
@@ -1413,7 +1617,7 @@ String NetworkManager::historyJson() const {
   return out;
 }
 
-String NetworkManager::statusJson() const {
+String NetworkManager::statusJson(uint32_t nowMs) const {
   const bool f = _webStatus.unitsFahrenheit;
   const float temperature = toDisplayTemp(_webStatus.tempC, f);
   const uint8_t profileIndex =
@@ -1423,7 +1627,21 @@ String NetworkManager::statusJson() const {
   const float heatOn = toDisplayDelta(_webStatus.heatOnDeltaC, f);
   const float hold = toDisplayDelta(_webStatus.holdDeltaC, f);
   const float tempOffset = toDisplayDelta(_webStatus.tempOffsetC, f);
+  const float dRestTarget = toDisplayTemp(_webStatus.diacetylRestTargetC, f);
+  const float dRestDurationHours =
+      _webStatus.diacetylRestDurationSeconds / 3600.0f;
+  const float dRestRemainingHours =
+      _webStatus.diacetylRestRemainingSeconds / 3600.0f;
+  const uint8_t dRestReturnProfile =
+      _webStatus.diacetylRestReturnProfile < PROFILE_COUNT
+          ? _webStatus.diacetylRestReturnProfile
+          : static_cast<uint8_t>(ProfileSlot::Ferment);
   const char *unit = unitLabel(f);
+
+  HydrometerReading selected;
+  if (_hydrometer != nullptr && _settings != nullptr) {
+    selected = _hydrometer->selectedReading(*_settings, nowMs);
+  }
 
   String json = "{";
   json += "\"wifiConnected\":" +
@@ -1461,30 +1679,115 @@ String NetworkManager::statusJson() const {
   json += "\"heatOn\":" + jsonFloat(heatOn) + ",";
   json += "\"hold\":" + jsonFloat(hold) + ",";
   json += "\"tempOffset\":" + jsonFloat(tempOffset) + ",";
+  json += "\"diacetylRest\":{";
+  json += "\"active\":" +
+          String(_webStatus.diacetylRestActive ? "true" : "false") + ",";
+  json += "\"target\":" + jsonFloat(dRestTarget) + ",";
+  json += "\"durationSeconds\":" +
+          String(_webStatus.diacetylRestDurationSeconds) + ",";
+  json += "\"durationHours\":" + jsonFloat(dRestDurationHours) + ",";
+  json += "\"remainingSeconds\":" +
+          String(_webStatus.diacetylRestRemainingSeconds) + ",";
+  json += "\"remainingHours\":" + jsonFloat(dRestRemainingHours) + ",";
+  json += "\"returnProfile\":" + String(dRestReturnProfile) + ",";
+  json += "\"returnProfileName\":" +
+          jsonString(_webStatus.profiles[dRestReturnProfile].name) + "},";
   json += "\"unit\":\"" + String(unit) + "\",";
   json += "\"brightness\":" + String(_webStatus.brightness) + ",";
   json += "\"mode\":\"" + String(modeTopicText(_webStatus.mode)) + "\",";
   json +=
       "\"state\":\"" +
-      String(_webStatus.runtimeState == RuntimeState::Cooling &&
-                     profileIndex == static_cast<uint8_t>(ProfileSlot::Crash)
+      String(_webStatus.diacetylRestActive
+                 ? "D_REST"
+                 : _webStatus.runtimeState == RuntimeState::Cooling &&
+                         profileIndex == static_cast<uint8_t>(ProfileSlot::Crash)
                  ? "CRASHING"
                  : stateText(_webStatus.runtimeState)) +
       "\",";
   json += "\"fault\":\"" + String(faultText(_webStatus.faultCode)) + "\",";
   json += "\"heater\":" + String(_webStatus.heaterOn ? "true" : "false") + ",";
-  json += "\"pump\":" + String(_webStatus.pumpOn ? "true" : "false");
+  json += "\"pump\":" + String(_webStatus.pumpOn ? "true" : "false") + ",";
+  json += "\"hydrometer\":{";
+  json += "\"enabled\":" +
+          String((_hydrometer != nullptr && _settings != nullptr &&
+                  _hydrometer->enabled(*_settings))
+                     ? "true"
+                     : "false") +
+          ",";
+  json += "\"selected\":" +
+          String(selected.selected ? "true" : "false") + ",";
+  json += "\"valid\":" + String(selected.valid ? "true" : "false") + ",";
+  json += "\"stale\":" + String(selected.stale ? "true" : "false") + ",";
+  json += "\"type\":" + jsonString(hydrometerTypeText(selected.type)) + ",";
+  json += "\"scanType\":" +
+          jsonString(hydrometerScanTypeText(_settings != nullptr
+                                                ? _settings->hydrometerScanType
+                                                : HydrometerScanType::Unknown)) +
+          ",";
+  json += "\"key\":" + jsonString(selected.key) + ",";
+  json += "\"label\":" + jsonString(selected.label) + ",";
+  json += "\"name\":" + jsonString(selected.name) + ",";
+  json += "\"address\":" + jsonString(selected.address) + ",";
+  json += "\"color\":" + jsonString(selected.color) + ",";
+  json += "\"gravity\":" + jsonFloat(selected.gravity, 3) + ",";
+  json += "\"temperature\":" + jsonFloat(toDisplayTemp(selected.temperatureC, f)) + ",";
+  json += "\"rssi\":" + String(selected.rssi) + ",";
+  json += "\"batteryV\":" + jsonFloat(selected.batteryV, 2) + ",";
+  json += "\"gravityVelocity\":" + jsonFloat(selected.gravityVelocity, 4) + ",";
+  json += "\"gravityVelocityValid\":" +
+          String(selected.gravityVelocityValid ? "true" : "false") + ",";
+  json += "\"originalGravity\":" + jsonFloat(selected.originalGravity, 3) + ",";
+  json += "\"abv\":" + jsonFloat(selected.abv, 1) + ",";
+  json += "\"stableSeconds\":" + String(selected.stableSeconds) + ",";
+  json += "\"lastSeenSeconds\":" + hydrometerAgeText(nowMs, selected.lastSeenMs);
+  json += "},";
+  json += "\"hydrometerDevices\":[";
+  if (_hydrometer != nullptr) {
+    for (uint8_t i = 0; i < _hydrometer->deviceCount(); ++i) {
+      if (i > 0) {
+        json += ",";
+      }
+      const HydrometerReading &d = _hydrometer->device(i);
+      const bool selectedDevice =
+          _settings != nullptr &&
+          d.key.length() > 0 && d.key == _settings->hydrometerSelectionKey;
+      json += "{";
+      json += "\"selected\":" + String(selectedDevice ? "true" : "false") + ",";
+      json += "\"valid\":" + String(d.valid ? "true" : "false") + ",";
+      json += "\"type\":" + jsonString(hydrometerTypeText(d.type)) + ",";
+      json += "\"key\":" + jsonString(d.key) + ",";
+      json += "\"label\":" + jsonString(d.label) + ",";
+      json += "\"name\":" + jsonString(d.name) + ",";
+      json += "\"address\":" + jsonString(d.address) + ",";
+      json += "\"color\":" + jsonString(d.color) + ",";
+      json += "\"gravity\":" + jsonFloat(d.gravity, 3) + ",";
+      json += "\"temperature\":" + jsonFloat(toDisplayTemp(d.temperatureC, f)) + ",";
+      json += "\"rssi\":" + String(d.rssi) + ",";
+      json += "\"batteryV\":" + jsonFloat(d.batteryV, 2) + ",";
+      json += "\"lastSeenSeconds\":" + hydrometerAgeText(nowMs, d.lastSeenMs) + ",";
+      const bool stale =
+          d.lastSeenMs == 0 ||
+          (nowMs - d.lastSeenMs) > 5UL * 60UL * 1000UL;
+      json += "\"stale\":" + String(stale ? "true" : "false");
+      json += "}";
+    }
+  }
+  json += "]";
   json += "}";
   return json;
 }
 
-String NetworkManager::metricsText() const {
+String NetworkManager::metricsText(uint32_t nowMs) const {
   const uint8_t profileIndex =
       _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
   const ProfileSettings &profile = _webStatus.profiles[profileIndex];
   const String labels =
       "fermenter=\"" + prometheusLabelEscape(_webStatus.fermenterName) +
       "\",profile=\"" + prometheusLabelEscape(profile.name) + "\"";
+  HydrometerReading selected;
+  if (_hydrometer != nullptr && _settings != nullptr) {
+    selected = _hydrometer->selectedReading(*_settings, nowMs);
+  }
 
   const String p = _influx.measurement;
   String metrics = "";
@@ -1506,6 +1809,16 @@ String NetworkManager::metricsText() const {
   metrics += "# TYPE " + p + "_target_celsius gauge\n";
   metrics += p + "_target_celsius{" + labels + "} " +
              String(_webStatus.liveTargetC, 3) + "\n";
+  metrics += "# HELP " + p +
+             "_diacetyl_rest_active Diacetyl rest active, 1 when active.\n";
+  metrics += "# TYPE " + p + "_diacetyl_rest_active gauge\n";
+  metrics += p + "_diacetyl_rest_active{" + labels + "} " +
+             String(_webStatus.diacetylRestActive ? 1 : 0) + "\n";
+  metrics += "# HELP " + p +
+             "_diacetyl_rest_remaining_seconds Diacetyl rest remaining time.\n";
+  metrics += "# TYPE " + p + "_diacetyl_rest_remaining_seconds gauge\n";
+  metrics += p + "_diacetyl_rest_remaining_seconds{" + labels + "} " +
+             String(_webStatus.diacetylRestRemainingSeconds) + "\n";
   metrics += "# HELP " + p + "_heater_on Heater output state.\n";
   metrics += "# TYPE " + p + "_heater_on gauge\n";
   metrics += p + "_heater_on{" + labels + "} " +
@@ -1530,6 +1843,59 @@ String NetworkManager::metricsText() const {
   metrics += p + "_fault_code{" + labels + ",fault=\"" +
              prometheusLabelEscape(faultText(_webStatus.faultCode)) + "\"} " +
              String(static_cast<uint8_t>(_webStatus.faultCode)) + "\n";
+  metrics += "# HELP " + p + "_hydrometer_enabled Hydrometer support enabled.\n";
+  metrics += "# TYPE " + p + "_hydrometer_enabled gauge\n";
+  metrics += p + "_hydrometer_enabled{" + labels + "} " +
+             String((_hydrometer != nullptr && _settings != nullptr &&
+                     _hydrometer->enabled(*_settings))
+                        ? 1
+                        : 0) + "\n";
+  metrics += "# HELP " + p + "_hydrometer_valid Selected hydrometer valid.\n";
+  metrics += "# TYPE " + p + "_hydrometer_valid gauge\n";
+  metrics += p + "_hydrometer_valid{" + labels + "} " +
+             String(selected.valid ? 1 : 0) + "\n";
+  if (selected.valid) {
+    metrics += "# HELP " + p + "_hydrometer_gravity Specific gravity.\n";
+    metrics += "# TYPE " + p + "_hydrometer_gravity gauge\n";
+    metrics += p + "_hydrometer_gravity{" + labels + ",type=\"" +
+               prometheusLabelEscape(hydrometerTypeText(selected.type)) +
+               "\"} " + String(selected.gravity, 3) + "\n";
+    metrics += "# HELP " + p + "_hydrometer_temperature_c Hydrometer temp.\n";
+    metrics += "# TYPE " + p + "_hydrometer_temperature_c gauge\n";
+    metrics += p + "_hydrometer_temperature_c{" + labels + "} " +
+               String(selected.temperatureC, 3) + "\n";
+    metrics += "# HELP " + p + "_hydrometer_rssi Bluetooth RSSI.\n";
+    metrics += "# TYPE " + p + "_hydrometer_rssi gauge\n";
+    metrics += p + "_hydrometer_rssi{" + labels + "} " +
+               String(selected.rssi) + "\n";
+    if (!isnan(selected.batteryV)) {
+      metrics += "# HELP " + p + "_hydrometer_battery_v Battery voltage.\n";
+      metrics += "# TYPE " + p + "_hydrometer_battery_v gauge\n";
+      metrics += p + "_hydrometer_battery_v{" + labels + "} " +
+                 String(selected.batteryV, 2) + "\n";
+    }
+    if (!isnan(selected.originalGravity)) {
+      metrics += "# HELP " + p +
+                 "_hydrometer_original_gravity Captured original gravity.\n";
+      metrics += "# TYPE " + p + "_hydrometer_original_gravity gauge\n";
+      metrics += p + "_hydrometer_original_gravity{" + labels + "} " +
+                 String(selected.originalGravity, 3) + "\n";
+    }
+    if (!isnan(selected.abv)) {
+      metrics += "# HELP " + p + "_hydrometer_abv Estimated ABV.\n";
+      metrics += "# TYPE " + p + "_hydrometer_abv gauge\n";
+      metrics += p + "_hydrometer_abv{" + labels + "} " +
+                 String(selected.abv, 2) + "\n";
+    }
+    metrics += "# HELP " + p + "_hydrometer_stable_seconds Stable duration.\n";
+    metrics += "# TYPE " + p + "_hydrometer_stable_seconds gauge\n";
+    metrics += p + "_hydrometer_stable_seconds{" + labels + "} " +
+               String(selected.stableSeconds) + "\n";
+    metrics += "# HELP " + p + "_hydrometer_stale Selected hydrometer stale.\n";
+    metrics += "# TYPE " + p + "_hydrometer_stale gauge\n";
+    metrics += p + "_hydrometer_stale{" + labels + "} " +
+               String(selected.stale ? 1 : 0) + "\n";
+  }
   return metrics;
 }
 
@@ -1550,7 +1916,7 @@ body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cool
 .tempBlock{min-width:0}.tempLine{display:flex;align-items:flex-start}.temp{font-size:78px;line-height:.9;font-weight:900;letter-spacing:0}.unit{font-size:28px;color:var(--accent);margin-left:7px;margin-top:8px}.state{font-size:25px;font-weight:900;margin-top:8px;color:var(--ok)}body[data-state=heating] .state{color:var(--heat)}body[data-state=cooling] .state,body[data-state=crashing] .state{color:var(--cool)}body[data-state=fault] .state{color:var(--fault)}
 .sub{margin-top:6px;color:var(--muted)}.outputs{display:grid;gap:8px;min-width:116px}.out{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--muted);font-weight:900;text-align:center}.out.on.heat{background:#3b1807;color:#ffd8bf;border-color:var(--heat)}.out.on.cool{background:#123040;color:var(--accent);border-color:var(--cool)}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.card,.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:13px}.label{color:var(--muted);font-size:12px;text-transform:uppercase}.value{font-size:23px;font-weight:900;margin-top:4px}
-.controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:12px}input,select{width:100%;background:#102126;color:var(--text)}input{text-align:center;font-size:22px;font-weight:900}.nameInput{text-align:left;font-size:20px}.fieldLabel{display:block;color:var(--muted);font-size:13px}button{background:#234858;color:var(--text);font-weight:900;cursor:pointer}button.primary{background:var(--blue);border-color:#3f819d;color:#fff}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}
 a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}}
@@ -1584,6 +1950,23 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <button id="btnOFF" class="danger" onclick="setMode('OFF')">OFF</button><button id="btnAUTO" onclick="setMode('AUTO')">AUTO</button>
 <button id="btnHEAT_ONLY" class="heat" onclick="setMode('HEAT_ONLY')">HEAT</button><button id="btnCOOL_ONLY" class="cool" onclick="setMode('COOL_ONLY')">COOL</button>
 </div></div>
+<div class="panel"><h2>Diacetyl Rest</h2>
+<div class="row">
+<label class="fieldLabel">Rest temp<input id="dRestTargetInput" inputmode="decimal" step="0.1"></label>
+<label class="fieldLabel">Hours<input id="dRestHoursInput" inputmode="numeric" step="24" min="24" max="96"></label>
+</div>
+<label class="fieldLabel" style="margin-top:8px">After rest<select id="dRestReturnSelect"></select></label>
+<div class="modes" style="margin-top:10px">
+<button class="primary" onclick="startDrest()">START</button><button id="dRestEndBtn" onclick="endDrest()">STOP</button>
+</div>
+<p class="sub" id="dRestStatus" style="font-size:12px;margin-top:10px">Ready</p>
+</div>
+</section>
+<section class="grid">
+<div class="card"><div class="label">Hydrometer</div><div class="value" id="hydroTitle">No hydrometer</div></div>
+<div class="card"><div class="label">Gravity</div><div class="value" id="hydroGravity">--.--</div></div>
+<div class="card"><div class="label">Temp</div><div class="value" id="hydroTemp">--.-</div></div>
+<div class="card"><div class="label">ABV</div><div class="value" id="hydroAbv">--.-%</div></div>
 </section>
 <div class="footer">Fault: <span id="fault">NONE</span></div>
 </div></main>
@@ -1600,6 +1983,9 @@ function applyTarget(){const v=parseFloat(targetInput.value);if(!isNaN(v))post({
 function nudge(delta){const v=parseFloat(targetInput.value||'68')+delta;targetInput.value=(Math.round(v*10)/10).toFixed(1);applyTarget()}
 function selectProfile(){post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
+function dRestData(action){const d={dRestAction:action,dRestTarget:dRestTargetInput.value,dRestHours:dRestHoursInput.value,dRestReturnProfile:dRestReturnSelect.value};return d}
+function startDrest(){post(dRestData('start'))}
+function endDrest(){post({dRestAction:'end'})}
 function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
 document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
 document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
@@ -1608,6 +1994,18 @@ function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
  profileSelect.value=s.activeProfile;
 }
+function renderDrest(s){
+ const r=s.diacetylRest||{};
+ if(document.activeElement!==dRestTargetInput)dRestTargetInput.value=(r.target||70).toFixed(1);
+ if(document.activeElement!==dRestHoursInput)dRestHoursInput.value=String(Math.round(r.durationHours||48));
+ if(document.activeElement!==dRestReturnSelect){
+  dRestReturnSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
+  dRestReturnSelect.value=r.returnProfile||0;
+ }
+ dRestEndBtn.disabled=!r.active;
+ dRestStatus.textContent=r.active?('Active - '+remainingText(r.remainingSeconds)+' remaining, then '+(r.returnProfileName||'profile')):'Ready - holds '+Math.round(r.durationHours||48)+'h at '+(r.target||70).toFixed(1)+deg+s.unit;
+}
+function remainingText(sec){sec=Math.max(0,sec||0);const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60);return h>0?h+'h '+m+'m':m+'m'}
 async function tick(){
  const r=await fetch('/api/status'); const s=await r.json();
  last=s;
@@ -1616,12 +2014,19 @@ async function tick(){
  document.querySelectorAll('.unit').forEach(e=>e.textContent=deg+s.unit);
  temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
  fermenterName.textContent=s.fermenterName; fermenterNameTop.textContent=s.fermenterName; fermenterNameHero.textContent=s.fermenterName;
- profileName.textContent=s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=s.profileName+' target '+s.target.toFixed(1)+deg+s.unit;
+ const rest=s.diacetylRest||{};
+ profileName.textContent=rest.active?'D-Rest':s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=(rest.active?'D-rest':'target')+' '+s.target.toFixed(1)+deg+s.unit;
  if(document.activeElement!==profileSelect)renderProfiles(s);
  if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
+ renderDrest(s);
  state.textContent=s.state; mode.textContent=s.mode; wifi.textContent=s.wifiConnected?s.ip:s.wifiStatus; demo.hidden=!s.demo;
  heater.textContent=s.heater?'HEATER ON':'HEATER OFF'; pump.textContent=s.pump?'PUMP ON':'PUMP OFF'; heater.classList.toggle('on',s.heater); pump.classList.toggle('on',s.pump); fault.textContent=s.fault;
- summary.textContent=s.tempValid?s.mode+' mode':'Sensor fault - outputs forced off';
+ summary.textContent=s.tempValid?(rest.active?'D-rest '+remainingText(rest.remainingSeconds)+' remaining':s.mode+' mode'):'Sensor fault - outputs forced off';
+ const h=s.hydrometer||{};
+ hydroTitle.textContent=h.valid?(h.label||'Hydrometer'):(h.selected?'Waiting':'No hydrometer');
+ hydroGravity.textContent=h.valid?('SG '+h.gravity.toFixed(3)):'--.--';
+ hydroTemp.textContent=h.valid?(h.temperature.toFixed(1)+deg+(s.unit||'')):'--.-';
+ hydroAbv.textContent=h.valid&&h.abv!=null?h.abv.toFixed(1)+'%':'--.-%';
  for(const id of ['OFF','AUTO','HEAT_ONLY','COOL_ONLY'])document.getElementById('btn'+id).classList.toggle('active',s.mode===id);
 }
 function drawSpark(){
@@ -1729,6 +2134,38 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 </div>
 <button class="primary" onclick="saveControl()">Save controller settings</button>
 <div class="saveStatus" id="controllerStatus"></div>
+</section>
+<section class="panel"><h2>Diacetyl Rest</h2>
+<p class="hint">Defaults used by the dashboard and dial. Typical rests are 24-48 hours at 70-72 )HTML";
+  html += unit;
+  html += R"HTML(.</p>
+<div class="thresholds" style="margin-top:10px">
+<label>Rest temp<input id="dRestTargetSettings" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayTemp(_webStatus.diacetylRestTargetC, f), 1);
+  html += R"HTML("></label>
+<label>Duration hours<input id="dRestHoursSettings" inputmode="numeric" step="24" min="24" max="96" value=")HTML";
+  html += String(_webStatus.diacetylRestDurationSeconds / 3600UL);
+  html += R"HTML("></label>
+</div>
+<label>After rest<select id="dRestReturnSettings">
+)HTML";
+  const uint8_t dRestReturnProfile =
+      _webStatus.diacetylRestReturnProfile < PROFILE_COUNT
+          ? _webStatus.diacetylRestReturnProfile
+          : static_cast<uint8_t>(ProfileSlot::Ferment);
+  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
+    html += R"HTML(<option value=")HTML";
+    html += String(i);
+    html += "\"";
+    html += i == dRestReturnProfile ? " selected" : "";
+    html += ">";
+    html += htmlEscape(_webStatus.profiles[i].name);
+    html += R"HTML(</option>
+)HTML";
+  }
+  html += R"HTML(</select></label>
+<button class="primary" onclick="saveDrestDefaults()">Save D-rest defaults</button>
+<div class="saveStatus" id="dRestStatusSettings"></div>
 </section>
 </div>
 <div id="tab-system" class="tabpanel">
@@ -1923,6 +2360,26 @@ async function scanWifi(){
   html += htmlEscape(_lastMqttStatus);
   html += R"HTML(</p>
 </section>
+<section class="panel"><h2>Hydrometer</h2>
+<form method="post" action="/api/settings" id="hydroForm" onsubmit="saveHydroSettings();return false;">
+<label><input type="checkbox" name="hydrometerBleEnabled" value="1" )HTML";
+  html += checked(_webStatus.hydrometerBleEnabled);
+  html += R"HTML(>Enable BLE scanning</label>
+<div class="row" style="margin-top:10px">
+<button type="button" id="hydroTiltBtn" onclick="setHydrometerScanType('TILT')">Add Tilt</button>
+<button type="button" id="hydroRaptBtn" onclick="setHydrometerScanType('RAPT')">Add RAPT</button>
+</div>
+<div class="hint" id="hydroScanHint">Choose Tilt or RAPT to start scanning. Only that type will be listed here.</div>
+<div class="hint">The selected hydrometer is used for display and fermentation metrics only.</div>
+<button type="submit">Save hydrometer settings</button>
+<div class="row" style="margin-top:10px">
+<button type="button" onclick="resetHydrometerOg()">Reset OG</button>
+<button type="button" onclick="clearHydrometer()">Clear selection</button>
+</div>
+</form>
+<div class="saveStatus" id="hydroStatusSettings"></div>
+<div class="networkList" id="hydroList"></div>
+</section>
 </div></div>
 <script>
 function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
@@ -1933,12 +2390,51 @@ addEventListener('hashchange',function(){showTab((location.hash||'#profiles').sl
 document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
 showTab((location.hash||'#profiles').slice(1));
 async function postSettings(d){await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d).toString()});}
-async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}}catch(e){}}
+function hydroAge(sec){sec=Math.max(0,sec||0);if(sec<60)return sec+'s';const m=Math.floor(sec/60),h=Math.floor(m/60);return h>0?h+'h '+(m%60)+'m':m+'m'}
+function renderHydro(s){
+ const h=s.hydrometer||{},list=document.getElementById('hydroList'),st=document.getElementById('hydroStatusSettings');
+ const devices=s.hydrometerDevices||[];
+ const scanType=(h.scanType||'UNKNOWN').toUpperCase();
+ const tiltBtn=document.getElementById('hydroTiltBtn'),raptBtn=document.getElementById('hydroRaptBtn'),scanHint=document.getElementById('hydroScanHint');
+ if(tiltBtn)tiltBtn.classList.toggle('active',scanType==='TILT');
+ if(raptBtn)raptBtn.classList.toggle('active',scanType==='RAPT');
+ if(scanHint){
+  if(scanType==='TILT'){scanHint.textContent='Scanning for Tilt devices only.';}
+  else if(scanType==='RAPT'){scanHint.textContent='Scanning for RAPT devices only.';}
+  else{scanHint.textContent='Choose Tilt or RAPT to start scanning. Only that type will be listed here.';}
+ }
+ if(st)st.textContent=h.selected?(h.valid?(h.stale?'Selected device is stale':'Selected device is active'):'Selected device waiting for a reading'):'No hydrometer selected';
+ if(!list)return;
+ list.innerHTML='';
+ if(!devices.length){const d=document.createElement('div');d.className='hint';d.textContent=scanType==='UNKNOWN'?'Choose a device type above to begin scanning.':('No '+scanType+' devices have been decoded yet.');list.appendChild(d);return;}
+ devices.forEach(function(dev){
+  const b=document.createElement('button');b.type='button';
+  const left=document.createElement('span');
+  left.textContent=(dev.label||dev.key||'Device')+(dev.selected?' (Selected)':'');
+  const right=document.createElement('span');right.className='networkMeta';
+  const parts=[];
+  if(dev.gravity!=null)parts.push('SG '+Number(dev.gravity).toFixed(3));
+  if(dev.temperature!=null)parts.push(Number(dev.temperature).toFixed(1)+deg+(s.unit||''));
+  parts.push((dev.rssi||0)+' dBm');
+  parts.push(dev.lastSeenSeconds==null?'unknown':hydroAge(dev.lastSeenSeconds));
+  right.textContent=parts.join(' · ');
+  b.appendChild(left);b.appendChild(right);
+  b.onclick=function(){selectHydrometer(dev.key);};
+  list.appendChild(b);
+ });
+}
+async function setHydrometerScanType(type){await postSettings({hydrometerScanType:type});await refresh();}
+async function saveHydroSettings(){const f=document.getElementById('hydroForm');if(!f)return;await postSettings({hydrometerBleEnabled:f.querySelector('input[name=hydrometerBleEnabled]').checked?1:0});await refresh();}
+async function selectHydrometer(key){await postSettings({hydrometerSelectKey:key});await refresh();}
+async function clearHydrometer(){await postSettings({hydrometerClearSelection:1});await refresh();}
+async function resetHydrometerOg(){await postSettings({hydrometerResetOg:1});await refresh();}
+async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}const r=s.diacetylRest||{};if(dRestTargetSettings&&document.activeElement!==dRestTargetSettings)dRestTargetSettings.value=(r.target||70).toFixed(1);if(dRestHoursSettings&&document.activeElement!==dRestHoursSettings)dRestHoursSettings.value=String(Math.round(r.durationHours||48));if(dRestReturnSettings&&document.activeElement!==dRestReturnSettings)dRestReturnSettings.value=r.returnProfile||0;const hf=document.querySelector('#hydroForm input[name=hydrometerBleEnabled]');if(hf&&document.activeElement!==hf)hf.checked=!!(s.hydrometer&&s.hydrometer.enabled);renderHydro(s);}catch(e){}}
 function resetProfile(btn){const t=document.getElementById('pTarget'+btn.dataset.i);if(t)t.value=btn.dataset.default;}
 async function saveProfiles(){const d={};for(let i=0;i<)HTML";
   html += String(PROFILE_COUNT);
   html += R"HTML(;i++){const n=document.getElementById('pName'+i),t=document.getElementById('pTarget'+i);if(!n||!t)continue;d['profile'+i+'Name']=n.value;d['profile'+i+'Target']=t.value;}const st=document.getElementById('profilesStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
 async function saveControl(){const d={coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value};const st=document.getElementById('controllerStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
+async function saveDrestDefaults(){const d={dRestTarget:dRestTargetSettings.value,dRestHours:dRestHoursSettings.value,dRestReturnProfile:dRestReturnSettings.value};const st=document.getElementById('dRestStatusSettings');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
 refresh();
 </script>
 </main></body></html>)HTML";

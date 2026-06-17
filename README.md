@@ -131,15 +131,23 @@ The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside th
 
 ## Profiles And Controls
 
-- FermentDial stores four profiles: `Ferment`, `Crash`, `Custom 1`, and `Custom 2`.
+- FermentDial stores six profiles: `Ferment`, `Soft Crash`, `Crash`, `Lager`, `Custom 1`, and `Custom 2`.
 - The Dial settings menu can select the active profile and adjust that profile's target.
 - The web dashboard can rename profiles and edit every profile target.
 - Main screen rotation adjusts the active profile target in 0.1 F or 0.1 C increments.
-- Short press: cycle `OFF -> AUTO -> HEAT_ONLY -> COOL_ONLY -> OFF`.
-- Double short press: quick toggle between `OFF` and `AUTO`.
-- Long press: open or leave the settings menu.
+- Tap the display from the main screen for the quick profile/mode picker.
+- Press the knob from the main screen to open settings.
 - In settings: rotate to move or change values, short press to select/confirm.
 - Menu timeout returns to the main screen after inactivity.
+
+## Diacetyl Rest
+
+- D-rest temporarily overrides the live setpoint with a configured rest target.
+- Defaults are 70 F for 48 hours, with duration selectable in 24 hour increments from 24 to 96 hours.
+- The web dashboard can start/stop a rest and edit the rest target, duration, and return profile.
+- The Dial settings menu includes `D-Rest`; tap it to start the configured rest, or tap again while active to finish it and apply the configured return profile.
+- When the timer completes, FermentDial switches to the configured return profile and recalls that profile's target.
+- If power drops mid-rest, the remaining time resumes from the last saved checkpoint. Without an RTC, outage time is not counted.
 
 ## Modes
 

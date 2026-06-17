@@ -3,6 +3,7 @@
 #include <M5Dial.h>
 
 #include "config.h"
+#include "hydrometer.h"
 #include "network.h"
 
 namespace ferm {
@@ -17,6 +18,7 @@ struct UiModel {
   bool outputTestActive = false;
   OutputTestKind outputTestKind = OutputTestKind::None;
   bool demoSensor = false;
+  HydrometerReading hydrometer;
   NetworkSnapshot network;
 };
 
@@ -35,6 +37,7 @@ class DisplayUI {
  private:
   enum class Screen : uint8_t {
     Main,
+    Hydrometer,
     QuickMenu,
     QuickProfile,
     QuickMode,
@@ -93,6 +96,8 @@ class DisplayUI {
 
   void draw(uint32_t nowMs, const Settings &settings, const UiModel &model);
   void drawMain(uint32_t nowMs, const Settings &settings, const UiModel &model);
+  void drawHydrometer(uint32_t nowMs, const Settings &settings,
+                      const UiModel &model);
   void drawQuickMenu(const Settings &settings, const UiModel &model);
   void drawQuickProfile(const Settings &settings, const UiModel &model);
   void drawQuickMode(const Settings &settings, const UiModel &model);
@@ -134,11 +139,13 @@ class DisplayUI {
   void drawHeatIcon(int16_t cx, int16_t cy, int16_t size, uint16_t color);
   void drawSnowflake(int16_t cx, int16_t cy, int16_t size, uint16_t color);
   void drawHelpIcon(int16_t cx, int16_t cy, uint16_t color, uint16_t bg);
+  void drawPageDots(uint8_t activePage, uint8_t pageCount);
   void drawOutputChips(const UiModel &model);
   uint8_t wifiStatus(const NetworkSnapshot &network) const;
   String temperatureNumber(float tempC, bool unitsFahrenheit) const;
   const char *temperatureUnit(bool unitsFahrenheit) const;
   String formatTemperature(float tempC, bool unitsFahrenheit) const;
+  String diacetylRestRemainingText(const Settings &settings) const;
   const char *quickActionLabel(QuickAction action) const;
   String quickActionValue(QuickAction action, const Settings &settings) const;
   String quickPendingValue(const Settings &settings) const;
