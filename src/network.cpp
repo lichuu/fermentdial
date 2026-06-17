@@ -1522,9 +1522,10 @@ String NetworkManager::pageHtml() const {
 <title>FermentDial</title>
 <style>
 :root{--bg:#0d1b1e;--face:#091418;--panel:#132428;--panel2:#1b3540;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--cool:#b0d8f8;--heat:#e36018;--ok:#36c87a;--gold:#ffd178;--fault:#e44840}
-*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text)}
+html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
-.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;position:relative}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
+.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}
 .statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
 .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1;text-shadow:0 1px 4px rgba(4,12,16,.92),0 0 2px rgba(4,12,16,.92)}
 body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
@@ -1538,7 +1539,8 @@ input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;
 a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}}
 </style></head>
 <body><main><div class="shell">
-<div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span></div></div>
+<div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button></div>
+<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/metrics">Metrics</a></nav></div>
 <section class="hero" id="hero">
 <canvas id="spark"></canvas>
 <div class="heroTop"><span id="fermenterNameHero">Fermenter</span><span id="targetHero">target --.-F</span></div>
@@ -1566,7 +1568,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <button id="btnHEAT_ONLY" class="heat" onclick="setMode('HEAT_ONLY')">HEAT</button><button id="btnCOOL_ONLY" class="cool" onclick="setMode('COOL_ONLY')">COOL</button>
 </div></div>
 </section>
-<div class="footer"><span id="fault">NONE</span> - <a href="/settings">Settings</a> - <a href="/metrics">Metrics</a></div>
+<div class="footer">Fault: <span id="fault">NONE</span></div>
 </div></main>
 <script>
 let last=null;
@@ -1581,6 +1583,8 @@ function applyTarget(){const v=parseFloat(targetInput.value);if(!isNaN(v))post({
 function nudge(delta){const v=parseFloat(targetInput.value||'68')+delta;targetInput.value=(Math.round(v*10)/10).toFixed(1);applyTarget()}
 function selectProfile(){post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
+function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
+document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
 function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
 function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
@@ -1637,8 +1641,9 @@ String NetworkManager::settingsHtml() const {
 <title>FermentDial Settings</title>
 <style>
 :root{--bg:#0d1b1e;--panel:#132428;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--gold:#ffd178}
-*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text)}
-main{max-width:920px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+main{max-width:920px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;position:relative}
+.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;margin:0;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}
 h1{font-size:22px;margin:0;color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px}
 h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}.hint{color:var(--muted);font-size:13px;line-height:1.35}.warn{color:var(--gold)}
 label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,select,button{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:5px}
@@ -1651,7 +1656,8 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 .thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}
 @media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
-<div class="top"><h1>FermentDial Settings</h1><div class="nav"><a href="/dashboard">Dashboard</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></div></div>
+<div class="top"><h1>FermentDial Settings</h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
+<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
 <div class="tabs">
 <button class="tab" data-tab="profiles">Profiles</button>
 <button class="tab" data-tab="controller">Controller</button>
@@ -1901,6 +1907,8 @@ async function scanWifi(){
 </section>
 </div></div>
 <script>
+function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
+document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
 function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
 document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
 showTab((location.hash||'#profiles').slice(1));
@@ -1922,7 +1930,7 @@ String NetworkManager::setupHtml() const {
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FermentDial Wi-Fi</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0}
+html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
 main{max-width:480px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}a{color:#79d4ff}
@@ -1970,7 +1978,7 @@ String NetworkManager::loginHtml(bool showError) const {
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FermentDial Login</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0}
+html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
 main{max-width:420px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.err{color:#ffb4a8;font-weight:700}a{color:#79d4ff}
@@ -1995,7 +2003,7 @@ String NetworkManager::firmwareHtml() const {
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FermentDial Firmware</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0}
+html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
 main{max-width:520px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.warn{color:#ffd178}
