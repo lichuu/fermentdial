@@ -1525,7 +1525,7 @@ String NetworkManager::pageHtml() const {
 html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;position:relative}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
-.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}
+.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
 .statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
 .hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1;text-shadow:0 1px 4px rgba(4,12,16,.92),0 0 2px rgba(4,12,16,.92)}
 body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
@@ -1540,7 +1540,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 </style></head>
 <body><main><div class="shell">
 <div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button></div>
-<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/metrics">Metrics</a></nav></div>
+<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a></nav></div>
 <section class="hero" id="hero">
 <canvas id="spark"></canvas>
 <div class="heroTop"><span id="fermenterNameHero">Fermenter</span><span id="targetHero">target --.-F</span></div>
@@ -1585,6 +1585,7 @@ function selectProfile(){post({profile:profileSelect.value})}
 function setMode(mode){post({mode})}
 function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
 document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
+document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
 function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
 function renderProfiles(s){
  profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
@@ -1643,7 +1644,7 @@ String NetworkManager::settingsHtml() const {
 :root{--bg:#0d1b1e;--panel:#132428;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--gold:#ffd178}
 html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 main{max-width:920px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;position:relative}
-.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;margin:0;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}
+.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;margin:0;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
 h1{font-size:22px;margin:0;color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px}
 h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}.hint{color:var(--muted);font-size:13px;line-height:1.35}.warn{color:var(--gold)}
 label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,select,button{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:5px}
@@ -1657,7 +1658,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 @media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
 <div class="top"><h1>FermentDial Settings</h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
-<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
+<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
 <div class="tabs">
 <button class="tab" data-tab="profiles">Profiles</button>
 <button class="tab" data-tab="controller">Controller</button>
@@ -1909,7 +1910,9 @@ async function scanWifi(){
 <script>
 function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
 document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
-function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
+document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
+function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});document.querySelectorAll('.menu a.sub').forEach(function(a){a.classList.toggle('current',a.getAttribute('href')==='/settings#'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
+addEventListener('hashchange',function(){showTab((location.hash||'#profiles').slice(1))});
 document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
 showTab((location.hash||'#profiles').slice(1));
 async function postSettings(d){await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d).toString()});}
