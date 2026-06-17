@@ -63,6 +63,11 @@ enum class InfluxExportTarget : uint8_t {
   VictoriaMetrics = 4,
 };
 
+enum class ExportPayloadScope : uint8_t {
+  ControllerAndHydrometer = 0,
+  HydrometerOnly = 1,
+};
+
 struct InfluxConfig {
   bool enabled = false;
   InfluxExportTarget target = InfluxExportTarget::V1;
@@ -80,6 +85,9 @@ struct InfluxConfig {
 
 struct MqttConfig {
   bool enabled = false;
+  ExportPayloadScope payloadScope = ExportPayloadScope::ControllerAndHydrometer;
+  bool haDiscovery = true;
+  String discoveryPrefix = "homeassistant";
   String host = "";
   uint16_t port = 1883;
   String username = "";
@@ -90,6 +98,7 @@ struct MqttConfig {
 
 struct BrewfatherConfig {
   bool enabled = false;
+  ExportPayloadScope payloadScope = ExportPayloadScope::ControllerAndHydrometer;
   String url = "https://log.brewfather.net/stream";
   String loggingId = "";
   String deviceName = "";
@@ -142,6 +151,11 @@ private:
   BrewfatherConfig _brewfather;
   int _lastBrewfatherStatusCode = 0;
   String _lastBrewfatherStatus = "Disabled";
+  // Hydrometer slugs whose HA discovery configs have already been published.
+  // Cleared on (re)connect and on settings changes so configs get re-announced.
+  static constexpr uint8_t HA_MAX_ANNOUNCED = 8;
+  String _haAnnounced[HA_MAX_ANNOUNCED];
+  uint8_t _haAnnouncedCount = 0;
   String _wifiSsid;
   String _wifiPassword;
   String _hostname;
@@ -192,6 +206,18 @@ private:
   void saveBrewfatherConfig();
   void publishBrewfather(uint32_t nowMs);
   String brewfatherPayload(uint32_t nowMs, bool &hasValue) const;
+  String brewfatherHydrometerPayload(const HydrometerReading &reading,
+                                     const String &deviceName,
+                                     bool &hasValue) const;
+  // Hydrometer-only MQTT: one Home Assistant device per discovered hydrometer.
+  void publishMqttHydrometers(uint32_t nowMs);
+  String mqttHydrometerState(const HydrometerReading &reading,
+                             uint32_t nowMs) const;
+  void publishHaDiscovery(const HydrometerReading &reading, const String &slug,
+                          const String &stateTopic);
+  bool haAlreadyAnnounced(const String &slug) const;
+  void haMarkAnnounced(const String &slug);
+  void haResetAnnounced();
   String influxLineProtocol(uint32_t nowMs) const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson(uint32_t nowMs) const;
