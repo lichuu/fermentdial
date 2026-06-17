@@ -16,9 +16,8 @@ namespace {
 constexpr const char *SETUP_AP_SSID_PREFIX = "FermentDial-Setup";
 // The onboarding access point is open (no password) — it only exists before the
 // device has joined a network, carries no secrets, and reboots away after setup.
-// Default password for the web config pages over your LAN; change it from
+// The web config pages also ship unlocked; users opt into a password under
 // Settings > Security.
-constexpr const char *DEFAULT_ADMIN_PASSWORD = "fermentdial";
 IPAddress SETUP_IP(192, 168, 4, 1);
 IPAddress SETUP_GATEWAY(192, 168, 4, 1);
 IPAddress SETUP_MASK(255, 255, 255, 0);
@@ -306,8 +305,8 @@ void NetworkManager::begin(const Settings &settings) {
   loadMqttConfig();
   _wifiSsid = _prefs.getString("ssid", FERM_WIFI_SSID);
   _wifiPassword = _prefs.getString("pass", FERM_WIFI_PASSWORD);
-  // Ships locked: config pages require the default password until it's changed.
-  _adminPassword = _prefs.getString("adminPass", DEFAULT_ADMIN_PASSWORD);
+  // Ships unlocked: config pages are open until the user sets a password.
+  _adminPassword = _prefs.getString("adminPass", "");
   _snapshot.wifiConfigured = _wifiSsid.length() > 0;
   _snapshot.ssid = _wifiSsid;
 
