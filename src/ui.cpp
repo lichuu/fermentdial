@@ -21,9 +21,10 @@ enum MenuIndex : uint8_t {
   MENU_UNITS = 10,
   MENU_WIFI = 11,
   MENU_MQTT = 12,
-  MENU_HEATER_TEST = 13,
-  MENU_PUMP_TEST = 14,
-  MENU_ABOUT = 15,
+  MENU_HYDROMETER = 13,
+  MENU_HEATER_TEST = 14,
+  MENU_PUMP_TEST = 15,
+  MENU_ABOUT = 16,
 };
 
 constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
@@ -85,8 +86,8 @@ constexpr bool USE_OUTPUT_ICONS = true;
 constexpr const char *MENU_LABELS[MENU_COUNT] = {
     "Profile",   "Target",    "D-Rest",      "Mode",        "Cool on",
     "Heat on",   "Hold band", "Cooling off", "Cooling run", "Offset",
-    "Units",     "Wi-Fi",     "MQTT",        "Heater test", "Pump test",
-    "About",
+    "Units",     "Wi-Fi",     "MQTT",        "Hydrometer",  "Heater test",
+    "Pump test", "About",
 };
 
 } // namespace
@@ -132,6 +133,12 @@ void DisplayUI::begin() {
 void DisplayUI::update(uint32_t nowMs, Settings &settings,
                        const UiModel &model) {
   M5Dial.update();
+  // Snapshot the discovered hydrometers before processing input so the
+  // Hydrometer edit screen always cycles through the latest scan results.
+  _hydroDeviceCount = model.hydrometerDeviceCount;
+  for (uint8_t i = 0; i < _hydroDeviceCount; i++) {
+    _hydroDevices[i] = model.hydrometerDevices[i];
+  }
   processInput(nowMs, settings);
 
   // An un-confirmed setpoint preview reverts on its own, so a stray bump of the
@@ -146,6 +153,7 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
       settings = _editSnapshot;
       _editSnapshotValid = false;
     }
+    _quickConfirmKind = QuickConfirmKind::Apply;
     _screen = Screen::Main;
     resetSettingsEncoderFilters();
     _dirty = true;
@@ -324,18 +332,30 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     } else if (touch.y > (h * 2) / 3) {
       handleEncoder(MENU_ENCODER_DIVISOR, settings);
     } else {
-      requestQuickConfirm();
+      requestQuickConfirm(settings);
     }
     return;
   }
 
   if (_screen == Screen::QuickConfirm) {
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
+      if (touch.x >= cx - 90 && touch.x <= cx - 6 && touch.y >= cy + 44 &&
+          touch.y <= cy + 70) {
+        _pendingGradualCrash = false;
+        confirmQuickAction(settings);
+      } else if (touch.x >= cx + 6 && touch.x <= cx + 90 &&
+                 touch.y >= cy + 44 && touch.y <= cy + 70) {
+        _pendingGradualCrash = true;
+        confirmQuickAction(settings);
+      }
+      return;
+    }
     if (quickCancelHit(touch.x, touch.y)) {
       cancelQuickFlow();
       return;
     }
-    const int16_t cx = M5Dial.Display.width() / 2;
-    const int16_t cy = h / 2;
     // Apply is the right button of the confirm action row.
     if (touch.x >= cx + 6 && touch.x <= cx + 90 && touch.y >= cy + 44 &&
         touch.y <= cy + 70) {
@@ -431,7 +451,7 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
   if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
     if (horizontal) {
       if (dx > 0) {
-        requestQuickConfirm();
+        requestQuickConfirm(settings);
       } else {
         _screen = Screen::QuickMenu;
         resetSettingsEncoderFilters();
@@ -448,7 +468,15 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
   }
 
   if (_screen == Screen::QuickConfirm) {
-    if (dx > 0) {
+    if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
+      if (horizontal) {
+        _pendingGradualCrash = dx > 0;
+        confirmQuickAction(settings);
+      } else {
+        _pendingGradualCrash = dy < 0;
+        _dirty = true;
+      }
+    } else if (dx > 0) {
       confirmQuickAction(settings);
     } else {
       cancelQuickFlow();
@@ -555,6 +583,14 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
       return;
     }
     moveQuickSelection(filteredDelta, settings);
+  } else if (_screen == Screen::QuickConfirm &&
+             _quickConfirmKind == QuickConfirmKind::CrashGradual) {
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    _pendingGradualCrash = filteredDelta > 0;
   } else if (_screen == Screen::Menu) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
@@ -590,7 +626,7 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   } else if (_screen == Screen::QuickMenu) {
     selectQuickAction(settings);
   } else if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
-    requestQuickConfirm();
+    requestQuickConfirm(settings);
   } else if (_screen == Screen::QuickConfirm) {
     confirmQuickAction(settings);
   } else if (_screen == Screen::Menu) {
@@ -598,13 +634,14 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       if (settings.diacetylRestActive) {
         completeDiacetylRest(settings);
         _toast = String("D-rest -> ") + activeProfile(settings).name;
+        _toastUntilMs = nowMs + 1800;
+        requestSave();
+        resetSettingsEncoderFilters();
       } else {
-        startDiacetylRest(settings);
-        _toast = "D-rest started";
+        // Prompt for how long to run before starting, rather than starting
+        // immediately with whatever duration was last used.
+        beginEdit(_menuIndex, settings);
       }
-      _toastUntilMs = nowMs + 1800;
-      requestSave();
-      resetSettingsEncoderFilters();
       _dirty = true;
       return;
     } else if (_menuIndex <= MENU_OFFSET) {
@@ -617,6 +654,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       resetSettingsEncoderFilters();
       _dirty = true;
       return;
+    } else if (_menuIndex == MENU_HYDROMETER) {
+      beginEdit(_menuIndex, settings);
     } else if (_menuIndex == MENU_WIFI) {
       _wifiSetupRequested = true;
       _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
@@ -769,19 +808,38 @@ void DisplayUI::moveQuickSelection(int32_t delta, const Settings &settings) {
   _dirty = true;
 }
 
-void DisplayUI::requestQuickConfirm() {
+void DisplayUI::requestQuickConfirm(const Settings &settings) {
   if (_screen == Screen::QuickProfile) {
     _pendingQuickAction = QuickAction::Profile;
+    if (_pendingProfile == static_cast<uint8_t>(ProfileSlot::Crash)) {
+      requestCrashGradualPrompt(settings.gradualCrashEnabled);
+      return;
+    }
   } else if (_screen == Screen::QuickMode) {
     _pendingQuickAction = QuickAction::Mode;
   }
+  _quickConfirmKind = QuickConfirmKind::Apply;
+  _screen = Screen::QuickConfirm;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::requestCrashGradualPrompt(bool defaultGradual) {
+  _pendingQuickAction = QuickAction::Profile;
+  _pendingProfile = static_cast<uint8_t>(ProfileSlot::Crash);
+  _pendingGradualCrash = defaultGradual;
+  _quickConfirmKind = QuickConfirmKind::CrashGradual;
   _screen = Screen::QuickConfirm;
   resetSettingsEncoderFilters();
   _dirty = true;
 }
 
 void DisplayUI::confirmQuickAction(Settings &settings) {
-  if (_pendingQuickAction == QuickAction::Profile) {
+  if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
+    applyCrashProfile(settings, _pendingGradualCrash);
+    _quickConfirmKind = QuickConfirmKind::Apply;
+    _toast = _pendingGradualCrash ? "Crash: gradual" : "Crash: direct";
+  } else if (_pendingQuickAction == QuickAction::Profile) {
     cancelDiacetylRest(settings);
     settings.activeProfile = _pendingProfile;
     applyActiveProfileTarget(settings);  // recall this profile's preset
@@ -797,7 +855,15 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
   _dirty = true;
 }
 
+void DisplayUI::applyCrashProfile(Settings &settings, bool gradual) {
+  cancelDiacetylRest(settings);
+  settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Crash);
+  settings.gradualCrashEnabled = gradual;
+  applyActiveProfileTarget(settings);  // direct recalls target, gradual preserves high target
+}
+
 void DisplayUI::cancelQuickFlow() {
+  _quickConfirmKind = QuickConfirmKind::Apply;
   _screen = Screen::Main;
   resetSettingsEncoderFilters();
   _dirty = true;
@@ -808,6 +874,9 @@ void DisplayUI::beginEdit(uint8_t index, const Settings &settings) {
   _editSnapshot = settings;
   _editSnapshotValid = true;
   _screen = Screen::Edit;
+  if (index == MENU_HYDROMETER) {
+    _hydroOptionIndex = hydrometerOptionIndexFromSettings(settings);
+  }
   resetSettingsEncoderFilters();
 }
 
@@ -822,10 +891,25 @@ void DisplayUI::cancelEdit(Settings &settings) {
 }
 
 void DisplayUI::saveEdit(Settings &settings) {
+  if (_editIndex == MENU_PROFILE &&
+      activeProfileIndex(settings) == static_cast<uint8_t>(ProfileSlot::Crash)) {
+    const bool defaultGradual = settings.gradualCrashEnabled;
+    if (_editSnapshotValid) {
+      settings = _editSnapshot;
+    }
+    _editSnapshotValid = false;
+    requestCrashGradualPrompt(defaultGradual);
+    return;
+  }
+
   // Selecting a profile or editing its target applies it to the live setpoint.
   if (_editIndex == MENU_PROFILE || _editIndex == MENU_TARGET) {
     cancelDiacetylRest(settings);
     applyActiveProfileTarget(settings);
+  } else if (_editIndex == MENU_DREST) {
+    startDiacetylRest(settings);
+    _toast = "D-rest started";
+    _toastUntilMs = millis() + 1800;
   }
   _editSnapshotValid = false;
   _screen = Screen::Menu;
@@ -879,6 +963,15 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
         activeTargetC(settings) +
             (delta * (displayStepC(settings.unitsFahrenheit))));
     break;
+  case MENU_DREST: {
+    const int32_t steps = delta > 0 ? 1 : -1;
+    const int32_t next = static_cast<int32_t>(settings.diacetylRestDurationSeconds) +
+        steps * static_cast<int32_t>(DIACETYL_REST_DURATION_STEP_SECONDS);
+    settings.diacetylRestDurationSeconds = clampU32(
+        static_cast<uint32_t>(next < 0 ? 0 : next),
+        MIN_DIACETYL_REST_DURATION_SECONDS, MAX_DIACETYL_REST_DURATION_SECONDS);
+    break;
+  }
   case MENU_MODE: {
     int32_t mode = static_cast<int32_t>(settings.mode) + (delta > 0 ? 1 : -1);
     while (mode < 0) {
@@ -938,6 +1031,34 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
   case MENU_UNITS:
     settings.unitsFahrenheit = !settings.unitsFahrenheit;
     break;
+  case MENU_HYDROMETER: {
+    // Options: 0 = off, 1 = scan Tilt, 2 = scan RAPT, 3+ = a discovered
+    // device for whichever type is currently being scanned.
+    const int32_t total = 3 + static_cast<int32_t>(_hydroDeviceCount);
+    int32_t next = _hydroOptionIndex + (delta > 0 ? 1 : -1);
+    while (next < 0) {
+      next += total;
+    }
+    next %= total;
+    _hydroOptionIndex = next;
+    if (next == 0) {
+      settings.hydrometerScanType = HydrometerScanType::Unknown;
+      clearHydrometerSelection(settings);
+    } else if (next == 1 || next == 2) {
+      settings.hydrometerScanType =
+          next == 1 ? HydrometerScanType::Tilt : HydrometerScanType::Rapt;
+      clearHydrometerSelection(settings);
+    } else {
+      const uint8_t devIndex = static_cast<uint8_t>(next - 3);
+      if (devIndex < _hydroDeviceCount) {
+        settings.hydrometerSelectionKey = _hydroDevices[devIndex].key;
+        settings.hydrometerScanType =
+            hydrometerScanTypeFromKey(settings.hydrometerSelectionKey);
+        resetHydrometerSession(settings);
+      }
+    }
+    break;
+  }
   default:
     break;
   }
@@ -951,6 +1072,9 @@ void DisplayUI::resetCurrentValue(Settings &settings) {
     break;
   case MENU_TARGET:
     setActiveTargetC(settings, defaultProfileTargetC(settings.activeProfile));
+    break;
+  case MENU_DREST:
+    settings.diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
     break;
   case MENU_MODE:
     settings.mode = UserMode::Off;
@@ -1190,7 +1314,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   // setpoint preview shows its confirm/cancel row in that space).
   if (!editing) {
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString(settings.fermenterName, cx, cy + 64, &fonts::DejaVu12);
+    _canvas.drawString(settings.fermenterName, cx, cy + 62, &fonts::DejaVu12);
     drawOutputChips(model);
   }
 
@@ -1227,6 +1351,24 @@ void DisplayUI::drawHydrometer(uint32_t nowMs, const Settings &settings,
   _canvas.setTextColor(COLOR_ACCENT, COLOR_BG);
   _canvas.drawString("HYDROMETER", cx, cy - 70, &fonts::DejaVu18);
 
+  // No hydrometer chosen yet: point at the on-dial picker rather than
+  // showing empty "SG --.--" placeholders.
+  if (!h.selected) {
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString("None set up yet", cx, cy - 36, &fonts::DejaVu12);
+
+    _canvas.setTextColor(COLOR_TEXT, COLOR_BG);
+    _canvas.drawString("Settings > Hydrometer", cx, cy - 6, &fonts::DejaVu12);
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString("or the web dashboard", cx, cy + 16,
+                       &fonts::DejaVu12);
+    _canvas.drawString("to scan and select one", cx, cy + 38,
+                       &fonts::DejaVu12);
+
+    drawPageDots(1, 2);
+    return;
+  }
+
   String title = h.selected && h.valid ? h.label : "No hydrometer";
   if (h.selected && h.valid && h.name.length() > 0) {
     title = h.name;
@@ -1248,37 +1390,50 @@ void DisplayUI::drawHydrometer(uint32_t nowMs, const Settings &settings,
   }
   _canvas.drawString(tempLine, cx, cy + 28, &fonts::DejaVu12);
 
-  String metaLine = "";
+  String metaParts[3];
+  uint8_t metaPartCount = 0;
   if (h.valid && gravityIsValid(h.originalGravity)) {
-    metaLine += "OG ";
-    metaLine += String(h.originalGravity, 3);
+    metaParts[metaPartCount++] = "OG " + String(h.originalGravity, 3);
   }
   if (h.valid && !isnan(h.abv)) {
-    if (metaLine.length() > 0) {
-      metaLine += "  ";
-    }
-    metaLine += "ABV ";
-    metaLine += String(h.abv, 1);
-    metaLine += "%";
+    metaParts[metaPartCount++] = "ABV " + String(h.abv, 1) + "%";
   }
   if (h.valid && h.stableSeconds > 0) {
-    if (metaLine.length() > 0) {
-      metaLine += "  ";
+    metaParts[metaPartCount++] =
+        "Stable " + String(h.stableSeconds / 3600.0f, 1) + "h";
+  }
+
+  // The round bezel narrows the usable width away from screen centre, so
+  // wrap onto a second line instead of letting a long combined string (e.g.
+  // OG + ABV + Stable all at once) get clipped by the circular mask.
+  constexpr int16_t META_MAX_WIDTH = 196;
+  String metaLine1 = "";
+  String metaLine2 = "";
+  for (uint8_t i = 0; i < metaPartCount; i++) {
+    String &line = metaLine2.length() > 0 ? metaLine2 : metaLine1;
+    const String candidate =
+        line.length() > 0 ? line + "  " + metaParts[i] : metaParts[i];
+    if (line.length() == 0 ||
+        _canvas.textWidth(candidate, &fonts::DejaVu12) <= META_MAX_WIDTH) {
+      line = candidate;
+    } else {
+      metaLine2 = metaParts[i];
     }
-    metaLine += "Stable ";
-    metaLine += String(h.stableSeconds / 3600.0f, 1);
-    metaLine += "h";
   }
-  if (metaLine.length() == 0) {
-    metaLine = h.selected ? (h.stale ? "stale" : "waiting") : "No selection";
+  if (metaLine1.length() == 0) {
+    metaLine1 = h.selected ? (h.stale ? "stale" : "waiting") : "No selection";
+  } else if (h.valid && h.stale) {
+    String &line = metaLine2.length() > 0 ? metaLine2 : metaLine1;
+    line += "  stale";
   }
-  if (h.valid && h.stale) {
-    metaLine += "  stale";
+  _canvas.drawString(metaLine1, cx, cy + 50, &fonts::DejaVu12);
+  if (metaLine2.length() > 0) {
+    _canvas.drawString(metaLine2, cx, cy + 70, &fonts::DejaVu12);
   }
-  _canvas.drawString(metaLine, cx, cy + 52, &fonts::DejaVu12);
 
   if (h.valid && h.address.length() > 0) {
-    _canvas.drawString(h.address, cx, cy + 76, &fonts::DejaVu12);
+    _canvas.drawString(h.address, cx, metaLine2.length() > 0 ? cy + 90 : cy + 76,
+                       &fonts::DejaVu12);
   }
 
   drawPageDots(1, 2);
@@ -1390,22 +1545,45 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
   _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
   _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_GOLD);
   _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
-  _canvas.drawString("CONFIRM", cx, cy - 64, &fonts::DejaVu18);
+  _canvas.drawString(_quickConfirmKind == QuickConfirmKind::CrashGradual
+                         ? "COLD CRASH"
+                         : "CONFIRM",
+                     cx, cy - 64, &fonts::DejaVu18);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 16,
-                     &fonts::FreeSansBold12pt7b);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(quickPendingValue(settings), cx, cy + 6,
-                     &fonts::DejaVu12);
+  if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
+    _canvas.drawString("Step down?", cx, cy - 16, &fonts::FreeSansBold12pt7b);
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString(formatTemperature(settings.profiles[static_cast<uint8_t>(
+                                               ProfileSlot::Crash)]
+                                             .targetC,
+                                         settings.unitsFahrenheit),
+                       cx, cy + 6, &fonts::DejaVu12);
+    drawSolidButton(cx - 48, cy + 57, 84, 26, "Direct",
+                    _pendingGradualCrash ? COLOR_BG : COLOR_GOLD,
+                    _pendingGradualCrash ? COLOR_TEXT_MUTED : TFT_BLACK,
+                    &fonts::DejaVu12,
+                    _pendingGradualCrash ? COLOR_TEXT_MUTED : 0);
+    drawSolidButton(cx + 48, cy + 57, 84, 26, "Gradual",
+                    _pendingGradualCrash ? COLOR_GOLD : COLOR_BG,
+                    _pendingGradualCrash ? TFT_BLACK : COLOR_TEXT_MUTED,
+                    &fonts::DejaVu12,
+                    _pendingGradualCrash ? 0 : COLOR_TEXT_MUTED);
+  } else {
+    _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 16,
+                       &fonts::FreeSansBold12pt7b);
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString(quickPendingValue(settings), cx, cy + 6,
+                       &fonts::DejaVu12);
 
-  // Action row: Cancel (left, ghost) and Apply (right, filled gold).
-  drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
-                  &fonts::DejaVu12);
-  drawSolidButton(cx + 48, cy + 57, 84, 26, "Apply", COLOR_GOLD, TFT_BLACK,
-                  &fonts::DejaVu12);
+    // Action row: Cancel (left, ghost) and Apply (right, filled gold).
+    drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
+                    &fonts::DejaVu12);
+    drawSolidButton(cx + 48, cy + 57, 84, 26, "Apply", COLOR_GOLD, TFT_BLACK,
+                    &fonts::DejaVu12);
+  }
 }
 
 bool DisplayUI::ensureLargeFont() {
@@ -1615,7 +1793,9 @@ void DisplayUI::drawPageDots(uint8_t activePage, uint8_t pageCount) {
 
 void DisplayUI::drawOutputChips(const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
-  const int16_t y = _canvas.height() / 2 + 78;
+  // Sits below the fermenter name (cy + 62) with clear separation so the
+  // chip circles no longer overlap the name's glyphs.
+  const int16_t y = _canvas.height() / 2 + 86;
   // Demo mode forces the physical relays off, so fall back to the controller's
   // intent (runtime state) to keep the chips demonstrable. Real mode shows the
   // actual relay state.
@@ -1644,9 +1824,11 @@ void DisplayUI::drawOutputChips(const UiModel &model) {
     }
   }
   if (model.demoSensor) {
+    // Right-of-centre badge (mirrors the help icon) so it clears the lowered
+    // chips and the bottom page dots instead of stacking under the chips.
     _canvas.setTextDatum(middle_center);
     _canvas.setTextColor(COLOR_GOLD, COLOR_BG);
-    _canvas.drawString("DEMO", cx, y + 20, &fonts::DejaVu12);
+    _canvas.drawString("DEMO", cx + 84, _canvas.height() / 2, &fonts::DejaVu12);
   }
 }
 
@@ -1688,7 +1870,7 @@ void DisplayUI::drawMenu(const Settings &settings,
   _canvas.drawString(menuValue(_menuIndex, settings, network), cx, cy + 13,
                      &fonts::DejaVu18);
 
-  const char *hint = "swipe up/down";
+  String hint = "swipe up/down";
   if (_menuIndex == MENU_DREST) {
     hint = settings.diacetylRestActive ? "tap to finish" : "tap to start";
   } else if (_menuIndex == MENU_UNITS) {
@@ -1717,26 +1899,31 @@ void DisplayUI::drawEdit(const Settings &settings) {
   _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 68, &fonts::DejaVu18);
 
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(menuValue(_editIndex, settings), cx, cy - 30,
-                     &fonts::FreeSansBold18pt7b);
+  _canvas.drawString(_editIndex == MENU_DREST
+                         ? diacetylRestRemainingText(settings)
+                         : menuValue(_editIndex, settings),
+                     cx, cy - 30, &fonts::FreeSansBold18pt7b);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(editDefaultLine(settings), cx, cy - 2, &fonts::DejaVu12);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString((_editIndex == 0 || _editIndex == 2)
+  _canvas.drawString(_editIndex == MENU_PROFILE || _editIndex == MENU_HYDROMETER
                          ? "swipe/rotate to choose"
-                         : "swipe/rotate to change",
+                         : _editIndex == MENU_DREST
+                               ? "swipe/rotate to set hours"
+                               : "swipe/rotate to change",
                      cx, cy + 18, &fonts::DejaVu12);
 
   const int16_t topY = cy + 34;
   const int16_t backY = cy + 66;
   const int16_t buttonW = 82;
   const int16_t buttonH = 24;
+  const char *commitLabel = _editIndex == MENU_DREST ? "Start" : "Save";
   if (editHasReset()) {
     drawSolidButton(cx - 47, topY + 12, buttonW, buttonH, "Reset", COLOR_PANEL,
                     COLOR_ACCENT, &fonts::DejaVu12, COLOR_BLUE);
-    drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, "Save", COLOR_BLUE,
+    drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, commitLabel, COLOR_BLUE,
                     TFT_WHITE, &fonts::DejaVu12);
   } else {
     drawSolidButton(cx, topY + 12, 110, buttonH, "Save", COLOR_BLUE, TFT_WHITE,
@@ -1758,8 +1945,10 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
   _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
   _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, accent);
   _canvas.setTextColor(accent, COLOR_PANEL);
-  _canvas.drawString(reset ? "Confirm reset" : "Confirm save", cx, cy - 64,
-                     &fonts::DejaVu18);
+  const char *confirmTitle =
+      reset ? "Confirm reset"
+            : (_editIndex == MENU_DREST ? "Confirm start" : "Confirm save");
+  _canvas.drawString(confirmTitle, cx, cy - 64, &fonts::DejaVu18);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, accent);
@@ -1770,9 +1959,11 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
   _canvas.drawString(editConfirmLine(settings), cx, cy + 6, &fonts::DejaVu12);
 
   // Action row: Cancel (left, ghost) and Reset/Save (right, filled).
+  const char *commitLabel =
+      reset ? "Reset" : (_editIndex == MENU_DREST ? "Start" : "Save");
   drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
                   &fonts::DejaVu12);
-  drawSolidButton(cx + 48, cy + 57, 84, 26, reset ? "Reset" : "Save", accent,
+  drawSolidButton(cx + 48, cy + 57, 84, 26, commitLabel, accent,
                   reset ? TFT_BLACK : TFT_WHITE, &fonts::DejaVu12);
 }
 
@@ -2011,6 +2202,8 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
       return "Off";
     }
     return network.mqttConnected ? "Connected" : "Connecting";
+  case MENU_HYDROMETER:
+    return hydrometerValueText(settings);
   case MENU_HEATER_TEST:
   case MENU_PUMP_TEST:
     return "5s";
@@ -2028,6 +2221,10 @@ String DisplayUI::defaultMenuValue(uint8_t index,
   case MENU_TARGET:
     return formatTemperature(defaultProfileTargetC(activeProfileIndex(settings)),
                              settings.unitsFahrenheit);
+  case MENU_DREST: {
+    const uint32_t hours = DEFAULT_DIACETYL_REST_DURATION_SECONDS / 3600UL;
+    return String(hours) + "h";
+  }
   case MENU_MODE:
     return modeText(UserMode::Off);
   case MENU_COOL_ON:
@@ -2059,10 +2256,56 @@ String DisplayUI::defaultMenuValue(uint8_t index,
   }
 }
 
+String DisplayUI::hydrometerValueText(const Settings &settings) const {
+  if (settings.hydrometerSelectionKey.length() > 0) {
+    for (uint8_t i = 0; i < _hydroDeviceCount; i++) {
+      if (_hydroDevices[i].key == settings.hydrometerSelectionKey) {
+        const HydrometerReading &dev = _hydroDevices[i];
+        String label = dev.name.length() > 0 ? dev.name : dev.label;
+        if (label.length() == 0) {
+          label = "Device";
+        }
+        if (gravityIsValid(dev.gravity)) {
+          label += " " + String(dev.gravity, 3);
+        }
+        return label;
+      }
+    }
+    return "Selected (waiting)";
+  }
+  switch (settings.hydrometerScanType) {
+  case HydrometerScanType::Tilt:
+    return "Tilt";
+  case HydrometerScanType::Rapt:
+    return "Rapt";
+  default:
+    return "Off";
+  }
+}
+
+int32_t DisplayUI::hydrometerOptionIndexFromSettings(
+    const Settings &settings) const {
+  if (settings.hydrometerSelectionKey.length() > 0) {
+    for (uint8_t i = 0; i < _hydroDeviceCount; i++) {
+      if (_hydroDevices[i].key == settings.hydrometerSelectionKey) {
+        return 3 + static_cast<int32_t>(i);
+      }
+    }
+  }
+  if (settings.hydrometerScanType == HydrometerScanType::Tilt) {
+    return 1;
+  }
+  if (settings.hydrometerScanType == HydrometerScanType::Rapt) {
+    return 2;
+  }
+  return 0;
+}
+
 bool DisplayUI::editHasReset() const {
-  // Mode just cycles OFF/AUTO/HEAT/COOL, so a "reset to OFF" adds nothing over
-  // rotating or swiping the value directly.
-  return _editIndex != MENU_MODE;
+  // Mode just cycles OFF/AUTO/HEAT/COOL, and Hydrometer just cycles
+  // Off/Tilt/Rapt/devices, so a "reset to default" button adds nothing over
+  // rotating or swiping back to the first option directly.
+  return _editIndex != MENU_MODE && _editIndex != MENU_HYDROMETER;
 }
 
 String DisplayUI::editDefaultLine(const Settings &settings) const {
@@ -2086,11 +2329,18 @@ String DisplayUI::editConfirmLine(const Settings &settings) const {
       return String(activeProfile(settings).name) + " target -> " +
              defaultMenuValue(_editIndex, settings);
     }
+    if (_editIndex == MENU_DREST) {
+      return diacetylRestRemainingText(settings) + " -> " +
+             defaultMenuValue(_editIndex, settings);
+    }
     return String(menuValue(_editIndex, settings)) + " -> " +
            defaultMenuValue(_editIndex, settings);
   }
   if (_editIndex == MENU_PROFILE) {
     return String("Save ") + activeProfile(settings).name;
+  }
+  if (_editIndex == MENU_DREST) {
+    return String("Start for ") + diacetylRestRemainingText(settings);
   }
   return String("Save ") + menuValue(_editIndex, settings);
 }

@@ -48,7 +48,7 @@ namespace ferm {
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
-constexpr uint16_t SETTINGS_VERSION = 10;
+constexpr uint16_t SETTINGS_VERSION = 13;
 constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
 constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;
 constexpr uint16_t SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE = 4;
@@ -56,6 +56,9 @@ constexpr uint16_t SETTINGS_VERSION_FERMENTER_NAME_STORAGE = 5;
 constexpr uint16_t SETTINGS_VERSION_PRELIVE_TARGET_STORAGE = 6;
 constexpr uint16_t SETTINGS_VERSION_DIACETYL_REST_STORAGE = 7;
 constexpr uint16_t SETTINGS_VERSION_HYDROMETER_STORAGE = 9;
+constexpr uint16_t SETTINGS_VERSION_PRE_GRADUAL_CRASH_STORAGE = 10;
+constexpr uint16_t SETTINGS_VERSION_PRE_PROFILE_WORKFLOW_STORAGE = 11;
+constexpr uint16_t SETTINGS_VERSION_PRE_CONFIGURABLE_GRADUAL_CRASH_STORAGE = 12;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -74,6 +77,9 @@ constexpr uint32_t DISPLAY_DIM_MS = 60000;
 constexpr uint32_t OUTPUT_TEST_MS = 5000;
 constexpr uint32_t DIACETYL_REST_SAVE_INTERVAL_MS = 60000;
 constexpr uint32_t HYDROMETER_SAVE_INTERVAL_MS = 60000;
+constexpr uint32_t DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 12;
+constexpr uint32_t MIN_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 1;
+constexpr uint32_t MAX_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 72;
 // How long the main screen stays in gold "SET TARGET" focus after the last
 // encoder turn before reverting to the live temperature readout.
 constexpr uint32_t SETPOINT_FOCUS_MS = 2500;
@@ -151,6 +157,9 @@ constexpr float DEFAULT_LAGER_TARGET_F = 55.0f;
 constexpr float DEFAULT_CUSTOM1_TARGET_F = 72.0f;
 constexpr float DEFAULT_CUSTOM2_TARGET_F = 64.0f;
 constexpr float DEFAULT_DIACETYL_REST_TARGET_F = 70.0f;
+constexpr float DEFAULT_GRADUAL_CRASH_STEP_F = 5.0f;
+constexpr float MIN_GRADUAL_CRASH_STEP_F = 0.5f;
+constexpr float MAX_GRADUAL_CRASH_STEP_F = 20.0f;
 constexpr uint32_t DEFAULT_DIACETYL_REST_DURATION_SECONDS = 48UL * 60UL * 60UL;
 constexpr uint32_t MIN_DIACETYL_REST_DURATION_SECONDS = 24UL * 60UL * 60UL;
 constexpr uint32_t MAX_DIACETYL_REST_DURATION_SECONDS = 96UL * 60UL * 60UL;
@@ -166,6 +175,9 @@ constexpr float DEFAULT_CUSTOM1_TARGET_C = fToC(DEFAULT_CUSTOM1_TARGET_F);
 constexpr float DEFAULT_CUSTOM2_TARGET_C = fToC(DEFAULT_CUSTOM2_TARGET_F);
 constexpr float DEFAULT_DIACETYL_REST_TARGET_C =
     fToC(DEFAULT_DIACETYL_REST_TARGET_F);
+constexpr float DEFAULT_GRADUAL_CRASH_STEP_C = deltaFToC(DEFAULT_GRADUAL_CRASH_STEP_F);
+constexpr float MIN_GRADUAL_CRASH_STEP_C = deltaFToC(MIN_GRADUAL_CRASH_STEP_F);
+constexpr float MAX_GRADUAL_CRASH_STEP_C = deltaFToC(MAX_GRADUAL_CRASH_STEP_F);
 constexpr float DEFAULT_COOL_ON_DELTA_C = deltaFToC(DEFAULT_COOL_ON_DELTA_F);
 constexpr float DEFAULT_HEAT_ON_DELTA_C = deltaFToC(DEFAULT_HEAT_ON_DELTA_F);
 constexpr float DEFAULT_HOLD_DELTA_C = deltaFToC(DEFAULT_HOLD_DELTA_F);
@@ -290,6 +302,9 @@ struct Settings {
   float hydrometerOriginalGravity = NAN;
   float hydrometerStableGravity = NAN;
   uint32_t hydrometerStableSeconds = 0;
+  bool gradualCrashEnabled = false;
+  float gradualCrashStepC = DEFAULT_GRADUAL_CRASH_STEP_C;
+  uint32_t gradualCrashStepIntervalHours = DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS;
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
@@ -458,7 +473,12 @@ inline void setCurrentTargetC(Settings &settings, float targetC) {
 
 // Load the active profile's preset into the live setpoint (recall a preset).
 inline void applyActiveProfileTarget(Settings &settings) {
-  settings.liveTargetC = activeProfile(settings).targetC;
+  const float targetC = activeProfile(settings).targetC;
+  if (settings.gradualCrashEnabled && !isnan(settings.liveTargetC) &&
+      settings.liveTargetC > targetC) {
+    return;
+  }
+  settings.liveTargetC = targetC;
 }
 
 inline void cancelDiacetylRest(Settings &settings) {
@@ -475,10 +495,16 @@ inline void startDiacetylRest(Settings &settings) {
 }
 
 inline void completeDiacetylRest(Settings &settings) {
+  const float previousTargetC = currentTargetC(settings);
   const uint8_t returnProfile = diacetylRestReturnProfileIndex(settings);
   settings.diacetylRestActive = false;
   settings.diacetylRestRemainingSeconds = 0;
   settings.activeProfile = returnProfile;
+  if (settings.gradualCrashEnabled &&
+      returnProfile == static_cast<uint8_t>(ProfileSlot::Crash) &&
+      previousTargetC > activeProfile(settings).targetC) {
+    settings.liveTargetC = previousTargetC;
+  }
   applyActiveProfileTarget(settings);
 }
 
@@ -584,6 +610,14 @@ inline void sanitizeSettings(Settings &settings) {
         clampFloat(settings.profiles[i].targetC, MIN_TARGET_C, MAX_TARGET_C),
         settings.unitsFahrenheit);
   }
+  settings.gradualCrashStepC = snapDeltaC(
+      clampFloat(settings.gradualCrashStepC, MIN_GRADUAL_CRASH_STEP_C,
+                MAX_GRADUAL_CRASH_STEP_C),
+      settings.unitsFahrenheit);
+  settings.gradualCrashStepIntervalHours =
+      clampU32(settings.gradualCrashStepIntervalHours,
+               MIN_GRADUAL_CRASH_STEP_INTERVAL_HOURS,
+               MAX_GRADUAL_CRASH_STEP_INTERVAL_HOURS);
   settings.coolOnDeltaC = snapDeltaC(
       clampFloat(settings.coolOnDeltaC, MIN_DELTA_C, MAX_DELTA_C),
       settings.unitsFahrenheit);

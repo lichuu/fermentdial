@@ -97,7 +97,10 @@ bool SettingsStorage::load(Settings &settings) {
       version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE &&
       version != SETTINGS_VERSION_PRELIVE_TARGET_STORAGE &&
       version != SETTINGS_VERSION_DIACETYL_REST_STORAGE &&
-      version != SETTINGS_VERSION_HYDROMETER_STORAGE) {
+      version != SETTINGS_VERSION_HYDROMETER_STORAGE &&
+      version != SETTINGS_VERSION_PRE_GRADUAL_CRASH_STORAGE &&
+      version != SETTINGS_VERSION_PRE_PROFILE_WORKFLOW_STORAGE &&
+      version != SETTINGS_VERSION_PRE_CONFIGURABLE_GRADUAL_CRASH_STORAGE) {
     sanitizeSettings(settings);
     return false;
   }
@@ -147,6 +150,11 @@ bool SettingsStorage::load(Settings &settings) {
       _prefs.getFloat("hydroStableG", NAN);
   settings.hydrometerStableSeconds =
       _prefs.getUInt("hydroStableS", 0);
+  settings.gradualCrashEnabled = _prefs.getBool("gradCrash", false);
+  settings.gradualCrashStepC =
+      _prefs.getFloat("gradStepC", DEFAULT_GRADUAL_CRASH_STEP_C);
+  settings.gradualCrashStepIntervalHours = _prefs.getUInt(
+      "gradStepHrs", DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS);
   if (settings.diacetylRestActive &&
       settings.diacetylRestRemainingSeconds == 0) {
     settings.diacetylRestRemainingSeconds =
@@ -209,6 +217,9 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putFloat("hydroOg", copy.hydrometerOriginalGravity);
   _prefs.putFloat("hydroStableG", copy.hydrometerStableGravity);
   _prefs.putUInt("hydroStableS", copy.hydrometerStableSeconds);
+  _prefs.putBool("gradCrash", copy.gradualCrashEnabled);
+  _prefs.putFloat("gradStepC", copy.gradualCrashStepC);
+  _prefs.putUInt("gradStepHrs", copy.gradualCrashStepIntervalHours);
   _pending = false;
 }
 

@@ -42,6 +42,8 @@ struct HydrometerReading {
 
 class HydrometerManager {
  public:
+  static constexpr uint8_t MAX_DEVICES = 8;
+
   void begin();
   bool update(uint32_t nowMs, Settings &settings);
   void markStableCheckpoint(uint32_t nowMs);
@@ -53,7 +55,6 @@ class HydrometerManager {
                                     uint32_t nowMs) const;
 
  private:
-  static constexpr uint8_t MAX_DEVICES = 8;
   static constexpr uint32_t SCAN_PERIOD_MS = 10000;
   static constexpr uint32_t SCAN_WINDOW_MS = 2000;
   static constexpr uint32_t STALE_AFTER_MS = 5UL * 60UL * 1000UL;

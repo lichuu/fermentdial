@@ -445,6 +445,9 @@ void NetworkManager::begin(const Settings &settings,
   _webStatus.brightness = settings.brightness;
   _webStatus.hydrometerBleEnabled = settings.hydrometerBleEnabled;
   _webStatus.hydrometerScanType = settings.hydrometerScanType;
+  _webStatus.gradualCrashEnabled = settings.gradualCrashEnabled;
+  _webStatus.gradualCrashStepC = settings.gradualCrashStepC;
+  _webStatus.gradualCrashStepIntervalHours = settings.gradualCrashStepIntervalHours;
   _webStatus.mode = settings.mode;
 
 #if FERM_ENABLE_NETWORK
@@ -562,6 +565,10 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   _webStatus.unitsFahrenheit = settings.unitsFahrenheit;
   _webStatus.brightness = settings.brightness;
   _webStatus.hydrometerBleEnabled = settings.hydrometerBleEnabled;
+  _webStatus.hydrometerScanType = settings.hydrometerScanType;
+  _webStatus.gradualCrashEnabled = settings.gradualCrashEnabled;
+  _webStatus.gradualCrashStepC = settings.gradualCrashStepC;
+  _webStatus.gradualCrashStepIntervalHours = settings.gradualCrashStepIntervalHours;
   _webStatus.mode = settings.mode;
   _webStatus.runtimeState = controller.runtimeState();
   _webStatus.faultCode = controller.faultCode();
@@ -1966,6 +1973,22 @@ void NetworkManager::handleSettingsPost() {
     }
   }
 
+  if (_server.hasArg("gradualCrashEnabled")) {
+    _settings->gradualCrashEnabled =
+        _server.arg("gradualCrashEnabled").toInt() != 0;
+    changed = true;
+  }
+  if (_server.hasArg("gradualCrashStep")) {
+    _settings->gradualCrashStepC = fromDisplayDelta(
+        _server.arg("gradualCrashStep").toFloat(), unitsF);
+    changed = true;
+  }
+  if (_server.hasArg("gradualCrashStepHours")) {
+    _settings->gradualCrashStepIntervalHours =
+        static_cast<uint32_t>(max(0.0f, _server.arg("gradualCrashStepHours").toFloat()));
+    changed = true;
+  }
+
   if (changed) {
     sanitizeSettings(*_settings);
     _webStatus.fermenterName = _settings->fermenterName;
@@ -1990,6 +2013,10 @@ void NetworkManager::handleSettingsPost() {
     _webStatus.mode = _settings->mode;
     _webStatus.hydrometerBleEnabled = _settings->hydrometerBleEnabled;
     _webStatus.hydrometerScanType = _settings->hydrometerScanType;
+    _webStatus.gradualCrashEnabled = _settings->gradualCrashEnabled;
+    _webStatus.gradualCrashStepC = _settings->gradualCrashStepC;
+    _webStatus.gradualCrashStepIntervalHours =
+        _settings->gradualCrashStepIntervalHours;
     _settingsChanged = true;
   }
 
@@ -2324,6 +2351,12 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
             ",\"default\":" + jsonFloat(profileDefault) + "}";
   }
   json += "],";
+  json += "\"gradualCrashEnabled\":" +
+          String(_webStatus.gradualCrashEnabled ? "true" : "false") + ",";
+  json += "\"gradualCrashStep\":" +
+          jsonFloat(toDisplayDelta(_webStatus.gradualCrashStepC, f), 1) + ",";
+  json += "\"gradualCrashStepHours\":" +
+          String(_webStatus.gradualCrashStepIntervalHours) + ",";
   json += "\"coolOn\":" + jsonFloat(coolOn) + ",";
   json += "\"heatOn\":" + jsonFloat(heatOn) + ",";
   json += "\"hold\":" + jsonFloat(hold) + ",";
@@ -2554,7 +2587,7 @@ String NetworkManager::pageHtml() const {
 <title>FermentDial</title>
 <style>
 :root{--bg:#0d1b1e;--face:#091418;--panel:#132428;--panel2:#1b3540;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--cool:#b0d8f8;--heat:#e36018;--ok:#36c87a;--gold:#ffd178;--fault:#e44840}
-html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+html{background:var(--bg)}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;position:relative}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
 .menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
@@ -2572,7 +2605,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 </style></head>
 <body><main><div class="shell">
 <div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button></div>
-<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a></nav></div>
+<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#hydrometer" class="sub">Hydrometer</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a></nav></div>
 <section class="hero" id="hero">
 <canvas id="spark"></canvas>
 <div class="heroTop"><span id="fermenterNameHero">Fermenter</span><span id="targetHero">target --.-F</span></div>
@@ -2611,7 +2644,7 @@ a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-
 <p class="sub" id="dRestStatus" style="font-size:12px;margin-top:10px">Ready</p>
 </div>
 </section>
-<section class="grid">
+<section class="grid" id="hydroCards" hidden>
 <div class="card"><div class="label">Hydrometer</div><div class="value" id="hydroTitle">No hydrometer</div></div>
 <div class="card"><div class="label">Gravity</div><div class="value" id="hydroGravity">--.--</div></div>
 <div class="card"><div class="label">Temp</div><div class="value" id="hydroTemp">--.-</div></div>
@@ -2672,7 +2705,8 @@ async function tick(){
  heater.textContent=s.heater?'HEATER ON':'HEATER OFF'; pump.textContent=s.pump?'PUMP ON':'PUMP OFF'; heater.classList.toggle('on',s.heater); pump.classList.toggle('on',s.pump); fault.textContent=s.fault;
  summary.textContent=s.tempValid?(rest.active?'D-rest '+remainingText(rest.remainingSeconds)+' remaining':s.mode+' mode'):'Sensor fault - outputs forced off';
  const h=s.hydrometer||{};
- hydroTitle.textContent=h.valid?(h.label||'Hydrometer'):(h.selected?'Waiting':'No hydrometer');
+ hydroCards.hidden=!h.valid;
+ hydroTitle.textContent=h.label||'Hydrometer';
  hydroGravity.textContent=h.valid?('SG '+h.gravity.toFixed(3)):'--.--';
  hydroTemp.textContent=h.valid?(h.temperature.toFixed(1)+deg+(s.unit||'')):'--.-';
  hydroAbv.textContent=h.valid&&h.abv!=null?h.abv.toFixed(1)+'%':'--.-%';
@@ -2713,33 +2747,35 @@ String NetworkManager::settingsHtml() const {
 <title>FermentDial Settings</title>
 <style>
 :root{--bg:#0d1b1e;--panel:#132428;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--gold:#ffd178}
-html{background:var(--bg)}*{box-sizing:border-box}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+html{background:var(--bg)}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 main{max-width:920px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;position:relative}
 .menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;margin:0;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
-h1{font-size:22px;margin:0;color:var(--accent)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px}
+h1{font-size:22px;margin:0;color:var(--accent)}h1 a{color:inherit;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px}
 h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}.hint{color:var(--muted);font-size:13px;line-height:1.35}.warn{color:var(--gold)}
 label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,select,button{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:5px}
 input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:auto;margin-right:7px}button{background:var(--blue);color:white;font-weight:900;cursor:pointer}
 .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.nav a{color:#79d4ff;margin-left:12px}.status{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--accent);font-weight:900}
 .wifiTools{margin:8px 0 12px}.scanStatus{min-height:18px}.networkList{display:grid;gap:6px;margin-top:6px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:var(--text);font-weight:700;text-align:left}.networkMeta{color:var(--muted);font-size:12px;white-space:nowrap}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{width:auto;margin:0;background:#102126;color:var(--muted);border:1px solid var(--line);font-weight:900;padding:10px 16px}.tab.active{background:var(--blue);color:#fff;border-color:#3f819d}
+.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:14px}.tab{width:auto;margin:0;background:#102126;color:var(--muted);border:1px solid var(--line);font-weight:900;padding:10px 12px}.tab.active{background:var(--blue);color:#fff;border-color:#3f819d}
 .tabpanel{display:none}.tabpanel.active{display:block}.tabpanel>.panel{margin-bottom:12px}
-.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px 46px;gap:6px;align-items:center}.profileRow input{margin-top:0}.reset{margin-top:0;padding:12px 0;background:#1b3540;color:var(--accent);font-size:16px}
-.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}.url{white-space:nowrap}
-@media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
+.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:minmax(0,1fr) 82px 42px;gap:6px;align-items:center}.profileHeader{color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:0}.profileRow input{margin-top:0}.reset{margin-top:0;padding:12px 0;background:#1b3540;color:var(--accent);font-size:16px}
+.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.integrationDetails{margin-top:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}.url{white-space:nowrap}
+@media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.profileHeader{display:none}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
-<div class="top"><h1>FermentDial Settings</h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
-<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
+<div class="top"><h1><a href="/dashboard">FermentDial Settings</a></h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
+<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#hydrometer" class="sub">Hydrometer</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
 <div class="tabs">
 <button class="tab" data-tab="profiles">Profiles</button>
+<button class="tab" data-tab="hydrometer">Hydrometer</button>
 <button class="tab" data-tab="controller">Controller</button>
 <button class="tab" data-tab="system">System</button>
 <button class="tab" data-tab="monitoring">Monitoring</button>
 </div>
 <div id="tab-profiles" class="tabpanel">
 <section class="panel"><h2>Fermentation Profiles</h2>
-<p class="hint">Presets you recall from the dashboard or the dial. Editing a preset here doesn't change the live setpoint until you select that profile.</p>
+<p class="hint">Each profile holds a name and a target temperature until you switch profiles.</p>
 <div class="profileRows" style="margin-top:10px">
+<div class="profileRow profileHeader"><span>Name</span><span>Target</span><span></span></div>
 )HTML";
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     html += R"HTML(<div class="profileRow"><input id="pName)HTML";
@@ -2761,28 +2797,21 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 <button class="primary" onclick="saveProfiles()">Save profiles</button>
 <div class="saveStatus" id="profilesStatus"></div>
 </section>
-</div>
-<div id="tab-controller" class="tabpanel">
-<section class="panel"><h2>Regulation</h2>
-<p class="hint">How tightly the controller holds the setpoint. Values are in )HTML";
-  html += unit;
-  html += R"HTML(.</p>
+<section class="panel"><h2>Cold Crash</h2>
+<p class="hint">Selecting Crash on the Dial always prompts Direct or Gradual. Gradual steps the live setpoint down instead of jumping straight to the Crash target, to avoid shocking the yeast.</p>
+<label><input type="checkbox" id="gradualCrashEnabled" )HTML";
+  html += checked(_webStatus.gradualCrashEnabled);
+  html += R"HTML(>Gradual is currently active</label>
 <div class="thresholds" style="margin-top:10px">
-<label>Cool on<input id="coolOnInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.coolOnDeltaC, f), 1);
+<label>Step size<input id="gradualCrashStep" inputmode="decimal" step="0.1" min="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.gradualCrashStepC, f), 1);
   html += R"HTML("></label>
-<label>Heat on<input id="heatOnInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.heatOnDeltaC, f), 1);
-  html += R"HTML("></label>
-<label>Hold band<input id="holdInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.holdDeltaC, f), 1);
-  html += R"HTML("></label>
-<label>Sensor offset<input id="offsetInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.tempOffsetC, f), 1);
+<label>Step interval (hours)<input id="gradualCrashStepHours" inputmode="numeric" step="1" min="1" value=")HTML";
+  html += String(_webStatus.gradualCrashStepIntervalHours);
   html += R"HTML("></label>
 </div>
-<button class="primary" onclick="saveControl()">Save controller settings</button>
-<div class="saveStatus" id="controllerStatus"></div>
+<button class="primary" onclick="saveCrashGradual()">Save cold crash</button>
+<div class="saveStatus" id="crashGradualStatus"></div>
 </section>
 <section class="panel"><h2>Diacetyl Rest</h2>
 <p class="hint">Defaults used by the dashboard and dial. Typical rests are 24-48 hours at 70-72 )HTML";
@@ -2815,6 +2844,29 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
   html += R"HTML(</select></label>
 <button class="primary" onclick="saveDrestDefaults()">Save D-rest defaults</button>
 <div class="saveStatus" id="dRestStatusSettings"></div>
+</section>
+</div>
+<div id="tab-controller" class="tabpanel">
+<section class="panel"><h2>Regulation</h2>
+<p class="hint">How tightly the controller holds the setpoint. Values are in )HTML";
+  html += unit;
+  html += R"HTML(.</p>
+<div class="thresholds" style="margin-top:10px">
+<label>Cool on<input id="coolOnInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.coolOnDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Heat on<input id="heatOnInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.heatOnDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Hold band<input id="holdInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.holdDeltaC, f), 1);
+  html += R"HTML("></label>
+<label>Sensor offset<input id="offsetInput" inputmode="decimal" step="0.1" value=")HTML";
+  html += String(toDisplayDelta(_webStatus.tempOffsetC, f), 1);
+  html += R"HTML("></label>
+</div>
+<button class="primary" onclick="saveControl()">Save controller settings</button>
+<div class="saveStatus" id="controllerStatus"></div>
 </section>
 </div>
 <div id="tab-system" class="tabpanel">
@@ -2915,6 +2967,9 @@ async function scanWifi(){
 <label><input type="checkbox" name="influxEnabled")HTML";
   html += checked(_influx.enabled);
   html += R"HTML(>Enable push export</label>
+<div class="integrationDetails" data-enabled-by="influxEnabled")HTML";
+  html += _influx.enabled ? "" : " hidden";
+  html += R"HTML(>
 <label>Target<select name="influxTarget">
 <option value="1")HTML";
   html += selected(_influx.target, InfluxExportTarget::V1);
@@ -2966,6 +3021,7 @@ async function scanWifi(){
 <label>Interval seconds<input name="influxInterval" inputmode="numeric" value=")HTML";
   html += String(_influx.intervalSeconds);
   html += R"HTML("></label>
+</div>
 <button type="submit">Save export settings</button>
 </form>
 <script>(function(){var s=document.querySelector('select[name=influxTarget]'),a=document.getElementById('influxV1'),b=document.getElementById('influxV2');function u(){var v2=(s.value==='2'||s.value==='3');b.style.display=v2?'':'none';a.style.display=v2?'none':'';}s.addEventListener('change',u);u();})();</script>
@@ -2978,6 +3034,9 @@ async function scanWifi(){
 <label><input type="checkbox" name="brewfatherEnabled")HTML";
   html += checked(_brewfather.enabled);
   html += R"HTML(>Enable Custom Stream logging</label>
+<div class="integrationDetails" data-enabled-by="brewfatherEnabled")HTML";
+  html += _brewfather.enabled ? "" : " hidden";
+  html += R"HTML(>
 <label>Payload<select name="brewfatherPayloadScope">
 <option value="all")HTML";
   html += selected(_brewfather.payloadScope,
@@ -2999,6 +3058,7 @@ async function scanWifi(){
 <label>Interval seconds<input name="brewfatherInterval" inputmode="numeric" min="900" value=")HTML";
   html += String(_brewfather.intervalSeconds);
   html += R"HTML("></label>
+</div>
 <button type="submit">Save Brewfather settings</button>
 </form>
 <p class="hint">Posts Custom Stream JSON no more than once every 15 minutes per device name. Hydrometer only sends each fresh discovered Tilt/RAPT without controller target or state. Use the ID from Settings &gt; Power-ups &gt; Custom Stream. Status: )HTML";
@@ -3010,6 +3070,9 @@ async function scanWifi(){
 <label><input type="checkbox" name="mqttEnabled")HTML";
   html += checked(_mqttConfig.enabled);
   html += R"HTML(>Enable MQTT publishing</label>
+<div class="integrationDetails" data-enabled-by="mqttEnabled")HTML";
+  html += _mqttConfig.enabled ? "" : " hidden";
+  html += R"HTML(>
 <label>Payload<select name="mqttPayloadScope">
 <option value="all")HTML";
   html += selected(_mqttConfig.payloadScope,
@@ -3046,6 +3109,7 @@ async function scanWifi(){
 <label>Interval seconds<input name="mqttInterval" inputmode="numeric" value=")HTML";
   html += String(_mqttConfig.intervalSeconds);
   html += R"HTML("></label>
+</div>
 <button type="submit">Save MQTT settings</button>
 </form>
 <p class="hint">Publishes the status JSON to <code>)HTML";
@@ -3058,6 +3122,8 @@ async function scanWifi(){
   html += htmlEscape(_lastMqttStatus);
   html += R"HTML(</p>
 </section>
+</div></div>
+<div id="tab-hydrometer" class="tabpanel"><div class="grid">
 <section class="panel"><h2>Hydrometer</h2>
 <form method="post" action="/api/settings" id="hydroForm" onsubmit="saveHydroSettings();return false;">
 <label><input type="checkbox" name="hydrometerBleEnabled" value="1" )HTML";
@@ -3083,9 +3149,11 @@ async function scanWifi(){
 function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
 document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
 document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
+function wireIntegrationDetails(){document.querySelectorAll('.integrationDetails[data-enabled-by]').forEach(function(d){const cb=document.querySelector('input[name="'+d.dataset.enabledBy+'"]');if(!cb)return;function u(){d.hidden=!cb.checked;}cb.addEventListener('change',u);u();});}
 function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});document.querySelectorAll('.menu a.sub').forEach(function(a){a.classList.toggle('current',a.getAttribute('href')==='/settings#'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
 addEventListener('hashchange',function(){showTab((location.hash||'#profiles').slice(1))});
 document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
+wireIntegrationDetails();
 showTab((location.hash||'#profiles').slice(1));
 async function postSettings(d){await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d).toString()});}
 function hydroAge(sec){sec=Math.max(0,sec||0);if(sec<60)return sec+'s';const m=Math.floor(sec/60),h=Math.floor(m/60);return h>0?h+'h '+(m%60)+'m':m+'m'}
@@ -3126,11 +3194,12 @@ async function saveHydroSettings(){const f=document.getElementById('hydroForm');
 async function selectHydrometer(key){await postSettings({hydrometerSelectKey:key});await refresh();}
 async function clearHydrometer(){await postSettings({hydrometerClearSelection:1});await refresh();}
 async function resetHydrometerOg(){await postSettings({hydrometerResetOg:1});await refresh();}
-async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}const r=s.diacetylRest||{};if(dRestTargetSettings&&document.activeElement!==dRestTargetSettings)dRestTargetSettings.value=(r.target||70).toFixed(1);if(dRestHoursSettings&&document.activeElement!==dRestHoursSettings)dRestHoursSettings.value=String(Math.round(r.durationHours||48));if(dRestReturnSettings&&document.activeElement!==dRestReturnSettings)dRestReturnSettings.value=r.returnProfile||0;const hf=document.querySelector('#hydroForm input[name=hydrometerBleEnabled]');if(hf&&document.activeElement!==hf)hf.checked=!!(s.hydrometer&&s.hydrometer.enabled);renderHydro(s);}catch(e){}}
+async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const ge=document.getElementById('gradualCrashEnabled');if(ge&&document.activeElement!==ge)ge.checked=!!s.gradualCrashEnabled;const gs=document.getElementById('gradualCrashStep');if(gs&&document.activeElement!==gs)gs.value=(s.gradualCrashStep||0).toFixed(1);const gh=document.getElementById('gradualCrashStepHours');if(gh&&document.activeElement!==gh)gh.value=String(s.gradualCrashStepHours||12);const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}const r=s.diacetylRest||{};if(dRestTargetSettings&&document.activeElement!==dRestTargetSettings)dRestTargetSettings.value=(r.target||70).toFixed(1);if(dRestHoursSettings&&document.activeElement!==dRestHoursSettings)dRestHoursSettings.value=String(Math.round(r.durationHours||48));if(dRestReturnSettings&&document.activeElement!==dRestReturnSettings)dRestReturnSettings.value=r.returnProfile||0;const hf=document.querySelector('#hydroForm input[name=hydrometerBleEnabled]');if(hf&&document.activeElement!==hf)hf.checked=!!(s.hydrometer&&s.hydrometer.enabled);renderHydro(s);}catch(e){}}
 function resetProfile(btn){const t=document.getElementById('pTarget'+btn.dataset.i);if(t)t.value=btn.dataset.default;}
 async function saveProfiles(){const d={};for(let i=0;i<)HTML";
   html += String(PROFILE_COUNT);
   html += R"HTML(;i++){const n=document.getElementById('pName'+i),t=document.getElementById('pTarget'+i);if(!n||!t)continue;d['profile'+i+'Name']=n.value;d['profile'+i+'Target']=t.value;}const st=document.getElementById('profilesStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
+async function saveCrashGradual(){const ge=document.getElementById('gradualCrashEnabled'),gs=document.getElementById('gradualCrashStep'),gh=document.getElementById('gradualCrashStepHours');const d={gradualCrashEnabled:ge&&ge.checked?1:0,gradualCrashStep:gs?gs.value:5,gradualCrashStepHours:gh?gh.value:12};const st=document.getElementById('crashGradualStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
 async function saveControl(){const d={coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value};const st=document.getElementById('controllerStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
 async function saveDrestDefaults(){const d={dRestTarget:dRestTargetSettings.value,dRestHours:dRestHoursSettings.value,dRestReturnProfile:dRestReturnSettings.value};const st=document.getElementById('dRestStatusSettings');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
 refresh();

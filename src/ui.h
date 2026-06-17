@@ -19,6 +19,8 @@ struct UiModel {
   OutputTestKind outputTestKind = OutputTestKind::None;
   bool demoSensor = false;
   HydrometerReading hydrometer;
+  HydrometerReading hydrometerDevices[HydrometerManager::MAX_DEVICES];
+  uint8_t hydrometerDeviceCount = 0;
   NetworkSnapshot network;
 };
 
@@ -61,6 +63,11 @@ class DisplayUI {
     Mode,
   };
 
+  enum class QuickConfirmKind : uint8_t {
+    Apply,
+    CrashGradual,
+  };
+
   void processInput(uint32_t nowMs, Settings &settings);
   void handleTouch(uint32_t nowMs, Settings &settings);
   void handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx, int16_t dy);
@@ -78,8 +85,10 @@ class DisplayUI {
   void moveQuickMenu(int32_t delta);
   void selectQuickAction(const Settings &settings);
   void moveQuickSelection(int32_t delta, const Settings &settings);
-  void requestQuickConfirm();
+  void requestQuickConfirm(const Settings &settings);
+  void requestCrashGradualPrompt(bool defaultGradual);
   void confirmQuickAction(Settings &settings);
+  void applyCrashProfile(Settings &settings, bool gradual);
   void cancelQuickFlow();
   void beginEdit(uint8_t index, const Settings &settings);
   void cancelEdit(Settings &settings);
@@ -146,6 +155,8 @@ class DisplayUI {
   const char *temperatureUnit(bool unitsFahrenheit) const;
   String formatTemperature(float tempC, bool unitsFahrenheit) const;
   String diacetylRestRemainingText(const Settings &settings) const;
+  String hydrometerValueText(const Settings &settings) const;
+  int32_t hydrometerOptionIndexFromSettings(const Settings &settings) const;
   const char *quickActionLabel(QuickAction action) const;
   String quickActionValue(QuickAction action, const Settings &settings) const;
   String quickPendingValue(const Settings &settings) const;
@@ -177,6 +188,8 @@ class DisplayUI {
   uint8_t _pendingProfile = 0;
   UserMode _pendingMode = UserMode::Off;
   QuickAction _pendingQuickAction = QuickAction::Profile;
+  QuickConfirmKind _quickConfirmKind = QuickConfirmKind::Apply;
+  bool _pendingGradualCrash = false;
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
@@ -194,6 +207,13 @@ class DisplayUI {
   bool _largeFontLoaded = false;
   String _toast = "";
   uint32_t _toastUntilMs = 0;
+  // Snapshot of the discovered hydrometers, refreshed each update() so the
+  // Hydrometer edit screen can list/cycle through them while editing.
+  HydrometerReading _hydroDevices[HydrometerManager::MAX_DEVICES];
+  uint8_t _hydroDeviceCount = 0;
+  // 0 = off, 1 = scanning for Tilt, 2 = scanning for RAPT, 3+ = device index
+  // (index - 3) within _hydroDevices.
+  int32_t _hydroOptionIndex = 0;
 };
 
 }  // namespace ferm
