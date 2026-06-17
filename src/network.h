@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "control.h"
+#include "hydrometer.h"
 
 #if FERM_ENABLE_NETWORK
 #include <DNSServer.h>
@@ -33,12 +34,20 @@ struct WebStatus {
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
   float liveTargetC = DEFAULT_TARGET_C;
+  bool diacetylRestActive = false;
+  float diacetylRestTargetC = DEFAULT_DIACETYL_REST_TARGET_C;
+  uint32_t diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
+  uint32_t diacetylRestRemainingSeconds = 0;
+  uint8_t diacetylRestReturnProfile =
+      static_cast<uint8_t>(ProfileSlot::Ferment);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;
   float tempOffsetC = DEFAULT_TEMP_OFFSET_C;
   bool unitsFahrenheit = true;
   uint8_t brightness = DEFAULT_BRIGHTNESS;
+  bool hydrometerBleEnabled = true;
+  HydrometerScanType hydrometerScanType = HydrometerScanType::Unknown;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;
   FaultCode faultCode = FaultCode::None;
@@ -83,12 +92,13 @@ using FirmwareUpdateSafetyCallback = void (*)();
 
 class NetworkManager {
 public:
-  void begin(const Settings &settings);
+  void begin(const Settings &settings, const HydrometerManager &hydrometer);
   void setFirmwareUpdateSafetyCallback(FirmwareUpdateSafetyCallback callback);
   void update(uint32_t nowMs, Settings &settings);
   void publishState(uint32_t nowMs, const Settings &settings,
                     const TemperatureSensor &sensor,
-                    const FermentationController &controller);
+                    const FermentationController &controller,
+                    const HydrometerManager &hydrometer);
   NetworkSnapshot snapshot() const { return _snapshot; }
   bool consumeSettingsChanged();
   bool requestSetupPortal();
@@ -127,6 +137,8 @@ private:
   // token is regenerated on each login and lives only in RAM.
   String _adminPassword;
   String _sessionToken;
+  Settings *_settings = nullptr;
+  const HydrometerManager *_hydrometer = nullptr;
 
 #if FERM_ENABLE_NETWORK
   Preferences _prefs;
@@ -163,20 +175,17 @@ private:
   void saveMqttConfig();
   void mqttConnect(uint32_t nowMs);
   void publishMqtt(uint32_t nowMs);
-  String influxLineProtocol() const;
+  String influxLineProtocol(uint32_t nowMs) const;
   bool parseMode(const String &value, UserMode &mode) const;
-  String statusJson() const;
+  String statusJson(uint32_t nowMs) const;
   void recordHistory(uint32_t nowMs, bool valid, float tempC);
   String historyJson() const;
-  String metricsText() const;
+  String metricsText(uint32_t nowMs) const;
   String pageHtml() const;
   String setupHtml() const;
   String settingsHtml() const;
   String firmwareHtml() const;
 
-#if FERM_ENABLE_NETWORK
-  Settings *_settings = nullptr;
-#endif
 };
 
 } // namespace ferm
