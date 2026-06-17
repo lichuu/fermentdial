@@ -88,6 +88,14 @@ struct MqttConfig {
   uint32_t intervalSeconds = 30;
 };
 
+struct BrewfatherConfig {
+  bool enabled = false;
+  String url = "https://log.brewfather.net/stream";
+  String loggingId = "";
+  String deviceName = "";
+  uint32_t intervalSeconds = 900;
+};
+
 using FirmwareUpdateSafetyCallback = void (*)();
 
 class NetworkManager {
@@ -114,6 +122,7 @@ private:
   uint32_t _lastPublishMs = 0;
   uint32_t _lastWifiAttemptMs = 0;
   uint32_t _lastInfluxPublishMs = 0;
+  uint32_t _lastBrewfatherPublishMs = 0;
   WebStatus _webStatus;
   // Rolling temperature history for the dashboard sparkline: deci-degrees C,
   // sampled at a fixed cadence so points are evenly spaced (no timestamps).
@@ -130,6 +139,9 @@ private:
   uint32_t _lastMqttPublishMs = 0;
   uint32_t _lastMqttAttemptMs = 0;
   String _lastMqttStatus = "Disabled";
+  BrewfatherConfig _brewfather;
+  int _lastBrewfatherStatusCode = 0;
+  String _lastBrewfatherStatus = "Disabled";
   String _wifiSsid;
   String _wifiPassword;
   String _hostname;
@@ -175,6 +187,11 @@ private:
   void saveMqttConfig();
   void mqttConnect(uint32_t nowMs);
   void publishMqtt(uint32_t nowMs);
+  void handleBrewfatherSettingsPost();
+  void loadBrewfatherConfig();
+  void saveBrewfatherConfig();
+  void publishBrewfather(uint32_t nowMs);
+  String brewfatherPayload(uint32_t nowMs, bool &hasValue) const;
   String influxLineProtocol(uint32_t nowMs) const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson(uint32_t nowMs) const;
