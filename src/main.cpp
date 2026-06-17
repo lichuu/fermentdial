@@ -21,7 +21,9 @@ uint32_t lastSerialLogMs = 0;
 uint32_t lastDiacetylRestTickMs = 0;
 uint32_t lastDiacetylRestSaveMs = 0;
 uint32_t lastHydrometerSaveMs = 0;
+uint32_t lastGradualCrashStepMs = 0;
 bool previousDiacetylRestActive = false;
+bool previousGradualCrashActive = false;
 
 void prepareForFirmwareUpdate() {
   // Force the relays off for the flash itself, but keep the saved mode/profile
@@ -94,6 +96,54 @@ bool updateDiacetylRest(uint32_t nowMs) {
   return false;
 }
 
+bool updateGradualCrash(uint32_t nowMs) {
+  const bool active =
+      settings.gradualCrashEnabled && !settings.diacetylRestActive &&
+      activeProfileIndex(settings) == static_cast<uint8_t>(ProfileSlot::Crash);
+  if (!active) {
+    previousGradualCrashActive = false;
+    lastGradualCrashStepMs = nowMs;
+    return false;
+  }
+
+  const float targetC = activeProfile(settings).targetC;
+  if (settings.liveTargetC <= targetC) {
+    if (settings.liveTargetC < targetC) {
+      settings.liveTargetC = targetC;
+      return true;
+    }
+    previousGradualCrashActive = true;
+    return false;
+  }
+
+  const uint32_t stepIntervalMs =
+      settings.gradualCrashStepIntervalHours * 60UL * 60UL * 1000UL;
+  uint32_t steps = 0;
+  if (!previousGradualCrashActive) {
+    previousGradualCrashActive = true;
+    steps = 1;
+  } else if (nowMs - lastGradualCrashStepMs >= stepIntervalMs) {
+    steps = (nowMs - lastGradualCrashStepMs) / stepIntervalMs;
+  }
+
+  if (steps == 0) {
+    return false;
+  }
+
+  lastGradualCrashStepMs = nowMs;
+  float nextTargetC = settings.liveTargetC - (settings.gradualCrashStepC * steps);
+  if (nextTargetC < targetC) {
+    nextTargetC = targetC;
+  }
+  settings.liveTargetC =
+      snapTempC(clampFloat(nextTargetC, MIN_TARGET_C, MAX_TARGET_C),
+                settings.unitsFahrenheit);
+  if (settings.liveTargetC < targetC) {
+    settings.liveTargetC = targetC;
+  }
+  return true;
+}
+
 void setup() {
   const uint32_t nowMs = millis();
 
@@ -134,6 +184,7 @@ void loop() {
       hydrometer.selectedReading(settings, nowMs);
   network.update(nowMs, settings);
   const bool diacetylRestChanged = updateDiacetylRest(nowMs);
+  const bool gradualCrashChanged = updateGradualCrash(nowMs);
 
   controller.update(nowMs, settings, temperatureSensor.isValid(),
                     temperatureSensor.temperatureC());
@@ -149,6 +200,10 @@ void loop() {
   model.outputTestKind = controller.outputTestKind();
   model.demoSensor = temperatureSensor.demoMode();
   model.hydrometer = selectedHydrometer;
+  model.hydrometerDeviceCount = hydrometer.deviceCount();
+  for (uint8_t i = 0; i < model.hydrometerDeviceCount; i++) {
+    model.hydrometerDevices[i] = hydrometer.device(i);
+  }
   model.network = network.snapshot();
 
   ui.update(nowMs, settings, model);
@@ -175,7 +230,7 @@ void loop() {
 
   if (ui.consumeSaveRequested() || network.consumeSettingsChanged() ||
       diacetylRestChanged || checkpointDiacetylRest || hydrometerChanged ||
-      checkpointHydrometer) {
+      checkpointHydrometer || gradualCrashChanged) {
     sanitizeSettings(settings);
     storage.scheduleSave(nowMs);
     controller.update(nowMs, settings, temperatureSensor.isValid(),

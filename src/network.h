@@ -48,6 +48,9 @@ struct WebStatus {
   uint8_t brightness = DEFAULT_BRIGHTNESS;
   bool hydrometerBleEnabled = true;
   HydrometerScanType hydrometerScanType = HydrometerScanType::Unknown;
+  bool gradualCrashEnabled = false;
+  float gradualCrashStepC = DEFAULT_GRADUAL_CRASH_STEP_C;
+  uint32_t gradualCrashStepIntervalHours = DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS;
   UserMode mode = UserMode::Off;
   RuntimeState runtimeState = RuntimeState::Boot;
   FaultCode faultCode = FaultCode::None;
