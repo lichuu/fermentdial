@@ -14,6 +14,10 @@ namespace ferm {
 
 namespace {
 constexpr const char *SETUP_AP_SSID_PREFIX = "FermentDial-Setup";
+constexpr const char *BREWFATHER_DEFAULT_URL =
+    "https://log.brewfather.net/stream";
+constexpr uint32_t BREWFATHER_MIN_INTERVAL_SECONDS = 15UL * 60UL;
+constexpr uint32_t BREWFATHER_MAX_INTERVAL_SECONDS = 24UL * 60UL * 60UL;
 // The onboarding access point is open (no password) — it only exists before the
 // device has joined a network, carries no secrets, and reboots away after setup.
 // The web config pages also ship unlocked; users opt into a password under
@@ -296,6 +300,65 @@ void appendField(String &fields, const String &field) {
   fields += field;
 }
 
+void appendJsonField(String &json, const String &field) {
+  if (!json.endsWith("{")) {
+    json += ",";
+  }
+  json += field;
+}
+
+void appendJsonNumber(String &json, const char *name, float value,
+                      unsigned int decimals) {
+  appendJsonField(json, jsonString(String(name)) + ":" +
+                            String(value, decimals));
+}
+
+String brewfatherDeviceState(RuntimeState state, UserMode mode,
+                             bool diacetylRestActive) {
+  if (mode == UserMode::Off || state == RuntimeState::Off) {
+    return "off";
+  }
+  if (diacetylRestActive) {
+    return "on";
+  }
+  switch (state) {
+  case RuntimeState::Heating:
+    return "heating";
+  case RuntimeState::Cooling:
+    return "cooling";
+  case RuntimeState::Fault:
+    return "fault";
+  case RuntimeState::Idle:
+    return "on";
+  case RuntimeState::Boot:
+  default:
+    return "off";
+  }
+}
+
+String normalizeBrewfatherUrl(String value) {
+  value.trim();
+  if (value.length() == 0) {
+    return BREWFATHER_DEFAULT_URL;
+  }
+  return value;
+}
+
+String normalizeBrewfatherId(String value) {
+  value.trim();
+  const int idIndex = value.indexOf("id=");
+  if (idIndex >= 0) {
+    int start = idIndex + 3;
+    int end = value.indexOf('&', start);
+    if (end < 0) {
+      end = value.length();
+    }
+    value = value.substring(start, end);
+    value.trim();
+  }
+  return value;
+}
+
 // Pull a single cookie value out of a raw Cookie header ("a=1; b=2").
 String cookieValue(const String &cookieHeader, const char *name) {
   const String key = String(name) + "=";
@@ -351,6 +414,7 @@ void NetworkManager::begin(const Settings &settings,
   _prefs.begin("net", false);
   loadInfluxConfig();
   loadMqttConfig();
+  loadBrewfatherConfig();
   _wifiSsid = _prefs.getString("ssid", FERM_WIFI_SSID);
   _wifiPassword = _prefs.getString("pass", FERM_WIFI_PASSWORD);
   // Ships unlocked: config pages are open until the user sets a password.
@@ -476,6 +540,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
 #if FERM_ENABLE_NETWORK
   publishInflux(nowMs);
   publishMqtt(nowMs);
+  publishBrewfather(nowMs);
 #endif
 }
 
@@ -578,6 +643,12 @@ void NetworkManager::startWebServer() {
       return;
     }
     handleMqttSettingsPost();
+  });
+  _server.on("/settings/brewfather", HTTP_POST, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    handleBrewfatherSettingsPost();
   });
   _server.on("/metrics", HTTP_GET, [this]() {
     _server.send(200, "text/plain; version=0.0.4; charset=utf-8",
@@ -1337,6 +1408,182 @@ void NetworkManager::publishMqtt(uint32_t nowMs) {
   const String payload = statusJson(nowMs);
   const bool ok = _mqtt.publish(stateTopic.c_str(), payload.c_str(), true);
   _lastMqttStatus = ok ? "Published" : "Publish failed (payload too large?)";
+#else
+  (void)nowMs;
+#endif
+}
+
+void NetworkManager::loadBrewfatherConfig() {
+#if FERM_ENABLE_NETWORK
+  _brewfather.enabled = _prefs.getBool("bfEn", false);
+  _brewfather.url =
+      normalizeBrewfatherUrl(_prefs.getString("bfUrl", BREWFATHER_DEFAULT_URL));
+  _brewfather.loggingId =
+      normalizeBrewfatherId(_prefs.getString("bfId", ""));
+  _brewfather.deviceName = _prefs.getString("bfName", "");
+  _brewfather.deviceName.trim();
+  _brewfather.intervalSeconds = _prefs.getUInt(
+      "bfEvery", BREWFATHER_MIN_INTERVAL_SECONDS);
+  if (_brewfather.intervalSeconds < BREWFATHER_MIN_INTERVAL_SECONDS) {
+    _brewfather.intervalSeconds = BREWFATHER_MIN_INTERVAL_SECONDS;
+  }
+  if (_brewfather.intervalSeconds > BREWFATHER_MAX_INTERVAL_SECONDS) {
+    _brewfather.intervalSeconds = BREWFATHER_MAX_INTERVAL_SECONDS;
+  }
+  _lastBrewfatherStatus = _brewfather.enabled ? "Waiting" : "Disabled";
+#endif
+}
+
+void NetworkManager::saveBrewfatherConfig() {
+#if FERM_ENABLE_NETWORK
+  _prefs.putBool("bfEn", _brewfather.enabled);
+  _prefs.putString("bfUrl", _brewfather.url);
+  _prefs.putString("bfId", _brewfather.loggingId);
+  _prefs.putString("bfName", _brewfather.deviceName);
+  _prefs.putUInt("bfEvery", _brewfather.intervalSeconds);
+#endif
+}
+
+void NetworkManager::handleBrewfatherSettingsPost() {
+#if FERM_ENABLE_NETWORK
+  _brewfather.enabled = _server.hasArg("brewfatherEnabled");
+  if (_server.hasArg("brewfatherUrl")) {
+    _brewfather.url = normalizeBrewfatherUrl(_server.arg("brewfatherUrl"));
+  }
+  if (_server.hasArg("brewfatherLoggingId")) {
+    _brewfather.loggingId =
+        normalizeBrewfatherId(_server.arg("brewfatherLoggingId"));
+  }
+  if (_server.hasArg("brewfatherDeviceName")) {
+    _brewfather.deviceName = _server.arg("brewfatherDeviceName");
+    _brewfather.deviceName.trim();
+  }
+  if (_server.hasArg("brewfatherInterval")) {
+    uint32_t interval = _server.arg("brewfatherInterval").toInt();
+    if (interval < BREWFATHER_MIN_INTERVAL_SECONDS) {
+      interval = BREWFATHER_MIN_INTERVAL_SECONDS;
+    }
+    if (interval > BREWFATHER_MAX_INTERVAL_SECONDS) {
+      interval = BREWFATHER_MAX_INTERVAL_SECONDS;
+    }
+    _brewfather.intervalSeconds = interval;
+  }
+  saveBrewfatherConfig();
+  _lastBrewfatherPublishMs = 0;
+  _lastBrewfatherStatus = _brewfather.enabled ? "Saved" : "Disabled";
+  _server.sendHeader("Location", "/settings#monitoring", true);
+  _server.send(303, "text/plain", "");
+#endif
+}
+
+String NetworkManager::brewfatherPayload(uint32_t nowMs,
+                                         bool &hasValue) const {
+  hasValue = false;
+  String deviceName = _brewfather.deviceName;
+  deviceName.trim();
+  if (deviceName.length() == 0) {
+    deviceName = _hostname.length() > 0
+                     ? _hostname
+                     : String("FermentDial-") + deviceSuffix(true);
+  }
+  const uint8_t profileIndex =
+      _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
+
+  HydrometerReading selected;
+  if (_hydrometer != nullptr && _settings != nullptr) {
+    selected = _hydrometer->selectedReading(*_settings, nowMs);
+  }
+
+  String json = "{";
+  appendJsonField(json, "\"name\":" + jsonString(deviceName));
+  if (_webStatus.tempValid && !isnan(_webStatus.tempC)) {
+    appendJsonNumber(json, "temp", _webStatus.tempC, 2);
+    appendJsonField(json, "\"temp_unit\":\"C\"");
+    hasValue = true;
+  } else if (selected.valid && !isnan(selected.temperatureC)) {
+    appendJsonNumber(json, "temp", selected.temperatureC, 2);
+    appendJsonField(json, "\"temp_unit\":\"C\"");
+    hasValue = true;
+  }
+  if (!isnan(_webStatus.liveTargetC)) {
+    appendJsonNumber(json, "temp_target", _webStatus.liveTargetC, 2);
+  }
+  if (selected.valid && gravityIsValid(selected.gravity)) {
+    appendJsonNumber(json, "gravity", selected.gravity, 3);
+    appendJsonField(json, "\"gravity_unit\":\"G\"");
+    hasValue = true;
+  }
+  if (selected.valid && !isnan(selected.batteryV)) {
+    appendJsonNumber(json, "battery", selected.batteryV, 2);
+  }
+  if (selected.valid) {
+    appendJsonField(json, "\"rssi\":" + String(selected.rssi));
+  }
+  appendJsonField(json, "\"device_source\":" + jsonString(FIRMWARE_NAME));
+  appendJsonField(json, "\"report_source\":" + jsonString(_hostname));
+  appendJsonField(json, "\"device_state\":" +
+                            jsonString(brewfatherDeviceState(
+                                _webStatus.runtimeState, _webStatus.mode,
+                                _webStatus.diacetylRestActive)));
+  appendJsonField(json, "\"comment\":" +
+                            jsonString(String("Profile ") +
+                                       _webStatus.profiles[profileIndex].name));
+  json += "}";
+  return json;
+}
+
+void NetworkManager::publishBrewfather(uint32_t nowMs) {
+#if FERM_ENABLE_NETWORK
+  if (!_brewfather.enabled) {
+    _lastBrewfatherStatus = "Disabled";
+    return;
+  }
+  if (!_snapshot.wifiConnected || _apMode) {
+    _lastBrewfatherStatus = "Waiting for Wi-Fi";
+    return;
+  }
+  if (_brewfather.loggingId.length() == 0 &&
+      _brewfather.url.indexOf("id=") < 0) {
+    _lastBrewfatherStatus = "No logging ID";
+    return;
+  }
+  const uint32_t intervalMs = _brewfather.intervalSeconds * 1000UL;
+  if (_lastBrewfatherPublishMs != 0 &&
+      nowMs - _lastBrewfatherPublishMs < intervalMs) {
+    return;
+  }
+  _lastBrewfatherPublishMs = nowMs;
+
+  String endpoint = normalizeBrewfatherUrl(_brewfather.url);
+  if (_brewfather.loggingId.length() > 0 && endpoint.indexOf("id=") < 0) {
+    endpoint += (endpoint.indexOf('?') >= 0 ? "&" : "?");
+    endpoint += "id=" + urlEncode(_brewfather.loggingId);
+  }
+
+  bool hasValue = false;
+  const String payload = brewfatherPayload(nowMs, hasValue);
+  if (!hasValue) {
+    _lastBrewfatherStatus = "No value";
+    return;
+  }
+
+  HTTPClient http;
+  if (!http.begin(endpoint)) {
+    _lastBrewfatherStatus = "Bad URL";
+    return;
+  }
+  http.addHeader("Content-Type", "application/json");
+
+  const int code = http.POST(payload);
+  _lastBrewfatherStatusCode = code;
+  if (code >= 200 && code < 300) {
+    _lastBrewfatherStatus = "OK " + String(code);
+  } else if (code > 0) {
+    _lastBrewfatherStatus = "HTTP " + String(code);
+  } else {
+    _lastBrewfatherStatus = "POST failed " + String(code);
+  }
+  http.end();
 #else
   (void)nowMs;
 #endif
@@ -2323,6 +2570,29 @@ async function scanWifi(){
 <p class="hint">Last export: )HTML";
   html += htmlEscape(_lastInfluxStatus);
   html += R"HTML(. VictoriaMetrics uses Influx line protocol at <code>/write</code> unless the URL already includes an Influx write path.</p>
+</section>
+<section class="panel"><h2>Brewfather</h2>
+<form method="post" action="/settings/brewfather">
+<label><input type="checkbox" name="brewfatherEnabled")HTML";
+  html += checked(_brewfather.enabled);
+  html += R"HTML(>Enable Custom Stream logging</label>
+<label>Logging ID<input name="brewfatherLoggingId" placeholder="your-logging-id" value=")HTML";
+  html += htmlEscape(_brewfather.loggingId);
+  html += R"HTML("></label>
+<label>Device name<input name="brewfatherDeviceName" placeholder="leave blank for hostname" value=")HTML";
+  html += htmlEscape(_brewfather.deviceName);
+  html += R"HTML("></label>
+<label>Endpoint URL<input name="brewfatherUrl" placeholder="https://log.brewfather.net/stream" value=")HTML";
+  html += htmlEscape(_brewfather.url);
+  html += R"HTML("></label>
+<label>Interval seconds<input name="brewfatherInterval" inputmode="numeric" min="900" value=")HTML";
+  html += String(_brewfather.intervalSeconds);
+  html += R"HTML("></label>
+<button type="submit">Save Brewfather settings</button>
+</form>
+<p class="hint">Posts Custom Stream JSON no more than once every 15 minutes per device name. Use the ID from Settings &gt; Power-ups &gt; Custom Stream. Status: )HTML";
+  html += htmlEscape(_lastBrewfatherStatus);
+  html += R"HTML(</p>
 </section>
 <section class="panel"><h2>MQTT / Home Assistant</h2>
 <form method="post" action="/settings/mqtt">

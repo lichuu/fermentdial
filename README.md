@@ -149,6 +149,16 @@ The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside th
 - When the timer completes, FermentDial switches to the configured return profile and recalls that profile's target.
 - If power drops mid-rest, the remaining time resumes from the last saved checkpoint. Without an RTC, outage time is not counted.
 
+## Brewfather Custom Stream
+
+Wi-Fi builds can publish to Brewfather from the web UI under
+`Settings -> Monitoring -> Brewfather`.
+
+- Enable Custom Stream in Brewfather under `Settings -> Power-ups -> Custom Stream`.
+- Paste the logging ID into FermentDial, or paste the full stream URL and it will extract the `id=` value.
+- FermentDial posts controller temperature, target temperature, runtime state, and selected hydrometer gravity/battery/RSSI when present.
+- Brewfather ignores posts more frequent than one per 15 minutes per device name, so the firmware enforces a 15 minute minimum interval.
+
 ## Modes
 
 - `OFF`: heater OFF, pump OFF. OFF mode overrides everything.
