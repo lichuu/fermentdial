@@ -18,6 +18,20 @@ constexpr const char *SETUP_AP_SSID_PREFIX = "FermentDial-Setup";
 // device has joined a network, carries no secrets, and reboots away after setup.
 // The web config pages also ship unlocked; users opt into a password under
 // Settings > Security.
+
+// On-brand favicon: a thermostat dial gauge in the dashboard palette. Served as
+// SVG so it scales crisply and costs almost nothing in flash.
+constexpr const char *FAVICON_SVG =
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\">"
+    "<rect width=\"32\" height=\"32\" rx=\"7\" fill=\"#0d1b1e\"/>"
+    "<path d=\"M8.2 23 A10 10 0 1 1 23.8 23\" fill=\"none\" stroke=\"#1e3840\" "
+    "stroke-width=\"3\" stroke-linecap=\"round\"/>"
+    "<path d=\"M8.2 23 A10 10 0 0 1 16 6\" fill=\"none\" stroke=\"#36c87a\" "
+    "stroke-width=\"3\" stroke-linecap=\"round\"/>"
+    "<line x1=\"16\" y1=\"16\" x2=\"21\" y2=\"10.5\" stroke=\"#b0d8f8\" "
+    "stroke-width=\"2.4\" stroke-linecap=\"round\"/>"
+    "<circle cx=\"16\" cy=\"16\" r=\"2.6\" fill=\"#b0d8f8\"/></svg>";
+
 IPAddress SETUP_IP(192, 168, 4, 1);
 IPAddress SETUP_GATEWAY(192, 168, 4, 1);
 IPAddress SETUP_MASK(255, 255, 255, 0);
@@ -486,6 +500,10 @@ void NetworkManager::startWebServer() {
   });
   _server.on("/dashboard", HTTP_GET,
              [this]() { _server.send(200, "text/html", pageHtml()); });
+  _server.on("/favicon.svg", HTTP_GET, [this]() {
+    _server.sendHeader("Cache-Control", "max-age=86400");
+    _server.send(200, "image/svg+xml", FAVICON_SVG);
+  });
   _server.on("/login", HTTP_GET, [this]() { handleLogin(); });
   _server.on("/login", HTTP_POST, [this]() { handleLogin(); });
   _server.on("/logout", HTTP_GET, [this]() { handleLogout(); });
@@ -1517,7 +1535,7 @@ String NetworkManager::metricsText() const {
 
 String NetworkManager::pageHtml() const {
   return R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>FermentDial</title>
 <style>
 :root{--bg:#0d1b1e;--face:#091418;--panel:#132428;--panel2:#1b3540;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--cool:#b0d8f8;--heat:#e36018;--ok:#36c87a;--gold:#ffd178;--fault:#e44840}
@@ -1637,7 +1655,7 @@ String NetworkManager::settingsHtml() const {
   const bool f = _webStatus.unitsFahrenheit;
   const String unit = unitLabel(f);
   String html = R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>FermentDial Settings</title>
 <style>
 :root{--bg:#0d1b1e;--panel:#132428;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--gold:#ffd178}
@@ -1653,7 +1671,7 @@ input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:aut
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.tab{width:auto;margin:0;background:#102126;color:var(--muted);border:1px solid var(--line);font-weight:900;padding:10px 16px}.tab.active{background:var(--blue);color:#fff;border-color:#3f819d}
 .tabpanel{display:none}.tabpanel.active{display:block}.tabpanel>.panel{margin-bottom:12px}
 .profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:1fr 110px 46px;gap:6px;align-items:center}.profileRow input{margin-top:0}.reset{margin-top:0;padding:12px 0;background:#1b3540;color:var(--accent);font-size:16px}
-.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}
+.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}.url{white-space:nowrap}
 @media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.nav a{margin-left:0;margin-right:10px}}
 </style></head><body><main>
 <div class="top"><h1>FermentDial Settings</h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
@@ -1801,7 +1819,7 @@ async function scanWifi(){
 <div id="tab-monitoring" class="tabpanel"><div class="grid">
 <section class="panel"><h2>Prometheus</h2>
 <div class="status">/metrics</div>
-<p class="hint">Scrape <code>http://)HTML";
+<p class="hint">Scrape <code class="url">http://)HTML";
   html += htmlEscape(_snapshot.ipAddress.length() > 0 ? _snapshot.ipAddress
                                                        : apSsid);
   html += R"HTML(/metrics</code>. Values are emitted in Celsius and output states are 0/1 gauges. The measurement / metric name set under Influx Export is also used as the Prometheus metric prefix.</p>
@@ -1929,7 +1947,7 @@ refresh();
 
 String NetworkManager::setupHtml() const {
   String html = R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>FermentDial Wi-Fi</title>
 <style>
 html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
@@ -1977,7 +1995,7 @@ async function scanWifi(){
 
 String NetworkManager::loginHtml(bool showError) const {
   String html = R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>FermentDial Login</title>
 <style>
 html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
@@ -2002,7 +2020,7 @@ input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;fon
 
 String NetworkManager::firmwareHtml() const {
   return R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>FermentDial Firmware</title>
 <style>
 html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
