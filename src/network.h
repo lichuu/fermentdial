@@ -226,6 +226,7 @@ private:
   String statusJson(uint32_t nowMs) const;
   void recordHistory(uint32_t nowMs, bool valid, float tempC);
   String historyJson() const;
+  String settingsConfigJson() const;
   String metricsText(uint32_t nowMs) const;
   String pageHtml() const;
   String setupHtml() const;

@@ -9,3 +9,5 @@
 compile_commands.json
 include/secrets.h
 design/
+webui/node_modules/
+webui/dist/

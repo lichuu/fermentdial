@@ -10,6 +10,10 @@
 #include <Update.h>
 #endif
 
+#if FERM_ENABLE_NETWORK
+#include "web_assets.h"
+#endif
+
 namespace ferm {
 
 namespace {
@@ -319,16 +323,6 @@ ExportPayloadScope parseExportPayloadScope(String value) {
   }
   return ExportPayloadScope::ControllerAndHydrometer;
 }
-
-String selected(InfluxExportTarget actual, InfluxExportTarget expected) {
-  return actual == expected ? " selected" : "";
-}
-
-String selected(ExportPayloadScope actual, ExportPayloadScope expected) {
-  return actual == expected ? " selected" : "";
-}
-
-String checked(bool value) { return value ? " checked" : ""; }
 
 void appendField(String &fields, const String &field) {
   if (fields.length() > 0) {
@@ -650,13 +644,27 @@ void NetworkManager::startWebServer() {
   _server.collectHeaders(kHeaderKeys, 1);
 
   _server.on("/", HTTP_GET, [this]() {
-    _server.send(200, "text/html", _apMode ? setupHtml() : pageHtml());
+    _server.send(200, "text/html; charset=utf-8",
+                 _apMode ? setupHtml() : pageHtml());
   });
-  _server.on("/dashboard", HTTP_GET,
-             [this]() { _server.send(200, "text/html", pageHtml()); });
+  _server.on("/dashboard", HTTP_GET, [this]() {
+    _server.send(200, "text/html; charset=utf-8", pageHtml());
+  });
   _server.on("/favicon.svg", HTTP_GET, [this]() {
     _server.sendHeader("Cache-Control", "max-age=86400");
     _server.send(200, "image/svg+xml", FAVICON_SVG);
+  });
+  _server.on("/app.js", HTTP_GET, [this]() {
+    _server.sendHeader("Content-Encoding", "gzip");
+    _server.sendHeader("Cache-Control", "no-cache");
+    _server.send_P(200, "application/javascript; charset=utf-8",
+                   reinterpret_cast<PGM_P>(APP_JS_GZ), APP_JS_GZ_LEN);
+  });
+  _server.on("/app.css", HTTP_GET, [this]() {
+    _server.sendHeader("Content-Encoding", "gzip");
+    _server.sendHeader("Cache-Control", "no-cache");
+    _server.send_P(200, "text/css; charset=utf-8",
+                   reinterpret_cast<PGM_P>(APP_CSS_GZ), APP_CSS_GZ_LEN);
   });
   _server.on("/login", HTTP_GET, [this]() { handleLogin(); });
   _server.on("/login", HTTP_POST, [this]() { handleLogin(); });
@@ -666,7 +674,7 @@ void NetworkManager::startWebServer() {
     if (!requireAuth()) {
       return;
     }
-    _server.send(200, "text/html", settingsHtml());
+    _server.send(200, "text/html; charset=utf-8", settingsHtml());
   });
   _server.on("/settings/device", HTTP_POST, [this]() {
     if (!requireAuth()) {
@@ -702,7 +710,7 @@ void NetworkManager::startWebServer() {
     if (!requireAuth()) {
       return;
     }
-    _server.send(200, "text/html", setupHtml());
+    _server.send(200, "text/html; charset=utf-8", setupHtml());
   });
   _server.on("/wifi", HTTP_POST, [this]() {
     if (!requireAuth()) {
@@ -723,7 +731,7 @@ void NetworkManager::startWebServer() {
     if (pass.length() > 0 || _wifiPassword.length() == 0) {
       _wifiPassword = pass;
     }
-    _server.send(200, "text/html",
+    _server.send(200, "text/html; charset=utf-8",
                  "<!doctype html><meta name='viewport' "
                  "content='width=device-width,initial-scale=1'>"
                  "<body "
@@ -738,7 +746,7 @@ void NetworkManager::startWebServer() {
     if (!requireAuth()) {
       return;
     }
-    _server.send(200, "text/html", firmwareHtml());
+    _server.send(200, "text/html; charset=utf-8", firmwareHtml());
   });
   _server.on(
       "/firmware", HTTP_POST,
@@ -759,7 +767,7 @@ void NetworkManager::startWebServer() {
             String(ok ? "Update complete" : "Update failed") + "</h1><p>" +
             message + "</p><p><a href='/firmware'>Back</a></p></body>";
         _server.sendHeader("Connection", "close");
-        _server.send(ok ? 200 : 500, "text/html", html);
+        _server.send(ok ? 200 : 500, "text/html; charset=utf-8", html);
         if (ok) {
           delay(800);
           ESP.restart();
@@ -775,6 +783,12 @@ void NetworkManager::startWebServer() {
     _server.send(200, "application/json", historyJson());
   });
   _server.on("/api/wifi/scan", HTTP_GET, [this]() { handleWifiScan(); });
+  _server.on("/api/settings", HTTP_GET, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    _server.send(200, "application/json", settingsConfigJson());
+  });
   _server.on("/api/settings", HTTP_POST, [this]() { handleSettingsPost(); });
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
@@ -921,7 +935,7 @@ void NetworkManager::handleLogin() {
       _server.send(302, "text/plain", "");
       return;
     }
-    _server.send(200, "text/html", loginHtml(false));
+    _server.send(200, "text/html; charset=utf-8", loginHtml(false));
     return;
   }
 
@@ -936,7 +950,7 @@ void NetworkManager::handleLogin() {
     _server.send(302, "text/plain", "");
     return;
   }
-  _server.send(401, "text/html", loginHtml(true));
+  _server.send(401, "text/html; charset=utf-8", loginHtml(true));
 #endif
 }
 
@@ -957,7 +971,7 @@ void NetworkManager::handleSecurityPost() {
   const String np = _server.arg("newPassword");
   const String cp = _server.arg("confirmPassword");
   if (np != cp) {
-    _server.send(400, "text/html",
+    _server.send(400, "text/html; charset=utf-8",
                  "<!doctype html><meta name='viewport' "
                  "content='width=device-width,initial-scale=1'>"
                  "<body style='font-family:sans-serif;padding:2rem;"
@@ -2459,6 +2473,63 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   return json;
 }
 
+String NetworkManager::settingsConfigJson() const {
+  const String apSsid = setupApSsid();
+  String json = "{";
+  json += "\"hostname\":" + jsonString(_hostname) + ",";
+  json += "\"firmwareName\":" + jsonString(FIRMWARE_NAME) + ",";
+  json += "\"firmwareVersion\":" + jsonString(FIRMWARE_VERSION) + ",";
+  json += "\"passwordSet\":" +
+          String(_adminPassword.length() > 0 ? "true" : "false") + ",";
+  json += "\"wifiSsid\":" + jsonString(_wifiSsid) + ",";
+  json += "\"wifiIp\":" + jsonString(_snapshot.ipAddress) + ",";
+  json += "\"apSsid\":" + jsonString(apSsid) + ",";
+
+  json += "\"influx\":{";
+  json += "\"enabled\":" + String(_influx.enabled ? "true" : "false") + ",";
+  json += "\"target\":" + jsonString(influxTargetValue(_influx.target)) + ",";
+  json += "\"measurement\":" + jsonString(_influx.measurement) + ",";
+  json += "\"url\":" + jsonString(_influx.url) + ",";
+  json += "\"database\":" + jsonString(_influx.database) + ",";
+  json += "\"retentionPolicy\":" + jsonString(_influx.retentionPolicy) + ",";
+  json += "\"username\":" + jsonString(_influx.username) + ",";
+  json += "\"org\":" + jsonString(_influx.org) + ",";
+  json += "\"bucket\":" + jsonString(_influx.bucket) + ",";
+  json += "\"intervalSeconds\":" + String(_influx.intervalSeconds) + ",";
+  json += "\"lastStatus\":" + jsonString(_lastInfluxStatus);
+  json += "},";
+
+  json += "\"brewfather\":{";
+  json += "\"enabled\":" + String(_brewfather.enabled ? "true" : "false") + ",";
+  json += "\"payloadScope\":" +
+          jsonString(exportPayloadScopeValue(_brewfather.payloadScope)) + ",";
+  json += "\"loggingId\":" + jsonString(_brewfather.loggingId) + ",";
+  json += "\"deviceName\":" + jsonString(_brewfather.deviceName) + ",";
+  json += "\"url\":" + jsonString(_brewfather.url) + ",";
+  json += "\"intervalSeconds\":" + String(_brewfather.intervalSeconds) + ",";
+  json += "\"lastStatus\":" + jsonString(_lastBrewfatherStatus);
+  json += "},";
+
+  json += "\"mqtt\":{";
+  json += "\"enabled\":" + String(_mqttConfig.enabled ? "true" : "false") + ",";
+  json += "\"payloadScope\":" +
+          jsonString(exportPayloadScopeValue(_mqttConfig.payloadScope)) + ",";
+  json += "\"haDiscovery\":" +
+          String(_mqttConfig.haDiscovery ? "true" : "false") + ",";
+  json += "\"discoveryPrefix\":" + jsonString(_mqttConfig.discoveryPrefix) + ",";
+  json += "\"host\":" + jsonString(_mqttConfig.host) + ",";
+  json += "\"port\":" + String(_mqttConfig.port) + ",";
+  json += "\"username\":" + jsonString(_mqttConfig.username) + ",";
+  json += "\"baseTopic\":" + jsonString(_mqttConfig.baseTopic) + ",";
+  json += "\"intervalSeconds\":" + String(_mqttConfig.intervalSeconds) + ",";
+  json += "\"computedBaseTopic\":" + jsonString(mqttBaseTopic(_mqttConfig)) + ",";
+  json += "\"lastStatus\":" + jsonString(_lastMqttStatus);
+  json += "}";
+
+  json += "}";
+  return json;
+}
+
 String NetworkManager::metricsText(uint32_t nowMs) const {
   const uint8_t profileIndex =
       _webStatus.activeProfile < PROFILE_COUNT ? _webStatus.activeProfile : 0;
@@ -2584,628 +2655,23 @@ String NetworkManager::metricsText(uint32_t nowMs) const {
 String NetworkManager::pageHtml() const {
   return R"HTML(<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
 <title>FermentDial</title>
-<style>
-:root{--bg:#0d1b1e;--face:#091418;--panel:#132428;--panel2:#1b3540;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--cool:#b0d8f8;--heat:#e36018;--ok:#36c87a;--gold:#ffd178;--fault:#e44840}
-html{background:var(--bg)}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-main{max-width:1040px;margin:auto;padding:16px}.shell{padding:0}
-.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;position:relative}.brand{font-weight:900;font-size:19px;color:var(--accent)}.brand span{color:var(--text)}.deviceName{color:var(--muted);font-weight:900;margin-top:2px}
-.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
-.statusbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;background:#102126;color:var(--accent);font-size:13px}.demo{border-color:#5c4118;color:var(--gold);background:#1c160b}
-.hero{position:relative;overflow:hidden;border:1px solid var(--line);border-top:4px solid var(--ok);border-radius:8px;padding:18px;background:var(--face);box-shadow:inset 0 0 0 1px #071015}#spark{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.heroTop,.readout{position:relative;z-index:1;text-shadow:0 1px 4px rgba(4,12,16,.92),0 0 2px rgba(4,12,16,.92)}
-body[data-state=heating] .hero{border-top-color:var(--heat)}body[data-state=cooling] .hero,body[data-state=crashing] .hero{border-top-color:var(--cool)}body[data-state=fault] .hero{border-top-color:var(--fault)}
-.heroTop{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:13px;text-transform:uppercase}.readout{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:12px}
-.tempBlock{min-width:0}.tempLine{display:flex;align-items:flex-start}.temp{font-size:78px;line-height:.9;font-weight:900;letter-spacing:0}.unit{font-size:28px;color:var(--accent);margin-left:7px;margin-top:8px}.state{font-size:25px;font-weight:900;margin-top:8px;color:var(--ok)}body[data-state=heating] .state{color:var(--heat)}body[data-state=cooling] .state,body[data-state=crashing] .state{color:var(--cool)}body[data-state=fault] .state{color:var(--fault)}
-.sub{margin-top:6px;color:var(--muted)}.outputs{display:grid;gap:8px;min-width:116px}.out{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--muted);font-weight:900;text-align:center}.out.on.heat{background:#3b1807;color:#ffd8bf;border-color:var(--heat)}.out.on.cool{background:#123040;color:var(--accent);border-color:var(--cool)}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}.card,.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:13px}.label{color:var(--muted);font-size:12px;text-transform:uppercase}.value{font-size:23px;font-weight:900;margin-top:4px}
-.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:12px}.panel h2{font-size:15px;margin:0 0 11px;color:#d9e8f4}.targetCtl{display:grid;grid-template-columns:50px 1fr 50px;gap:8px;align-items:center}.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-input,button,select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:12px}input,select{width:100%;background:#102126;color:var(--text)}input{text-align:center;font-size:22px;font-weight:900}.nameInput{text-align:left;font-size:20px}.fieldLabel{display:block;color:var(--muted);font-size:13px}button{background:#234858;color:var(--text);font-weight:900;cursor:pointer}button.primary{background:var(--blue);border-color:#3f819d;color:#fff}.modes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.active{background:var(--accent)!important;border-color:var(--accent)!important;color:#081317!important}.danger{background:#321418}.heat{background:#3b1807}.cool{background:#123040}
-a{color:#79d4ff}.footer{margin-top:12px;color:#8da2b0;font-size:13px}@media(max-width:760px){main{padding:12px}.controls{grid-template-columns:1fr}.readout{display:block}.outputs{grid-template-columns:1fr 1fr;margin-top:14px}.temp{font-size:58px}.unit{font-size:22px}}
-</style></head>
-<body><main><div class="shell">
-<div class="top"><div><div class="brand">Ferment<span>Dial</span></div><div class="deviceName" id="fermenterNameTop">Fermenter</div></div><div class="statusbar"><span class="pill" id="wifi">Wi-Fi</span><span class="pill demo" id="demo" hidden>DEMO SENSOR</span><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button></div>
-<nav class="menu" id="menu"><a href="/dashboard" class="current">Dashboard</a><a href="/settings">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#hydrometer" class="sub">Hydrometer</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a></nav></div>
-<section class="hero" id="hero">
-<canvas id="spark"></canvas>
-<div class="heroTop"><span id="fermenterNameHero">Fermenter</span><span id="targetHero">target --.-F</span></div>
-<div class="readout"><div class="tempBlock"><div class="tempLine"><span class="temp" id="temp">--.-</span><span class="unit">F</span></div>
-<div class="state" id="state">Loading</div><div class="sub" id="summary">Waiting for controller status</div></div>
-<div class="outputs"><div class="out heat" id="heater">HEATER OFF</div><div class="out cool" id="pump">PUMP OFF</div></div></div>
-</section>
-<section class="grid">
-<div class="card"><div class="label">Fermenter</div><div class="value" id="fermenterName">Fermenter</div></div>
-<div class="card"><div class="label">Profile</div><div class="value" id="profileName">Ferment</div></div>
-<div class="card"><div class="label">Setpoint</div><div class="value"><span id="target">--.-</span><span class="unit">F</span></div></div>
-<div class="card"><div class="label">Mode</div><div class="value" id="mode">OFF</div></div>
-</section>
-<section class="controls">
-<div class="panel"><h2>Profile</h2>
-<select id="profileSelect" onchange="selectProfile()"></select>
-<div class="fieldLabel" style="margin-top:12px">Setpoint</div>
-<div class="targetCtl" style="margin-top:6px">
-<button onclick="nudge(-0.1)">-</button><input id="targetInput" inputmode="decimal" step="0.1" onchange="applyTarget()"><button onclick="nudge(0.1)">+</button>
-</div>
-<p class="sub" style="font-size:12px;margin-top:10px">Pick a profile to recall its preset, or nudge the live setpoint. Edit presets in <a href="/settings#profiles">Settings</a>.</p>
-</div>
-<div class="panel"><h2>Mode</h2><div class="modes">
-<button id="btnOFF" class="danger" onclick="setMode('OFF')">OFF</button><button id="btnAUTO" onclick="setMode('AUTO')">AUTO</button>
-<button id="btnHEAT_ONLY" class="heat" onclick="setMode('HEAT_ONLY')">HEAT</button><button id="btnCOOL_ONLY" class="cool" onclick="setMode('COOL_ONLY')">COOL</button>
-</div></div>
-<div class="panel"><h2>Diacetyl Rest</h2>
-<div class="row">
-<label class="fieldLabel">Rest temp<input id="dRestTargetInput" inputmode="decimal" step="0.1"></label>
-<label class="fieldLabel">Hours<input id="dRestHoursInput" inputmode="numeric" step="24" min="24" max="96"></label>
-</div>
-<label class="fieldLabel" style="margin-top:8px">After rest<select id="dRestReturnSelect"></select></label>
-<div class="modes" style="margin-top:10px">
-<button class="primary" onclick="startDrest()">START</button><button id="dRestEndBtn" onclick="endDrest()">STOP</button>
-</div>
-<p class="sub" id="dRestStatus" style="font-size:12px;margin-top:10px">Ready</p>
-</div>
-</section>
-<section class="grid" id="hydroCards" hidden>
-<div class="card"><div class="label">Hydrometer</div><div class="value" id="hydroTitle">No hydrometer</div></div>
-<div class="card"><div class="label">Gravity</div><div class="value" id="hydroGravity">--.--</div></div>
-<div class="card"><div class="label">Temp</div><div class="value" id="hydroTemp">--.-</div></div>
-<div class="card"><div class="label">ABV</div><div class="value" id="hydroAbv">--.-%</div></div>
-</section>
-<div class="footer">Fault: <span id="fault">NONE</span></div>
-</div></main>
-<script>
-let last=null;
-let spark=[];
-const deg=String.fromCharCode(176);
-function qs(data){return new URLSearchParams(data).toString()}
-async function post(data){
- await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:qs(data)});
- await tick();
-}
-function applyTarget(){const v=parseFloat(targetInput.value);if(!isNaN(v))post({target:v.toFixed(1)})}
-function nudge(delta){const v=parseFloat(targetInput.value||'68')+delta;targetInput.value=(Math.round(v*10)/10).toFixed(1);applyTarget()}
-function selectProfile(){post({profile:profileSelect.value})}
-function setMode(mode){post({mode})}
-function dRestData(action){const d={dRestAction:action,dRestTarget:dRestTargetInput.value,dRestHours:dRestHoursInput.value,dRestReturnProfile:dRestReturnSelect.value};return d}
-function startDrest(){post(dRestData('start'))}
-function endDrest(){post({dRestAction:'end'})}
-function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
-document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
-document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
-function attr(v){return String(v).replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;')}
-function renderProfiles(s){
- profileSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
- profileSelect.value=s.activeProfile;
-}
-function renderDrest(s){
- const r=s.diacetylRest||{};
- if(document.activeElement!==dRestTargetInput)dRestTargetInput.value=(r.target||70).toFixed(1);
- if(document.activeElement!==dRestHoursInput)dRestHoursInput.value=String(Math.round(r.durationHours||48));
- if(document.activeElement!==dRestReturnSelect){
-  dRestReturnSelect.innerHTML=s.profiles.map(p=>`<option value="${p.index}">${attr(p.name)}</option>`).join('');
-  dRestReturnSelect.value=r.returnProfile||0;
- }
- dRestEndBtn.disabled=!r.active;
- dRestStatus.textContent=r.active?('Active - '+remainingText(r.remainingSeconds)+' remaining, then '+(r.returnProfileName||'profile')):'Ready - holds '+Math.round(r.durationHours||48)+'h at '+(r.target||70).toFixed(1)+deg+s.unit;
-}
-function remainingText(sec){sec=Math.max(0,sec||0);const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60);return h>0?h+'h '+m+'m':m+'m'}
-async function tick(){
- const r=await fetch('/api/status'); const s=await r.json();
- last=s;
- document.body.dataset.state=s.state.toLowerCase();
- document.title=s.fermenterName+' - FermentDial';
- document.querySelectorAll('.unit').forEach(e=>e.textContent=deg+s.unit);
- temp.textContent=s.tempValid?s.temperature.toFixed(1):'--.-';
- fermenterName.textContent=s.fermenterName; fermenterNameTop.textContent=s.fermenterName; fermenterNameHero.textContent=s.fermenterName;
- const rest=s.diacetylRest||{};
- profileName.textContent=rest.active?'D-Rest':s.profileName; target.textContent=s.target.toFixed(1); targetHero.textContent=(rest.active?'D-rest':'target')+' '+s.target.toFixed(1)+deg+s.unit;
- if(document.activeElement!==profileSelect)renderProfiles(s);
- if(document.activeElement!==targetInput)targetInput.value=s.target.toFixed(1);
- renderDrest(s);
- state.textContent=s.state; mode.textContent=s.mode; wifi.textContent=s.wifiConnected?s.ip:s.wifiStatus; demo.hidden=!s.demo;
- heater.textContent=s.heater?'HEATER ON':'HEATER OFF'; pump.textContent=s.pump?'PUMP ON':'PUMP OFF'; heater.classList.toggle('on',s.heater); pump.classList.toggle('on',s.pump); fault.textContent=s.fault;
- summary.textContent=s.tempValid?(rest.active?'D-rest '+remainingText(rest.remainingSeconds)+' remaining':s.mode+' mode'):'Sensor fault - outputs forced off';
- const h=s.hydrometer||{};
- hydroCards.hidden=!h.valid;
- hydroTitle.textContent=h.label||'Hydrometer';
- hydroGravity.textContent=h.valid?('SG '+h.gravity.toFixed(3)):'--.--';
- hydroTemp.textContent=h.valid?(h.temperature.toFixed(1)+deg+(s.unit||'')):'--.-';
- hydroAbv.textContent=h.valid&&h.abv!=null?h.abv.toFixed(1)+'%':'--.-%';
- for(const id of ['OFF','AUTO','HEAT_ONLY','COOL_ONLY'])document.getElementById('btn'+id).classList.toggle('active',s.mode===id);
-}
-function drawSpark(){
- const c=document.getElementById('spark'); if(!c)return;
- const w=c.clientWidth,h=c.clientHeight; if(!w||!h)return;
- const dpr=window.devicePixelRatio||1;
- if(c.width!==Math.round(w*dpr)){c.width=Math.round(w*dpr);} if(c.height!==Math.round(h*dpr)){c.height=Math.round(h*dpr);}
- const g=c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
- const d=spark; if(!d||d.length<2)return;
- let lo=Math.min.apply(null,d),hi=Math.max.apply(null,d);
- if(hi-lo<0.5){const m=(hi+lo)/2; lo=m-0.5; hi=m+0.5;}
- const pad=8, top=h*0.42; // keep the trace in the lower part, behind the text
- const X=i=>i/(d.length-1)*w;
- const Y=v=>(h-pad)-(v-lo)/(hi-lo)*((h-pad)-top);
- g.beginPath(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?g.lineTo(px,py):g.moveTo(px,py);});
- const area=new Path2D(); d.forEach((v,i)=>{const px=X(i),py=Y(v); i?area.lineTo(px,py):area.moveTo(px,py);}); area.lineTo(w,h); area.lineTo(0,h); area.closePath();
- const fg=g.createLinearGradient(0,top,0,h); fg.addColorStop(0,'rgba(46,213,160,0.16)'); fg.addColorStop(1,'rgba(46,213,160,0)');
- g.fillStyle=fg; g.fill(area);
- const lg=g.createLinearGradient(0,0,w,0); lg.addColorStop(0,'rgba(46,213,160,0.28)'); lg.addColorStop(1,'rgba(127,230,200,0.28)');
- g.strokeStyle=lg; g.lineWidth=1.5; g.lineJoin='round'; g.lineCap='round'; g.stroke();
-}
-async function loadHistory(){try{const r=await fetch('/api/history'); const j=await r.json(); spark=j.tempsC||[]; drawSpark();}catch(e){}}
-addEventListener('resize',drawSpark);
-tick(); setInterval(tick,2000);
-loadHistory(); setInterval(loadHistory,30000);
-</script></body></html>)HTML";
+</head>
+<body data-page="dashboard"><div id="app"></div>
+<script src="/app.js"></script>
+</body></html>)HTML";
 }
 
 String NetworkManager::settingsHtml() const {
-  const String apSsid = setupApSsid();
-  const bool f = _webStatus.unitsFahrenheit;
-  const String unit = unitLabel(f);
-  String html = R"HTML(<!doctype html>
+  return R"HTML(<!doctype html>
 <html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
 <title>FermentDial Settings</title>
-<style>
-:root{--bg:#0d1b1e;--panel:#132428;--line:#1e3840;--muted:#6a9aaa;--text:#d0e8f0;--accent:#b0d8f8;--blue:#356f89;--gold:#ffd178}
-html{background:var(--bg)}*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;font-family:"Trebuchet MS","Avenir Next",Verdana,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-main{max-width:920px;margin:auto;padding:16px}.top{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap;position:relative}
-.menuBtn{width:auto;margin:0;padding:8px 12px;font-size:18px;line-height:1;background:#102126;color:var(--accent);border:1px solid var(--line);border-radius:8px;cursor:pointer}.menu{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:9;min-width:170px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden;box-shadow:0 10px 26px rgba(0,0,0,.45)}.menu.open{display:block}.menu a{display:block;padding:12px 14px;margin:0;color:var(--text);text-decoration:none;border-bottom:1px solid var(--line)}.menu a:last-child{border-bottom:0}.menu a:hover{background:#102126;color:var(--accent)}.menu a.current{color:var(--accent);font-weight:900}.menu a.sub{padding-left:30px;font-size:13px;color:var(--muted)}.menu a.sub.current{color:var(--accent)}
-h1{font-size:22px;margin:0;color:var(--accent)}h1 a{color:inherit;text-decoration:none}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:14px}
-h2{font-size:16px;margin:0 0 12px;color:#d9e8f4}.hint{color:var(--muted);font-size:13px;line-height:1.35}.warn{color:var(--gold)}
-label{display:block;color:var(--muted);font-size:13px;margin-top:8px}input,select,button{font:inherit;width:100%;border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:5px}
-input,select{background:#102126;color:var(--text)}input[type=checkbox]{width:auto;margin-right:7px}button{background:var(--blue);color:white;font-weight:900;cursor:pointer}
-.row{display:grid;grid-template-columns:1fr 1fr;gap:8px}.nav a{color:#79d4ff;margin-left:12px}.status{border:1px solid var(--line);border-radius:8px;padding:10px;background:#102126;color:var(--accent);font-weight:900}
-.wifiTools{margin:8px 0 12px}.scanStatus{min-height:18px}.networkList{display:grid;gap:6px;margin-top:6px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:var(--text);font-weight:700;text-align:left}.networkMeta{color:var(--muted);font-size:12px;white-space:nowrap}
-.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:6px;margin-bottom:14px}.tab{width:auto;margin:0;background:#102126;color:var(--muted);border:1px solid var(--line);font-weight:900;padding:10px 12px}.tab.active{background:var(--blue);color:#fff;border-color:#3f819d}
-.tabpanel{display:none}.tabpanel.active{display:block}.tabpanel>.panel{margin-bottom:12px}
-.profileRows{display:grid;gap:8px}.profileRow{display:grid;grid-template-columns:minmax(0,1fr) 82px 42px;gap:6px;align-items:center}.profileHeader{color:var(--muted);font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:0}.profileRow input{margin-top:0}.reset{margin-top:0;padding:12px 0;background:#1b3540;color:var(--accent);font-size:16px}
-.thresholds{display:grid;grid-template-columns:1fr 1fr;gap:8px}.integrationDetails{margin-top:8px}.saveStatus{color:var(--accent);font-size:13px;margin-top:8px;min-height:16px}.url{white-space:nowrap}
-@media(max-width:640px){main{padding:12px}.row,.thresholds{grid-template-columns:1fr}.profileHeader{display:none}.nav a{margin-left:0;margin-right:10px}}
-</style></head><body><main>
-<div class="top"><h1><a href="/dashboard">FermentDial Settings</a></h1><button class="menuBtn" type="button" onclick="toggleMenu(event)" aria-label="Menu">&#9776;</button>
-<nav class="menu" id="menu"><a href="/dashboard">Dashboard</a><a href="/settings" class="current">Settings</a><a href="/settings#profiles" class="sub">Profiles</a><a href="/settings#hydrometer" class="sub">Hydrometer</a><a href="/settings#controller" class="sub">Controller</a><a href="/settings#system" class="sub">System</a><a href="/settings#monitoring" class="sub">Monitoring</a><a href="/metrics">Metrics</a><a href="/logout">Log out</a></nav></div>
-<div class="tabs">
-<button class="tab" data-tab="profiles">Profiles</button>
-<button class="tab" data-tab="hydrometer">Hydrometer</button>
-<button class="tab" data-tab="controller">Controller</button>
-<button class="tab" data-tab="system">System</button>
-<button class="tab" data-tab="monitoring">Monitoring</button>
-</div>
-<div id="tab-profiles" class="tabpanel">
-<section class="panel"><h2>Fermentation Profiles</h2>
-<p class="hint">Each profile holds a name and a target temperature until you switch profiles.</p>
-<div class="profileRows" style="margin-top:10px">
-<div class="profileRow profileHeader"><span>Name</span><span>Target</span><span></span></div>
-)HTML";
-  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
-    html += R"HTML(<div class="profileRow"><input id="pName)HTML";
-    html += String(i);
-    html += R"HTML(" maxlength="15" value=")HTML";
-    html += htmlEscape(_webStatus.profiles[i].name);
-    html += R"HTML("><input id="pTarget)HTML";
-    html += String(i);
-    html += R"HTML(" inputmode="decimal" step="0.1" value=")HTML";
-    html += String(toDisplayTemp(_webStatus.profiles[i].targetC, f), 1);
-    html += R"HTML("><button class="reset" title="Reset to default" data-i=")HTML";
-    html += String(i);
-    html += R"HTML(" data-default=")HTML";
-    html += String(toDisplayTemp(defaultProfileTargetC(i), f), 1);
-    html += R"HTML(" onclick="resetProfile(this)">&#8634;</button></div>
-)HTML";
-  }
-  html += R"HTML(</div>
-<button class="primary" onclick="saveProfiles()">Save profiles</button>
-<div class="saveStatus" id="profilesStatus"></div>
-</section>
-<section class="panel"><h2>Cold Crash</h2>
-<p class="hint">Selecting Crash on the Dial always prompts Direct or Gradual. Gradual steps the live setpoint down instead of jumping straight to the Crash target, to avoid shocking the yeast.</p>
-<label><input type="checkbox" id="gradualCrashEnabled" )HTML";
-  html += checked(_webStatus.gradualCrashEnabled);
-  html += R"HTML(>Gradual is currently active</label>
-<div class="thresholds" style="margin-top:10px">
-<label>Step size<input id="gradualCrashStep" inputmode="decimal" step="0.1" min="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.gradualCrashStepC, f), 1);
-  html += R"HTML("></label>
-<label>Step interval (hours)<input id="gradualCrashStepHours" inputmode="numeric" step="1" min="1" value=")HTML";
-  html += String(_webStatus.gradualCrashStepIntervalHours);
-  html += R"HTML("></label>
-</div>
-<button class="primary" onclick="saveCrashGradual()">Save cold crash</button>
-<div class="saveStatus" id="crashGradualStatus"></div>
-</section>
-<section class="panel"><h2>Diacetyl Rest</h2>
-<p class="hint">Defaults used by the dashboard and dial. Typical rests are 24-48 hours at 70-72 )HTML";
-  html += unit;
-  html += R"HTML(.</p>
-<div class="thresholds" style="margin-top:10px">
-<label>Rest temp<input id="dRestTargetSettings" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayTemp(_webStatus.diacetylRestTargetC, f), 1);
-  html += R"HTML("></label>
-<label>Duration hours<input id="dRestHoursSettings" inputmode="numeric" step="24" min="24" max="96" value=")HTML";
-  html += String(_webStatus.diacetylRestDurationSeconds / 3600UL);
-  html += R"HTML("></label>
-</div>
-<label>After rest<select id="dRestReturnSettings">
-)HTML";
-  const uint8_t dRestReturnProfile =
-      _webStatus.diacetylRestReturnProfile < PROFILE_COUNT
-          ? _webStatus.diacetylRestReturnProfile
-          : static_cast<uint8_t>(ProfileSlot::Ferment);
-  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
-    html += R"HTML(<option value=")HTML";
-    html += String(i);
-    html += "\"";
-    html += i == dRestReturnProfile ? " selected" : "";
-    html += ">";
-    html += htmlEscape(_webStatus.profiles[i].name);
-    html += R"HTML(</option>
-)HTML";
-  }
-  html += R"HTML(</select></label>
-<button class="primary" onclick="saveDrestDefaults()">Save D-rest defaults</button>
-<div class="saveStatus" id="dRestStatusSettings"></div>
-</section>
-</div>
-<div id="tab-controller" class="tabpanel">
-<section class="panel"><h2>Regulation</h2>
-<p class="hint">How tightly the controller holds the setpoint. Values are in )HTML";
-  html += unit;
-  html += R"HTML(.</p>
-<div class="thresholds" style="margin-top:10px">
-<label>Cool on<input id="coolOnInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.coolOnDeltaC, f), 1);
-  html += R"HTML("></label>
-<label>Heat on<input id="heatOnInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.heatOnDeltaC, f), 1);
-  html += R"HTML("></label>
-<label>Hold band<input id="holdInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.holdDeltaC, f), 1);
-  html += R"HTML("></label>
-<label>Sensor offset<input id="offsetInput" inputmode="decimal" step="0.1" value=")HTML";
-  html += String(toDisplayDelta(_webStatus.tempOffsetC, f), 1);
-  html += R"HTML("></label>
-</div>
-<button class="primary" onclick="saveControl()">Save controller settings</button>
-<div class="saveStatus" id="controllerStatus"></div>
-</section>
-</div>
-<div id="tab-system" class="tabpanel">
-<div class="grid">
-<section class="panel"><h2>Device</h2>
-<form method="post" action="/settings/device">
-<label>Fermenter name<input name="fermenterName" maxlength="24" value=")HTML";
-  html += htmlEscape(_webStatus.fermenterName);
-  html += R"HTML("></label>
-<label>Screen brightness<input name="brightness" type="range" min="30" max="255" step="5" value=")HTML";
-  html += String(_webStatus.brightness);
-  html += R"HTML("></label>
-<button type="submit">Save device settings</button>
-</form>
-<p class="hint">Firmware: )HTML";
-  html += htmlEscape(FIRMWARE_NAME);
-  html += " v";
-  html += htmlEscape(FIRMWARE_VERSION);
-  html += R"HTML(</p>
-<p class="hint">Hostname: <code>)HTML";
-  html += htmlEscape(_snapshot.hostname);
-  html += R"HTML(</code></p>
-</section>
-<section class="panel"><h2>Security</h2>
-<form method="post" action="/settings/security">
-<label>New admin password<input name="newPassword" type="password" autocomplete="new-password" placeholder="leave blank to disable the lock"></label>
-<label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password"></label>
-<button type="submit">Update password</button>
-</form>
-<p class="hint">)HTML";
-  html += _adminPassword.length() > 0
-              ? R"HTML(Config pages are <b>locked</b>. The live dashboard and metrics stay public.)HTML"
-              : R"HTML(Config pages are <span class="warn">unlocked</span> &mdash; anyone on the network can change settings.)HTML";
-  html += R"HTML(</p>
-</section>
-<section class="panel"><h2>Wi-Fi</h2>
-<form method="post" action="/wifi">
-<label>Wi-Fi name<input name="ssid" autocomplete="off" required value=")HTML";
-  html += htmlEscape(_wifiSsid);
-  html += R"HTML("></label>
-<div class="wifiTools">
-<button type="button" onclick="scanWifi()">Scan for networks</button>
-<div class="hint scanStatus" id="wifiScanStatus">Select a scanned network or enter the name manually.</div>
-<div class="networkList" id="wifiNetworks"></div>
-</div>
-<label>Password<input name="pass" type="password" placeholder="leave blank to keep saved"></label>
-<button type="submit">Save and reboot</button>
-</form>
-<script>
-function pickWifi(ssid){document.querySelector('input[name=ssid]').value=ssid}
-async function scanWifi(){
- const status=document.getElementById('wifiScanStatus'),list=document.getElementById('wifiNetworks');
- status.textContent='Scanning...'; list.innerHTML='';
- try{
-  const r=await fetch('/api/wifi/scan'); if(!r.ok)throw new Error('scan failed');
-  const data=await r.json(),nets=(data.networks||[]).filter(n=>n.ssid);
-  if(!nets.length){status.textContent='No networks found. Enter the name manually.';return}
-  status.textContent='Select a network or enter the name manually.';
-  for(const n of nets){
-   const b=document.createElement('button'),name=document.createElement('span'),meta=document.createElement('span');
-   b.type='button'; name.textContent=n.ssid; meta.className='networkMeta'; meta.textContent=(n.secure?'secured':'open')+' '+n.rssi+' dBm';
-   b.appendChild(name); b.appendChild(meta); b.onclick=function(){pickWifi(n.ssid)}; list.appendChild(b);
-  }
- }catch(e){status.textContent='Scan failed. Enter the name manually.'}
-}
-</script>
-<p class="hint">Connected IP: )HTML";
-  html += htmlEscape(_snapshot.ipAddress.length() > 0 ? _snapshot.ipAddress
-                                                       : "not connected");
-  html += R"HTML(</p>
-<p class="hint">Setup AP: )HTML";
-  html += htmlEscape(apSsid);
-  html += R"HTML( (open network)</p></section>
-<section class="panel"><h2>Firmware Update</h2>
-<p class="warn">Outputs turn off before upload starts. The controller reboots after a successful update.</p>
-)HTML";
-#if FERM_ENABLE_OTA
-  html += R"HTML(<form method="post" action="/firmware" enctype="multipart/form-data">
-<label>Firmware .bin<input type="file" name="firmware" accept=".bin" required></label>
-<button type="submit">Upload and reboot</button>
-</form>)HTML";
-#else
-  html += R"HTML(<p class="hint">Firmware upload is disabled in this build.</p>)HTML";
-#endif
-  html += R"HTML(<p class="hint">Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.</p>
-</section>
-</div></div>
-<div id="tab-monitoring" class="tabpanel"><div class="grid">
-<section class="panel"><h2>Prometheus</h2>
-<div class="status">/metrics</div>
-<p class="hint">Scrape <code class="url">http://)HTML";
-  html += htmlEscape(_snapshot.ipAddress.length() > 0 ? _snapshot.ipAddress
-                                                       : apSsid);
-  html += R"HTML(/metrics</code>. Values are emitted in Celsius and output states are 0/1 gauges. The measurement / metric name set under Influx Export is also used as the Prometheus metric prefix.</p>
-</section>
-<section class="panel"><h2>Influx Export</h2>
-<form method="post" action="/settings/influx">
-<label><input type="checkbox" name="influxEnabled")HTML";
-  html += checked(_influx.enabled);
-  html += R"HTML(>Enable push export</label>
-<div class="integrationDetails" data-enabled-by="influxEnabled")HTML";
-  html += _influx.enabled ? "" : " hidden";
-  html += R"HTML(>
-<label>Target<select name="influxTarget">
-<option value="1")HTML";
-  html += selected(_influx.target, InfluxExportTarget::V1);
-  html += R"HTML(>InfluxDB 1.x</option>
-<option value="2")HTML";
-  html += selected(_influx.target, InfluxExportTarget::V2);
-  html += R"HTML(>InfluxDB 2.x</option>
-<option value="3")HTML";
-  html += selected(_influx.target, InfluxExportTarget::V3);
-  html += R"HTML(>InfluxDB 3.x</option>
-<option value="vm")HTML";
-  html += selected(_influx.target, InfluxExportTarget::VictoriaMetrics);
-  html += R"HTML(>VictoriaMetrics</option>
-</select></label>
-<label>Measurement / metric name<input name="influxMeasurement" value=")HTML";
-  html += htmlEscape(_influx.measurement);
-  html += R"HTML("></label>
-<label>Base URL<input name="influxUrl" placeholder="http://host:8086" value=")HTML";
-  html += htmlEscape(_influx.url);
-  html += R"HTML("></label>
-<div id="influxV1">
-<div class="row">
-<label>Database / DB<input name="influxDatabase" value=")HTML";
-  html += htmlEscape(_influx.database);
-  html += R"HTML("></label>
-<label>Retention policy<input name="influxRetentionPolicy" value=")HTML";
-  html += htmlEscape(_influx.retentionPolicy);
-  html += R"HTML("></label>
-</div><div class="row">
-<label>Username<input name="influxUsername" value=")HTML";
-  html += htmlEscape(_influx.username);
-  html += R"HTML("></label>
-<label>Password / v1 token<input name="influxPassword" type="password" placeholder="leave blank to keep saved"></label>
-</div>
-<label><input type="checkbox" name="clearInfluxPassword">Clear saved password</label>
-</div>
-<div id="influxV2">
-<div class="row">
-<label>Org<input name="influxOrg" value=")HTML";
-  html += htmlEscape(_influx.org);
-  html += R"HTML("></label>
-<label>Bucket<input name="influxBucket" value=")HTML";
-  html += htmlEscape(_influx.bucket);
-  html += R"HTML("></label>
-</div>
-<label>V2/V3 token<input name="influxToken" type="password" placeholder="leave blank to keep saved"></label>
-<label><input type="checkbox" name="clearInfluxToken">Clear saved token</label>
-</div>
-<label>Interval seconds<input name="influxInterval" inputmode="numeric" value=")HTML";
-  html += String(_influx.intervalSeconds);
-  html += R"HTML("></label>
-</div>
-<button type="submit">Save export settings</button>
-</form>
-<script>(function(){var s=document.querySelector('select[name=influxTarget]'),a=document.getElementById('influxV1'),b=document.getElementById('influxV2');function u(){var v2=(s.value==='2'||s.value==='3');b.style.display=v2?'':'none';a.style.display=v2?'none':'';}s.addEventListener('change',u);u();})();</script>
-<p class="hint">Last export: )HTML";
-  html += htmlEscape(_lastInfluxStatus);
-  html += R"HTML(. VictoriaMetrics uses Influx line protocol at <code>/write</code> unless the URL already includes an Influx write path.</p>
-</section>
-<section class="panel"><h2>Brewfather</h2>
-<form method="post" action="/settings/brewfather">
-<label><input type="checkbox" name="brewfatherEnabled")HTML";
-  html += checked(_brewfather.enabled);
-  html += R"HTML(>Enable Custom Stream logging</label>
-<div class="integrationDetails" data-enabled-by="brewfatherEnabled")HTML";
-  html += _brewfather.enabled ? "" : " hidden";
-  html += R"HTML(>
-<label>Payload<select name="brewfatherPayloadScope">
-<option value="all")HTML";
-  html += selected(_brewfather.payloadScope,
-                   ExportPayloadScope::ControllerAndHydrometer);
-  html += R"HTML(>Controller + hydrometer</option>
-<option value="hydrometer")HTML";
-  html += selected(_brewfather.payloadScope, ExportPayloadScope::HydrometerOnly);
-  html += R"HTML(>Hydrometer only</option>
-</select></label>
-<label>Logging ID<input name="brewfatherLoggingId" placeholder="your-logging-id" value=")HTML";
-  html += htmlEscape(_brewfather.loggingId);
-  html += R"HTML("></label>
-<label>Device name<input name="brewfatherDeviceName" placeholder="leave blank for hostname" value=")HTML";
-  html += htmlEscape(_brewfather.deviceName);
-  html += R"HTML("></label>
-<label>Endpoint URL<input name="brewfatherUrl" placeholder="https://log.brewfather.net/stream" value=")HTML";
-  html += htmlEscape(_brewfather.url);
-  html += R"HTML("></label>
-<label>Interval seconds<input name="brewfatherInterval" inputmode="numeric" min="900" value=")HTML";
-  html += String(_brewfather.intervalSeconds);
-  html += R"HTML("></label>
-</div>
-<button type="submit">Save Brewfather settings</button>
-</form>
-<p class="hint">Posts Custom Stream JSON no more than once every 15 minutes per device name. Hydrometer only sends each fresh discovered Tilt/RAPT without controller target or state. Use the ID from Settings &gt; Power-ups &gt; Custom Stream. Status: )HTML";
-  html += htmlEscape(_lastBrewfatherStatus);
-  html += R"HTML(</p>
-</section>
-<section class="panel"><h2>MQTT / Home Assistant</h2>
-<form method="post" action="/settings/mqtt">
-<label><input type="checkbox" name="mqttEnabled")HTML";
-  html += checked(_mqttConfig.enabled);
-  html += R"HTML(>Enable MQTT publishing</label>
-<div class="integrationDetails" data-enabled-by="mqttEnabled")HTML";
-  html += _mqttConfig.enabled ? "" : " hidden";
-  html += R"HTML(>
-<label>Payload<select name="mqttPayloadScope">
-<option value="all")HTML";
-  html += selected(_mqttConfig.payloadScope,
-                   ExportPayloadScope::ControllerAndHydrometer);
-  html += R"HTML(>Controller + hydrometer</option>
-<option value="hydrometer")HTML";
-  html += selected(_mqttConfig.payloadScope, ExportPayloadScope::HydrometerOnly);
-  html += R"HTML(>Hydrometer only</option>
-</select></label>
-<label><input type="checkbox" name="mqttHaDiscovery")HTML";
-  html += checked(_mqttConfig.haDiscovery);
-  html += R"HTML(>Publish Home Assistant discovery (hydrometer only)</label>
-<label>Discovery prefix<input name="mqttDiscoveryPrefix" placeholder="homeassistant" value=")HTML";
-  html += htmlEscape(_mqttConfig.discoveryPrefix);
-  html += R"HTML("></label>
-<div class="row">
-<label>Broker host<input name="mqttHost" placeholder="192.168.1.10" value=")HTML";
-  html += htmlEscape(_mqttConfig.host);
-  html += R"HTML("></label>
-<label>Port<input name="mqttPort" inputmode="numeric" value=")HTML";
-  html += String(_mqttConfig.port);
-  html += R"HTML("></label>
-</div>
-<div class="row">
-<label>Username<input name="mqttUsername" value=")HTML";
-  html += htmlEscape(_mqttConfig.username);
-  html += R"HTML("></label>
-<label>Password<input name="mqttPassword" type="password" placeholder="leave blank to keep saved"></label>
-</div>
-<label><input type="checkbox" name="clearMqttPassword">Clear saved password</label>
-<label>Base topic<input name="mqttTopic" value=")HTML";
-  html += htmlEscape(_mqttConfig.baseTopic);
-  html += R"HTML("></label>
-<label>Interval seconds<input name="mqttInterval" inputmode="numeric" value=")HTML";
-  html += String(_mqttConfig.intervalSeconds);
-  html += R"HTML("></label>
-</div>
-<button type="submit">Save MQTT settings</button>
-</form>
-<p class="hint">Publishes the status JSON to <code>)HTML";
-  html += htmlEscape(mqttBaseTopic(_mqttConfig));
-  html += R"HTML(/state</code> (retained), with availability on <code>)HTML";
-  html += htmlEscape(mqttBaseTopic(_mqttConfig));
-  html += R"HTML(/availability</code>. Hydrometer only publishes one retained state topic per discovered Tilt/RAPT under <code>)HTML";
-  html += htmlEscape(mqttBaseTopic(_mqttConfig));
-  html += R"HTML(/hydrometer/&lt;id&gt;/state</code>, and (when discovery is on) auto-creates a Home Assistant device with gravity, temperature, ABV, velocity, stability, battery, and signal entities. Status: )HTML";
-  html += htmlEscape(_lastMqttStatus);
-  html += R"HTML(</p>
-</section>
-</div></div>
-<div id="tab-hydrometer" class="tabpanel"><div class="grid">
-<section class="panel"><h2>Hydrometer</h2>
-<form method="post" action="/api/settings" id="hydroForm" onsubmit="saveHydroSettings();return false;">
-<label><input type="checkbox" name="hydrometerBleEnabled" value="1" )HTML";
-  html += checked(_webStatus.hydrometerBleEnabled);
-  html += R"HTML(>Enable BLE scanning</label>
-<div class="row" style="margin-top:10px">
-<button type="button" id="hydroTiltBtn" onclick="setHydrometerScanType('TILT')">Add Tilt</button>
-<button type="button" id="hydroRaptBtn" onclick="setHydrometerScanType('RAPT')">Add RAPT</button>
-</div>
-<div class="hint" id="hydroScanHint">Choose Tilt or RAPT to start scanning. Only that type will be listed here.</div>
-<div class="hint">The selected hydrometer is used for display and fermentation metrics only.</div>
-<button type="submit">Save hydrometer settings</button>
-<div class="row" style="margin-top:10px">
-<button type="button" onclick="resetHydrometerOg()">Reset OG</button>
-<button type="button" onclick="clearHydrometer()">Clear selection</button>
-</div>
-</form>
-<div class="saveStatus" id="hydroStatusSettings"></div>
-<div class="networkList" id="hydroList"></div>
-</section>
-</div></div>
-<script>
-function toggleMenu(e){e.stopPropagation();document.getElementById('menu').classList.toggle('open')}
-document.addEventListener('click',function(e){const m=document.getElementById('menu');if(m&&m.classList.contains('open')&&!m.contains(e.target)&&!e.target.closest('.menuBtn'))m.classList.remove('open')});
-document.querySelectorAll('#menu a').forEach(function(a){a.addEventListener('click',function(){document.getElementById('menu').classList.remove('open')})});
-function wireIntegrationDetails(){document.querySelectorAll('.integrationDetails[data-enabled-by]').forEach(function(d){const cb=document.querySelector('input[name="'+d.dataset.enabledBy+'"]');if(!cb)return;function u(){d.hidden=!cb.checked;}cb.addEventListener('change',u);u();});}
-function showTab(id){document.querySelectorAll('.tab').forEach(function(b){b.classList.toggle('active',b.dataset.tab===id)});document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('active',p.id==='tab-'+id)});document.querySelectorAll('.menu a.sub').forEach(function(a){a.classList.toggle('current',a.getAttribute('href')==='/settings#'+id)});if(location.hash!=='#'+id)history.replaceState(null,'','#'+id);}
-addEventListener('hashchange',function(){showTab((location.hash||'#profiles').slice(1))});
-document.querySelectorAll('.tab').forEach(function(b){b.addEventListener('click',function(){showTab(b.dataset.tab)})});
-wireIntegrationDetails();
-showTab((location.hash||'#profiles').slice(1));
-async function postSettings(d){await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(d).toString()});}
-function hydroAge(sec){sec=Math.max(0,sec||0);if(sec<60)return sec+'s';const m=Math.floor(sec/60),h=Math.floor(m/60);return h>0?h+'h '+(m%60)+'m':m+'m'}
-function renderHydro(s){
- const h=s.hydrometer||{},list=document.getElementById('hydroList'),st=document.getElementById('hydroStatusSettings');
- const devices=s.hydrometerDevices||[];
- const scanType=(h.scanType||'UNKNOWN').toUpperCase();
- const tiltBtn=document.getElementById('hydroTiltBtn'),raptBtn=document.getElementById('hydroRaptBtn'),scanHint=document.getElementById('hydroScanHint');
- if(tiltBtn)tiltBtn.classList.toggle('active',scanType==='TILT');
- if(raptBtn)raptBtn.classList.toggle('active',scanType==='RAPT');
- if(scanHint){
-  if(scanType==='TILT'){scanHint.textContent='Scanning for Tilt devices only.';}
-  else if(scanType==='RAPT'){scanHint.textContent='Scanning for RAPT devices only.';}
-  else{scanHint.textContent='Choose Tilt or RAPT to start scanning. Only that type will be listed here.';}
- }
- if(st)st.textContent=h.selected?(h.valid?(h.stale?'Selected device is stale':'Selected device is active'):'Selected device waiting for a reading'):'No hydrometer selected';
- if(!list)return;
- list.innerHTML='';
- if(!devices.length){const d=document.createElement('div');d.className='hint';d.textContent=scanType==='UNKNOWN'?'Choose a device type above to begin scanning.':('No '+scanType+' devices have been decoded yet.');list.appendChild(d);return;}
- devices.forEach(function(dev){
-  const b=document.createElement('button');b.type='button';
-  const left=document.createElement('span');
-  left.textContent=(dev.label||dev.key||'Device')+(dev.selected?' (Selected)':'');
-  const right=document.createElement('span');right.className='networkMeta';
-  const parts=[];
-  if(dev.gravity!=null)parts.push('SG '+Number(dev.gravity).toFixed(3));
-  if(dev.temperature!=null)parts.push(Number(dev.temperature).toFixed(1)+deg+(s.unit||''));
-  parts.push((dev.rssi||0)+' dBm');
-  parts.push(dev.lastSeenSeconds==null?'unknown':hydroAge(dev.lastSeenSeconds));
-  right.textContent=parts.join(' · ');
-  b.appendChild(left);b.appendChild(right);
-  b.onclick=function(){selectHydrometer(dev.key);};
-  list.appendChild(b);
- });
-}
-async function setHydrometerScanType(type){await postSettings({hydrometerScanType:type});await refresh();}
-async function saveHydroSettings(){const f=document.getElementById('hydroForm');if(!f)return;await postSettings({hydrometerBleEnabled:f.querySelector('input[name=hydrometerBleEnabled]').checked?1:0});await refresh();}
-async function selectHydrometer(key){await postSettings({hydrometerSelectKey:key});await refresh();}
-async function clearHydrometer(){await postSettings({hydrometerClearSelection:1});await refresh();}
-async function resetHydrometerOg(){await postSettings({hydrometerResetOg:1});await refresh();}
-async function refresh(){try{const s=await(await fetch('/api/status')).json();(s.profiles||[]).forEach(function(p){const n=document.getElementById('pName'+p.index),t=document.getElementById('pTarget'+p.index),rb=document.querySelector('.reset[data-i="'+p.index+'"]');if(n&&document.activeElement!==n)n.value=p.name;if(t&&document.activeElement!==t)t.value=p.target.toFixed(1);if(rb)rb.dataset.default=p.default.toFixed(1);});const ge=document.getElementById('gradualCrashEnabled');if(ge&&document.activeElement!==ge)ge.checked=!!s.gradualCrashEnabled;const gs=document.getElementById('gradualCrashStep');if(gs&&document.activeElement!==gs)gs.value=(s.gradualCrashStep||0).toFixed(1);const gh=document.getElementById('gradualCrashStepHours');if(gh&&document.activeElement!==gh)gh.value=String(s.gradualCrashStepHours||12);const m={coolOnInput:'coolOn',heatOnInput:'heatOn',holdInput:'hold',offsetInput:'tempOffset'};for(const id in m){const el=document.getElementById(id);if(el&&document.activeElement!==el)el.value=s[m[id]].toFixed(1);}const r=s.diacetylRest||{};if(dRestTargetSettings&&document.activeElement!==dRestTargetSettings)dRestTargetSettings.value=(r.target||70).toFixed(1);if(dRestHoursSettings&&document.activeElement!==dRestHoursSettings)dRestHoursSettings.value=String(Math.round(r.durationHours||48));if(dRestReturnSettings&&document.activeElement!==dRestReturnSettings)dRestReturnSettings.value=r.returnProfile||0;const hf=document.querySelector('#hydroForm input[name=hydrometerBleEnabled]');if(hf&&document.activeElement!==hf)hf.checked=!!(s.hydrometer&&s.hydrometer.enabled);renderHydro(s);}catch(e){}}
-function resetProfile(btn){const t=document.getElementById('pTarget'+btn.dataset.i);if(t)t.value=btn.dataset.default;}
-async function saveProfiles(){const d={};for(let i=0;i<)HTML";
-  html += String(PROFILE_COUNT);
-  html += R"HTML(;i++){const n=document.getElementById('pName'+i),t=document.getElementById('pTarget'+i);if(!n||!t)continue;d['profile'+i+'Name']=n.value;d['profile'+i+'Target']=t.value;}const st=document.getElementById('profilesStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
-async function saveCrashGradual(){const ge=document.getElementById('gradualCrashEnabled'),gs=document.getElementById('gradualCrashStep'),gh=document.getElementById('gradualCrashStepHours');const d={gradualCrashEnabled:ge&&ge.checked?1:0,gradualCrashStep:gs?gs.value:5,gradualCrashStepHours:gh?gh.value:12};const st=document.getElementById('crashGradualStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
-async function saveControl(){const d={coolOn:coolOnInput.value,heatOn:heatOnInput.value,hold:holdInput.value,tempOffset:offsetInput.value};const st=document.getElementById('controllerStatus');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
-async function saveDrestDefaults(){const d={dRestTarget:dRestTargetSettings.value,dRestHours:dRestHoursSettings.value,dRestReturnProfile:dRestReturnSettings.value};const st=document.getElementById('dRestStatusSettings');st.textContent='Saving...';await postSettings(d);await refresh();st.textContent='Saved.';}
-refresh();
-</script>
-</main></body></html>)HTML";
-  return html;
+</head>
+<body data-page="settings"><div id="app"></div>
+<script src="/app.js"></script>
+</body></html>)HTML";
 }
 
 String NetworkManager::setupHtml() const {

@@ -1,0 +1,17 @@
+{
+  "name": "fermentdial-webui",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node tools/build-header.mjs"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "svelte": "^5.0.0"
+  }
+}

@@ -120,6 +120,37 @@ The project uses:
 
 The PlatformIO board is set to `m5stack-stamps3`, matching the StampS3 inside the M5Stack Dial.
 
+## Web UI Development
+
+The dashboard and settings pages are a Svelte app in `webui/`, built with Vite
+and compiled into the firmware binary (no LittleFS, no second OTA step). The
+firmware serves the built bundle from `/app.js` and `/app.css`; `src/web_assets.h`
+is the generated, committed C++ header that embeds it.
+
+If you change anything under `webui/src/`, rebuild and regenerate that header
+before building firmware:
+
+```sh
+cd webui
+npm install
+npm run build
+```
+
+This runs `vite build` and then `webui/tools/build-header.mjs`, which gzips
+`webui/dist/app.js`/`app.css` and writes `src/web_assets.h`. Commit the
+regenerated header along with your `webui/` changes — PlatformIO itself never
+invokes Node, so `uv run platformio run` works without `webui/` being built.
+
+For local iteration with hot reload against a live device, run:
+
+```sh
+DEVICE_HOST=192.168.x.x npm run dev
+```
+
+from `webui/`. This proxies `/api`, `/settings`, `/wifi`, `/login`, `/logout`,
+and `/metrics` requests to that device so the dev server's `fetch` calls reach
+real firmware data.
+
 ## First Flash
 
 1. Wire the DS18B20 to GPIO13, 3.3V, and GND.
