@@ -1879,12 +1879,18 @@ void NetworkManager::handleSettingsPost() {
     scanTypeArg.trim();
     scanTypeArg.toUpperCase();
     HydrometerScanType scanType = HydrometerScanType::Unknown;
-    if (scanTypeArg == "TILT") {
+    bool scanTypeValid = true;
+    if (scanTypeArg == "OFF" || scanTypeArg == "UNKNOWN" ||
+        scanTypeArg.length() == 0) {
+      scanType = HydrometerScanType::Unknown;
+    } else if (scanTypeArg == "TILT") {
       scanType = HydrometerScanType::Tilt;
     } else if (scanTypeArg == "RAPT") {
       scanType = HydrometerScanType::Rapt;
+    } else {
+      scanTypeValid = false;
     }
-    if (scanType != HydrometerScanType::Unknown) {
+    if (scanTypeValid) {
       _settings->hydrometerScanType = scanType;
       clearHydrometerSelection(*_settings);
       changed = true;

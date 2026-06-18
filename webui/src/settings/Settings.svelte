@@ -43,6 +43,8 @@
   $effect(() => {
     refresh();
     loadConfig();
+    const id = setInterval(refresh, 3000);
+    return () => clearInterval(id);
   });
 </script>
 
