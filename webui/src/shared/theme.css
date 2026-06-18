@@ -132,6 +132,7 @@ body[data-page="settings"] .panel { padding: 14px; }
 .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
 .targetCtl { display: grid; grid-template-columns: 50px 1fr 50px; gap: 8px; align-items: center; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.scanModes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 
 input, button, select { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 input, select { width: 100%; background: #102126; color: var(--text); }
@@ -170,7 +171,11 @@ input[type="checkbox"] { width: auto; margin-right: 7px; }
 .scanStatus { min-height: 18px; }
 .networkList { display: grid; gap: 6px; margin-top: 6px; }
 .networkList button { display: flex; justify-content: space-between; gap: 10px; background: #102126; color: var(--text); font-weight: 700; text-align: left; }
+.networkList button.selected { background: #1f4150; border-color: var(--accent); color: #fff; box-shadow: inset 0 0 0 1px rgba(176, 216, 248, 0.25); }
 .networkMeta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.selectedDevice { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #102126; }
+.selectedDeviceTitle { font-size: 13px; font-weight: 900; color: var(--accent); }
+.selectedDeviceDetails { margin-top: 4px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; word-break: break-word; }
 .tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; margin-bottom: 14px; }
 .tab { width: auto; margin: 0; background: #102126; color: var(--muted); border: 1px solid var(--line); font-weight: 900; padding: 10px 12px; }
 .tab.active { background: var(--blue); color: #fff; border-color: #3f819d; }
@@ -189,7 +194,7 @@ input[type="checkbox"] { width: auto; margin-right: 7px; }
 
 @media (max-width: 640px) {
   body[data-page="settings"] main { padding: 12px; }
-  .row, .thresholds { grid-template-columns: 1fr; }
+  .row, .scanModes, .thresholds { grid-template-columns: 1fr; }
   .profileHeader { display: none; }
   .nav a { margin-left: 0; margin-right: 10px; }
 }

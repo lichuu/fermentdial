@@ -86,7 +86,7 @@ void HydrometerManager::begin() {
   NimBLEDevice::init("");
   NimBLEScan *scan = NimBLEDevice::getScan();
   if (scan != nullptr) {
-    scan->setActiveScan(false);
+    scan->setActiveScan(true);
     scan->setInterval(1000);
     scan->setWindow(1000);
     scan->setMaxResults(0);
@@ -129,6 +129,9 @@ HydrometerReading HydrometerManager::selectedReading(const Settings &settings,
 
   const HydrometerReading *selected = findByKey(settings.hydrometerSelectionKey);
   if (selected == nullptr) {
+    if (reading.selected) {
+      reading.stale = true;
+    }
     return reading;
   }
 
@@ -371,22 +374,16 @@ bool HydrometerManager::decodeRapt(const NimBLEAdvertisedDevice &device,
                                    const std::string &manufacturerData,
                                    HydrometerReading &reading) const {
   const size_t len = manufacturerData.size();
-  if (len != 23) {
-    return false;
-  }
   const uint8_t *data =
       reinterpret_cast<const uint8_t *>(manufacturerData.data());
-  if (readU16LE(data) != RAPT_MANUFACTURER_ID) {
+  // The RAPT Pill abuses the manufacturer-data field: the 0x4152 company id
+  // reads as ASCII "RA", followed by "PT" and the metrics payload, so the
+  // manufacturer data begins with the string "RAPT".
+  if (len < 24 || data[0] != 'R' || data[1] != 'A' || data[2] != 'P' ||
+      data[3] != 'T') {
     return false;
   }
 
-  const bool hasPT = data[2] == 'P' && data[3] == 'T';
-  const uint8_t version = hasPT ? data[4] : data[2];
-  if (version != 1 && version != 2) {
-    return false;
-  }
-
-  const uint8_t *payload = hasPT ? data + 4 : data + 2;
   reading = HydrometerReading{};
   reading.valid = true;
   reading.type = HydrometerType::Rapt;
@@ -395,36 +392,16 @@ bool HydrometerManager::decodeRapt(const NimBLEAdvertisedDevice &device,
   reading.name = String(device.getName().c_str());
   reading.address = normalizeAddress(device.getAddress());
   reading.rssi = device.getRSSI();
-  reading.rawVersion = version;
 
-  if (version == 1) {
-    if (hasPT) {
-      return false;
-    }
-    if (len < 23) {
-      return false;
-    }
-    const uint8_t *p = payload;
-    const uint16_t tempRaw = readU16BE(p + 7);
-    const float gravity = readF32BE(p + 9);
-    const int16_t batteryRaw = readS16BE(p + 19);
-    reading.temperatureC = static_cast<float>(tempRaw) / 128.0f - 273.15f;
-    reading.gravity = gravity;
-    reading.batteryV = static_cast<float>(batteryRaw) / 256.0f;
-    reading.gravityVelocityValid = false;
-    reading.gravityVelocity = NAN;
-  } else {
-    if (!hasPT) {
-      return false;
-    }
-    const uint8_t *p = payload;
-    reading.gravityVelocityValid = true;
-    reading.gravityVelocity = readF32BE(p + 1);
-    const uint16_t tempRaw = readU16BE(p + 5);
-    reading.temperatureC = static_cast<float>(tempRaw) / 128.0f - 273.15f;
-    reading.gravity = readF32BE(p + 7);
-    reading.batteryV = static_cast<float>(readU16BE(p + 17)) / 256.0f;
-  }
+  const uint8_t cc = data[6];
+  reading.gravityVelocityValid = cc == 0x01;
+  reading.gravityVelocity =
+      reading.gravityVelocityValid ? readF32BE(data + 7) : NAN;
+  const uint16_t tempRaw = readU16BE(data + 11);
+  reading.temperatureC = static_cast<float>(tempRaw) / 128.0f - 273.15f;
+  reading.gravity = readF32BE(data + 13) / 1000.0f;
+  reading.batteryV = static_cast<float>(readU16LE(data + 22)) / 256.0f;
+  reading.rawVersion = cc;
 
   if (!gravityIsValid(reading.gravity) ||
       reading.temperatureC < MIN_VALID_TEMP_C ||

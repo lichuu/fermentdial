@@ -29,7 +29,21 @@
       ? 'Scanning for Tilt devices only.'
       : scanType === 'RAPT'
         ? 'Scanning for RAPT devices only.'
-        : 'Choose Tilt or RAPT to start scanning. Only that type will be listed here.'
+        : 'Scanning is off.'
+  );
+
+  const selectionSummary = $derived(
+    hydro.selected
+      ? hydro.label || hydro.name || hydro.key || 'Selected device'
+      : 'No hydrometer selected'
+  );
+
+  const selectionDetails = $derived(
+    hydro.selected
+      ? hydro.valid
+        ? deviceMeta(hydro)
+        : 'Waiting for a reading' + String.fromCharCode(8230)
+      : ''
   );
 
   function hydroAge(sec) {
@@ -77,14 +91,20 @@
 
 <section class="panel">
   <h2>Hydrometer</h2>
-  <label><input type="checkbox" bind:checked={bleEnabled} />Enable BLE scanning</label>
-  <div class="row" style="margin-top:10px">
-    <button class:active={scanType === 'TILT'} onclick={() => setScanType('TILT')}>Add Tilt</button>
-    <button class:active={scanType === 'RAPT'} onclick={() => setScanType('RAPT')}>Add RAPT</button>
+  <label><input type="checkbox" bind:checked={bleEnabled} onchange={saveHydroSettings} />Enable BLE scanning</label>
+  <div class="scanModes">
+    <button class:active={scanType === 'UNKNOWN'} onclick={() => setScanType('OFF')}>Off</button>
+    <button class:active={scanType === 'TILT'} onclick={() => setScanType('TILT')}>Scan Tilt</button>
+    <button class:active={scanType === 'RAPT'} onclick={() => setScanType('RAPT')}>Scan RAPT</button>
   </div>
   <div class="hint">{scanHint}</div>
   <div class="hint">The selected hydrometer is used for display and fermentation metrics only.</div>
-  <button onclick={saveHydroSettings}>Save hydrometer settings</button>
+  {#if hydro.selected}
+    <div class="selectedDevice">
+      <div class="selectedDeviceTitle">{selectionSummary}</div>
+      <div class="selectedDeviceDetails">{selectionDetails}</div>
+    </div>
+  {/if}
   <div class="row" style="margin-top:10px">
     <button type="button" onclick={resetHydrometerOg}>Reset OG</button>
     <button type="button" onclick={clearHydrometer}>Clear selection</button>
@@ -94,12 +114,12 @@
     {#if !devices.length}
       <div class="hint">
         {scanType === 'UNKNOWN'
-          ? 'Choose a device type above to begin scanning.'
+          ? 'Scanning is off.'
           : 'No ' + scanType + ' devices have been decoded yet.'}
       </div>
     {:else}
       {#each devices as dev}
-        <button type="button" onclick={() => selectHydrometer(dev.key)}>
+        <button type="button" class:selected={dev.selected} onclick={() => selectHydrometer(dev.key)}>
           <span>{(dev.label || dev.key || 'Device') + (dev.selected ? ' (Selected)' : '')}</span>
           <span class="networkMeta">{deviceMeta(dev)}</span>
         </button>
