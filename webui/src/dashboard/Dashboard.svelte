@@ -1,6 +1,7 @@
 <script>
   import Menu from '../shared/Menu.svelte';
   import Sparkline from './Sparkline.svelte';
+  import EventLog from './EventLog.svelte';
   import { getStatus, getHistory, postSettings } from '../api.js';
 
   const deg = String.fromCharCode(176);
@@ -278,6 +279,8 @@
       <div class="card"><div class="label">Temp</div><div class="value">{hydro.valid ? hydro.temperature.toFixed(1) + (unit || '') : '--.-'}</div></div>
       <div class="card"><div class="label">ABV</div><div class="value">{hydro.valid && hydro.abv != null ? hydro.abv.toFixed(1) + '%' : '--.-%'}</div></div>
     </section>
+
+    <EventLog />
 
     <div class="footer">Fault: <span>{s ? s.fault : 'NONE'}</span></div>
   </div>

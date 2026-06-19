@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "control.h"
+#include "events.h"
 #include "hydrometer.h"
 
 #if FERM_ENABLE_NETWORK
@@ -114,6 +115,7 @@ class NetworkManager {
 public:
   void begin(const Settings &settings, const HydrometerManager &hydrometer);
   void setFirmwareUpdateSafetyCallback(FirmwareUpdateSafetyCallback callback);
+  void setEventLog(EventLog *log) { _eventLog = log; }
   void update(uint32_t nowMs, Settings &settings);
   void publishState(uint32_t nowMs, const Settings &settings,
                     const TemperatureSensor &sensor,
@@ -168,6 +170,7 @@ private:
   String _sessionToken;
   Settings *_settings = nullptr;
   const HydrometerManager *_hydrometer = nullptr;
+  EventLog *_eventLog = nullptr;
 
 #if FERM_ENABLE_NETWORK
   Preferences _prefs;

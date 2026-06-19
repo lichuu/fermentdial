@@ -861,6 +861,10 @@ void NetworkManager::startWebServer() {
     }
     _server.send(200, "application/json", programJson());
   });
+  _server.on("/api/events", HTTP_GET, [this]() {
+    _server.send(200, "application/json",
+                 _eventLog != nullptr ? _eventLog->toJson() : String("[]"));
+  });
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
     _server.send(302, "text/plain", "");

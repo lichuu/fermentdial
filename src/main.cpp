@@ -1,13 +1,22 @@
 #include <Arduino.h>
+#include <LittleFS.h>
 
 #include "config.h"
 #include "control.h"
+#include "events.h"
 #include "hydrometer.h"
 #include "network.h"
 #include "storage.h"
+#include "time_sync.h"
 #include "ui.h"
 
 using namespace ferm;
+
+// Alert thresholds.
+constexpr uint32_t LONG_RUNTIME_MS = 4UL * 60UL * 60UL * 1000UL;  // 4 hours
+constexpr uint32_t NOT_REACHING_MS = 30UL * 60UL * 1000UL;        // 30 minutes
+constexpr float NOT_REACHING_DELTA_C = deltaFToC(5.0f);           // 5 F off target
+constexpr uint32_t EVENT_FLUSH_INTERVAL_MS = 15000;
 
 Settings settings;
 SettingsStorage storage;
@@ -28,6 +37,20 @@ bool previousDiacetylRestActive = false;
 bool previousGradualCrashActive = false;
 bool previousProgramActive = false;
 
+EventLog eventLog;
+// Alert edge-detection state.
+FaultCode prevFaultCode = FaultCode::None;
+bool prevHydroStale = false;
+bool prevProgramActiveAlert = false;
+uint8_t prevProgramStepIndexAlert = 0;
+uint32_t heaterOnSinceMs = 0;  // 0 when off
+uint32_t pumpOnSinceMs = 0;
+bool heaterLongAlerted = false;
+bool pumpLongAlerted = false;
+uint32_t deviationSinceMs = 0;  // 0 when within band
+bool notReachingAlerted = false;
+uint32_t lastEventFlushMs = 0;
+
 void prepareForFirmwareUpdate() {
   // Force the relays off for the flash itself, but keep the saved mode/profile
   // so the controller resumes what was running once it reboots (resilient to
@@ -35,6 +58,7 @@ void prepareForFirmwareUpdate() {
   Serial.println(F("Firmware update requested; forcing outputs OFF"));
   controller.forceOutputsOff(millis());
   storage.saveNow(settings);
+  eventLog.flush();
 }
 
 void logStatus(uint32_t nowMs) {
@@ -250,6 +274,93 @@ bool updateProgramRunner(uint32_t nowMs, const HydrometerReading &hydro) {
   return changed;
 }
 
+// Detects notable state transitions and appends them to the event log. Edge- and
+// latch-based so each condition logs once per occurrence, not every loop.
+void evaluateAlerts(uint32_t nowMs, const HydrometerReading &hydro) {
+  const Timestamp ts = nowEpochOrUptime(nowMs);
+
+  const FaultCode fault = controller.faultCode();
+  if (fault != prevFaultCode) {
+    if (fault == FaultCode::Sensor) {
+      eventLog.add(EventType::SensorFault,
+                   F("Sensor fault - outputs forced OFF"), ts);
+    } else if (fault == FaultCode::Interlock) {
+      eventLog.add(EventType::InterlockFault,
+                   F("Output interlock fault - outputs forced OFF"), ts);
+    }
+    prevFaultCode = fault;
+  }
+
+  const bool stale = hydro.selected && hydro.stale;
+  if (stale && !prevHydroStale) {
+    const String label = hydro.label.length() ? hydro.label : String("Hydrometer");
+    eventLog.add(EventType::HydrometerStale, label + F(" stopped reporting"), ts);
+  }
+  prevHydroStale = stale;
+
+  if (settings.programActive) {
+    if (!prevProgramActiveAlert ||
+        settings.programStepIndex != prevProgramStepIndexAlert) {
+      const uint8_t idx = settings.programRunIndex < PROGRAM_SLOT_COUNT
+                              ? settings.programRunIndex
+                              : 0;
+      const String msg = String(F("Program step ")) +
+                         String(settings.programStepIndex + 1) + "/" +
+                         String(settings.programs[idx].stepCount);
+      eventLog.add(EventType::ProgramStep, msg, ts);
+    }
+  } else if (prevProgramActiveAlert) {
+    eventLog.add(EventType::ProgramDone, F("Program finished"), ts);
+  }
+  prevProgramActiveAlert = settings.programActive;
+  prevProgramStepIndexAlert = settings.programStepIndex;
+
+  if (controller.heaterOn()) {
+    if (heaterOnSinceMs == 0) {
+      heaterOnSinceMs = nowMs;
+    }
+    if (!heaterLongAlerted && nowMs - heaterOnSinceMs >= LONG_RUNTIME_MS) {
+      eventLog.add(EventType::LongRuntime,
+                   F("Heater on over 4h continuously"), ts);
+      heaterLongAlerted = true;
+    }
+  } else {
+    heaterOnSinceMs = 0;
+    heaterLongAlerted = false;
+  }
+  if (controller.pumpOn()) {
+    if (pumpOnSinceMs == 0) {
+      pumpOnSinceMs = nowMs;
+    }
+    if (!pumpLongAlerted && nowMs - pumpOnSinceMs >= LONG_RUNTIME_MS) {
+      eventLog.add(EventType::LongRuntime,
+                   F("Cooling pump on over 4h continuously"), ts);
+      pumpLongAlerted = true;
+    }
+  } else {
+    pumpOnSinceMs = 0;
+    pumpLongAlerted = false;
+  }
+
+  const bool regulating =
+      settings.mode != UserMode::Off && temperatureSensor.isValid();
+  if (regulating &&
+      fabsf(temperatureSensor.temperatureC() - currentTargetC(settings)) >
+          NOT_REACHING_DELTA_C) {
+    if (deviationSinceMs == 0) {
+      deviationSinceMs = nowMs;
+    }
+    if (!notReachingAlerted && nowMs - deviationSinceMs >= NOT_REACHING_MS) {
+      eventLog.add(EventType::NotReachingTarget,
+                   F("Temperature off target >5F for 30 min"), ts);
+      notReachingAlerted = true;
+    }
+  } else {
+    deviationSinceMs = 0;
+    notReachingAlerted = false;
+  }
+}
+
 void setup() {
   const uint32_t nowMs = millis();
 
@@ -275,10 +386,18 @@ void setup() {
   Serial.println(loaded ? F("Loaded saved settings")
                         : F("Using safe defaults"));
 
+  if (!LittleFS.begin(true)) {
+    Serial.println(F("LittleFS mount failed; event log not persisted"));
+  }
+  eventLog.begin();
+
   temperatureSensor.begin(millis());
   hydrometer.begin();
   network.setFirmwareUpdateSafetyCallback(prepareForFirmwareUpdate);
   network.begin(settings, hydrometer);
+  network.setEventLog(&eventLog);
+  eventLog.add(EventType::Info, String(F("Booted ")) + FIRMWARE_VERSION,
+               nowEpochOrUptime(millis()));
 }
 
 void loop() {
@@ -295,6 +414,12 @@ void loop() {
 
   controller.update(nowMs, settings, temperatureSensor.isValid(),
                     temperatureSensor.temperatureC());
+
+  evaluateAlerts(nowMs, selectedHydrometer);
+  if (eventLog.dirty() && nowMs - lastEventFlushMs >= EVENT_FLUSH_INTERVAL_MS) {
+    lastEventFlushMs = nowMs;
+    eventLog.flush();
+  }
 
   UiModel model;
   model.tempValid = temperatureSensor.isValid();
