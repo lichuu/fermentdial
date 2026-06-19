@@ -12,6 +12,10 @@ String profileTargetKey(uint8_t index) {
   return String("profTgt") + String(index);
 }
 
+String programKey(uint8_t index) {
+  return String("prog") + String(index);
+}
+
 } // namespace
 
 void SettingsStorage::begin() { _prefs.begin("fermctl", false); }
@@ -83,6 +87,19 @@ bool SettingsStorage::load(Settings &settings) {
       _prefs.getFloat("gradStepC", DEFAULT_GRADUAL_CRASH_STEP_C);
   settings.gradualCrashStepIntervalHours = _prefs.getUInt(
       "gradStepHrs", DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS);
+  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
+    const String key = programKey(i);
+    if (_prefs.getBytesLength(key.c_str()) == sizeof(ProgramSettings)) {
+      _prefs.getBytes(key.c_str(), &settings.programs[i],
+                      sizeof(ProgramSettings));
+    }
+  }
+  settings.programActive = _prefs.getBool("progAct", false);
+  settings.programRunIndex = _prefs.getUChar("progRun", 0);
+  settings.programStepIndex = _prefs.getUChar("progStep", 0);
+  settings.programStepElapsedSeconds = _prefs.getUInt("progElap", 0);
+  settings.programStepStartTargetC =
+      _prefs.getFloat("progStart", DEFAULT_TARGET_C);
   if (settings.diacetylRestActive &&
       settings.diacetylRestRemainingSeconds == 0) {
     settings.diacetylRestRemainingSeconds =
@@ -143,6 +160,15 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putBool("gradCrash", copy.gradualCrashEnabled);
   _prefs.putFloat("gradStepC", copy.gradualCrashStepC);
   _prefs.putUInt("gradStepHrs", copy.gradualCrashStepIntervalHours);
+  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
+    _prefs.putBytes(programKey(i).c_str(), &copy.programs[i],
+                    sizeof(ProgramSettings));
+  }
+  _prefs.putBool("progAct", copy.programActive);
+  _prefs.putUChar("progRun", copy.programRunIndex);
+  _prefs.putUChar("progStep", copy.programStepIndex);
+  _prefs.putUInt("progElap", copy.programStepElapsedSeconds);
+  _prefs.putFloat("progStart", copy.programStepStartTargetC);
   _pending = false;
 }
 

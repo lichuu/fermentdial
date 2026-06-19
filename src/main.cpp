@@ -22,8 +22,11 @@ uint32_t lastDiacetylRestTickMs = 0;
 uint32_t lastDiacetylRestSaveMs = 0;
 uint32_t lastHydrometerSaveMs = 0;
 uint32_t lastGradualCrashStepMs = 0;
+uint32_t lastProgramTickMs = 0;
+uint32_t lastProgramSaveMs = 0;
 bool previousDiacetylRestActive = false;
 bool previousGradualCrashActive = false;
+bool previousProgramActive = false;
 
 void prepareForFirmwareUpdate() {
   // Force the relays off for the flash itself, but keep the saved mode/profile
@@ -144,6 +147,91 @@ bool updateGradualCrash(uint32_t nowMs) {
   return true;
 }
 
+// Walks the active program: drives the live setpoint for the current step and
+// advances when the step's exit condition is met. Returns true when something
+// changed that warrants a settings checkpoint. Mirrors updateDiacetylRest's
+// millis-based tick so elapsed time survives reboot (outage time is not added).
+bool updateProgramRunner(uint32_t nowMs) {
+  if (!settings.programActive) {
+    previousProgramActive = false;
+    lastProgramTickMs = nowMs;
+    return false;
+  }
+
+  // Guard against a corrupt run index or an empty/exhausted program.
+  if (settings.programRunIndex >= PROGRAM_SLOT_COUNT) {
+    stopProgram(settings);
+    previousProgramActive = false;
+    return true;
+  }
+  ProgramSettings &program = settings.programs[settings.programRunIndex];
+  if (program.stepCount == 0 ||
+      settings.programStepIndex >= program.stepCount) {
+    stopProgram(settings);
+    previousProgramActive = false;
+    return true;
+  }
+
+  if (!previousProgramActive) {
+    previousProgramActive = true;
+    lastProgramTickMs = nowMs;
+    lastProgramSaveMs = nowMs;
+  }
+
+  const uint32_t elapsedSeconds = (nowMs - lastProgramTickMs) / 1000UL;
+  if (elapsedSeconds > 0) {
+    lastProgramTickMs += elapsedSeconds * 1000UL;
+    settings.programStepElapsedSeconds += elapsedSeconds;
+  }
+
+  const ProfileStep &step = program.steps[settings.programStepIndex];
+
+  // Drive the live setpoint to this step's effective target.
+  const float stepTargetC = snapTempC(
+      clampFloat(computeStepTargetC(step, settings.programStepElapsedSeconds,
+                                    settings.programStepStartTargetC),
+                 MIN_TARGET_C, MAX_TARGET_C),
+      settings.unitsFahrenheit);
+  bool changed = false;
+  if (fabsf(stepTargetC - settings.liveTargetC) > 0.01f) {
+    settings.liveTargetC = stepTargetC;
+    changed = true;
+  }
+
+  // Evaluate the step's exit condition.
+  bool advance = false;
+  switch (effectiveStepExit(step)) {
+  case StepExit::Time:
+    advance = settings.programStepElapsedSeconds >= step.durationSeconds;
+    break;
+  case StepExit::Manual:
+    advance = settings.programManualAdvance;
+    break;
+  default:
+    // Gravity-based exits are wired up in the gravity-trigger phase; until then
+    // they advance only on an explicit manual request so a program never stalls
+    // with no way forward.
+    advance = settings.programManualAdvance;
+    break;
+  }
+  settings.programManualAdvance = false;
+
+  if (advance) {
+    settings.programStepIndex++;
+    settings.programStepElapsedSeconds = 0;
+    if (settings.programStepIndex >= program.stepCount) {
+      stopProgram(settings);
+      previousProgramActive = false;
+    } else {
+      // Next ramp starts from wherever the setpoint is now.
+      settings.programStepStartTargetC = settings.liveTargetC;
+    }
+    return true;
+  }
+
+  return changed;
+}
+
 void setup() {
   const uint32_t nowMs = millis();
 
@@ -185,6 +273,7 @@ void loop() {
   network.update(nowMs, settings);
   const bool diacetylRestChanged = updateDiacetylRest(nowMs);
   const bool gradualCrashChanged = updateGradualCrash(nowMs);
+  const bool programChanged = updateProgramRunner(nowMs);
 
   controller.update(nowMs, settings, temperatureSensor.isValid(),
                     temperatureSensor.temperatureC());
@@ -215,6 +304,13 @@ void loop() {
     checkpointDiacetylRest = true;
   }
 
+  bool checkpointProgram = false;
+  if (settings.programActive &&
+      nowMs - lastProgramSaveMs >= PROGRAM_SAVE_INTERVAL_MS) {
+    lastProgramSaveMs = nowMs;
+    checkpointProgram = true;
+  }
+
   bool checkpointHydrometer = false;
   if (selectedHydrometer.valid && !selectedHydrometer.stale &&
       nowMs - lastHydrometerSaveMs >= HYDROMETER_SAVE_INTERVAL_MS) {
@@ -230,7 +326,8 @@ void loop() {
 
   if (ui.consumeSaveRequested() || network.consumeSettingsChanged() ||
       diacetylRestChanged || checkpointDiacetylRest || hydrometerChanged ||
-      checkpointHydrometer || gradualCrashChanged) {
+      checkpointHydrometer || gradualCrashChanged || programChanged ||
+      checkpointProgram) {
     sanitizeSettings(settings);
     storage.scheduleSave(nowMs);
     controller.update(nowMs, settings, temperatureSensor.isValid(),
