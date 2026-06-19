@@ -14,6 +14,10 @@ export function getSettingsConfig() {
   return fetch('/api/settings').then((r) => r.json());
 }
 
+export function getProgram() {
+  return fetch('/api/program').then((r) => r.json());
+}
+
 export function postSettings(fields) {
   return fetch('/api/settings', {
     method: 'POST',
