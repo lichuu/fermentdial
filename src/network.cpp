@@ -163,6 +163,67 @@ String jsonString(const String &value) {
   return escaped;
 }
 
+// Parse one encoded step: "type,exit,targetDisplay,durationSeconds,gravity,
+// stableHours". Missing fields default to 0; out-of-range enums are clamped.
+ProfileStep parseProgramStep(const String &stepStr, bool fahrenheit) {
+  ProfileStep step;
+  String parts[6];
+  uint8_t count = 0;
+  int fieldStart = 0;
+  while (count < 6) {
+    int comma = stepStr.indexOf(',', fieldStart);
+    if (comma < 0) {
+      parts[count++] = stepStr.substring(fieldStart);
+      break;
+    }
+    parts[count++] = stepStr.substring(fieldStart, comma);
+    fieldStart = comma + 1;
+  }
+  long typeVal = parts[0].toInt();
+  if (typeVal < 0 || typeVal > static_cast<long>(StepType::ManualWait)) {
+    typeVal = static_cast<long>(StepType::Hold);
+  }
+  step.type = static_cast<StepType>(typeVal);
+  long exitVal = parts[1].toInt();
+  if (exitVal < 0 || exitVal > static_cast<long>(StepExit::Manual)) {
+    exitVal = static_cast<long>(StepExit::Time);
+  }
+  step.exit = static_cast<StepExit>(exitVal);
+  step.targetC = fromDisplayTemp(parts[2].toFloat(), fahrenheit);
+  float dur = parts[3].toFloat();
+  step.durationSeconds = dur > 0 ? static_cast<uint32_t>(dur) : 0;
+  step.gravityThreshold = parts[4].toFloat();
+  long stable = parts[5].toInt();
+  if (stable < 0) {
+    stable = 0;
+  } else if (stable > 65535) {
+    stable = 65535;
+  }
+  step.stableHours = static_cast<uint16_t>(stable);
+  return step;
+}
+
+// Parse a program's steps from "step;step;..." into the program slot.
+void parseProgramSteps(ProgramSettings &program, const String &encoded,
+                       bool fahrenheit) {
+  program.stepCount = 0;
+  const int len = encoded.length();
+  int start = 0;
+  while (start < len && program.stepCount < MAX_PROGRAM_STEPS) {
+    int semi = encoded.indexOf(';', start);
+    String stepStr =
+        (semi < 0) ? encoded.substring(start) : encoded.substring(start, semi);
+    stepStr.trim();
+    if (stepStr.length() > 0) {
+      program.steps[program.stepCount++] = parseProgramStep(stepStr, fahrenheit);
+    }
+    if (semi < 0) {
+      break;
+    }
+    start = semi + 1;
+  }
+}
+
 String htmlEscape(const String &value) {
   String escaped = "";
   escaped.reserve(value.length());
@@ -794,6 +855,12 @@ void NetworkManager::startWebServer() {
     _server.send(200, "application/json", settingsConfigJson());
   });
   _server.on("/api/settings", HTTP_POST, [this]() { handleSettingsPost(); });
+  _server.on("/api/program", HTTP_GET, [this]() {
+    if (!requireAuth()) {
+      return;
+    }
+    _server.send(200, "application/json", programJson());
+  });
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
     _server.send(302, "text/plain", "");
@@ -2012,6 +2079,33 @@ void NetworkManager::handleSettingsPost() {
         static_cast<uint32_t>(max(0.0f, _server.arg("gradualCrashStepHours").toFloat()));
     changed = true;
   }
+  if (_server.hasArg("programSaveSlot") && _server.hasArg("programSteps")) {
+    long slot = _server.arg("programSaveSlot").toInt();
+    if (slot >= 0 && slot < PROGRAM_SLOT_COUNT) {
+      parseProgramSteps(_settings->programs[slot], _server.arg("programSteps"),
+                        _settings->unitsFahrenheit);
+      changed = true;
+    }
+  }
+  if (_server.hasArg("programAction")) {
+    String action = _server.arg("programAction");
+    action.trim();
+    action.toLowerCase();
+    if (action == "start") {
+      long slot = _server.hasArg("programSlot")
+                      ? _server.arg("programSlot").toInt()
+                      : 0;
+      if (slot < 0 || slot >= PROGRAM_SLOT_COUNT) {
+        slot = 0;
+      }
+      startProgram(*_settings, static_cast<uint8_t>(slot));
+    } else if (action == "stop") {
+      stopProgram(*_settings);
+    } else if (action == "skip") {
+      _settings->programManualAdvance = true;
+    }
+    changed = true;
+  }
 
   if (changed) {
     sanitizeSettings(*_settings);
@@ -2317,6 +2411,48 @@ String NetworkManager::historyJson() const {
   return out;
 }
 
+String NetworkManager::programJson() const {
+  String json = "{";
+  json += "\"stepTypeNames\":[\"Hold\",\"Ramp\",\"Crash\",\"DRest\","
+          "\"ManualWait\"],";
+  json += "\"exitTypeNames\":[\"Time\",\"GravityBelow\",\"GravityStable\","
+          "\"VelocityBelow\",\"Manual\"],";
+  const bool f = (_settings != nullptr) ? _settings->unitsFahrenheit
+                                        : _webStatus.unitsFahrenheit;
+  json += "\"unit\":" + jsonString(String(unitLabel(f))) + ",";
+  json += "\"maxSteps\":" + String(MAX_PROGRAM_STEPS) + ",";
+  json += "\"programs\":[";
+  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
+    if (i > 0) {
+      json += ",";
+    }
+    const uint8_t slot = profileSlotForProgramIndex(i);
+    const String name = (_settings != nullptr)
+                            ? _settings->profiles[slot].name
+                            : String(defaultProfileName(slot));
+    json += "{\"index\":" + String(i) + ",\"slot\":" + String(slot) +
+            ",\"name\":" + jsonString(name) + ",\"steps\":[";
+    if (_settings != nullptr) {
+      const ProgramSettings &program = _settings->programs[i];
+      for (uint8_t s = 0; s < program.stepCount; ++s) {
+        if (s > 0) {
+          json += ",";
+        }
+        const ProfileStep &st = program.steps[s];
+        json += "{\"type\":" + String(static_cast<int>(st.type)) +
+                ",\"exit\":" + String(static_cast<int>(st.exit)) +
+                ",\"target\":" + jsonFloat(toDisplayTemp(st.targetC, f)) +
+                ",\"durationSeconds\":" + String(st.durationSeconds) +
+                ",\"gravityThreshold\":" + jsonFloat(st.gravityThreshold, 3) +
+                ",\"stableHours\":" + String(st.stableHours) + "}";
+      }
+    }
+    json += "]}";
+  }
+  json += "]}";
+  return json;
+}
+
 String NetworkManager::statusJson(uint32_t nowMs) const {
   const bool f = _webStatus.unitsFahrenheit;
   const float temperature = toDisplayTemp(_webStatus.tempC, f);
@@ -2380,6 +2516,44 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
             ",\"default\":" + jsonFloat(profileDefault) + "}";
   }
   json += "],";
+  json += "\"program\":{";
+  if (_settings != nullptr) {
+    const Settings &s = *_settings;
+    const uint8_t runIdx =
+        s.programRunIndex < PROGRAM_SLOT_COUNT ? s.programRunIndex : 0;
+    const uint8_t stepCount = s.programs[runIdx].stepCount;
+    json += "\"active\":" + String(s.programActive ? "true" : "false") + ",";
+    json += "\"runIndex\":" + String(runIdx) + ",";
+    json += "\"slot\":" + String(profileSlotForProgramIndex(runIdx)) + ",";
+    json += "\"stepIndex\":" + String(s.programStepIndex) + ",";
+    json += "\"stepCount\":" + String(stepCount) + ",";
+    if (s.programActive && s.programStepIndex < stepCount) {
+      const ProfileStep &st = s.programs[runIdx].steps[s.programStepIndex];
+      const StepExit ex = effectiveStepExit(st);
+      uint32_t remaining = 0;
+      if (ex == StepExit::Time &&
+          st.durationSeconds > s.programStepElapsedSeconds) {
+        remaining = st.durationSeconds - s.programStepElapsedSeconds;
+      }
+      json += "\"stepType\":" + String(static_cast<int>(st.type)) + ",";
+      json += "\"stepExit\":" + String(static_cast<int>(ex)) + ",";
+      json += "\"stepTarget\":" + jsonFloat(toDisplayTemp(st.targetC, f)) + ",";
+      json += "\"stepElapsedSeconds\":" + String(s.programStepElapsedSeconds) +
+              ",";
+      json += "\"stepDurationSeconds\":" + String(st.durationSeconds) + ",";
+      json += "\"stepRemainingSeconds\":" + String(remaining);
+    } else {
+      json += "\"stepType\":0,\"stepExit\":0,\"stepTarget\":null,"
+              "\"stepElapsedSeconds\":0,\"stepDurationSeconds\":0,"
+              "\"stepRemainingSeconds\":0";
+    }
+  } else {
+    json += "\"active\":false,\"runIndex\":0,\"slot\":5,\"stepIndex\":0,"
+            "\"stepCount\":0,\"stepType\":0,\"stepExit\":0,\"stepTarget\":null,"
+            "\"stepElapsedSeconds\":0,\"stepDurationSeconds\":0,"
+            "\"stepRemainingSeconds\":0";
+  }
+  json += "},";
   json += "\"gradualCrashEnabled\":" +
           String(_webStatus.gradualCrashEnabled ? "true" : "false") + ",";
   json += "\"gradualCrashStep\":" +

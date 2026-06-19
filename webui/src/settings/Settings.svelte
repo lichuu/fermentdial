@@ -2,12 +2,13 @@
   import Menu from '../shared/Menu.svelte';
   import { getStatus, getSettingsConfig } from '../api.js';
   import Profiles from './tabs/Profiles.svelte';
+  import Programs from './tabs/Programs.svelte';
   import Hydrometer from './tabs/Hydrometer.svelte';
   import Controller from './tabs/Controller.svelte';
   import System from './tabs/System.svelte';
   import Monitoring from './tabs/Monitoring.svelte';
 
-  const TABS = ['profiles', 'hydrometer', 'controller', 'system', 'monitoring'];
+  const TABS = ['profiles', 'programs', 'hydrometer', 'controller', 'system', 'monitoring'];
 
   let status = $state(null);
   let config = $state(null);
@@ -67,6 +68,11 @@
   <div class="tabpanel" class:tabpanel-shown={activeTab === 'profiles'}>
     {#if status}
       <Profiles {status} {refresh} />
+    {/if}
+  </div>
+  <div class="tabpanel" class:tabpanel-shown={activeTab === 'programs'}>
+    {#if status}
+      <Programs {status} {refresh} />
     {/if}
   </div>
   <div class="tabpanel" class:tabpanel-shown={activeTab === 'hydrometer'}>

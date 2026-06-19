@@ -106,6 +106,22 @@
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
+  const prog = $derived(s?.program || {});
+  const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
+  const PROG_EXIT_TYPES = [
+    'time',
+    'gravity target',
+    'gravity stable',
+    'velocity',
+    'manual',
+  ];
+
+  function progStop() {
+    post({ programAction: 'stop' });
+  }
+  function progSkip() {
+    post({ programAction: 'skip' });
+  }
   const dRestStatusText = $derived.by(() => {
     if (!s) return 'Ready';
     const r = rest;
@@ -229,6 +245,30 @@
           <button disabled={!rest.active} onclick={endDrest}>STOP</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">{dRestStatusText}</p>
+      </div>
+      <div class="panel" hidden={!prog.active}>
+        <h2>Program</h2>
+        <div class="fieldLabel">
+          {s?.profileName} &middot; step {(prog.stepIndex || 0) + 1}/{prog.stepCount || 0}
+        </div>
+        <div class="value" style="margin-top:6px;font-size:18px">
+          {PROG_STEP_TYPES[prog.stepType] || 'Step'}
+          {#if prog.stepTarget != null}&rarr; {prog.stepTarget.toFixed(1)}{unit}{/if}
+        </div>
+        <p class="sub" style="font-size:12px;margin-top:6px">
+          {#if prog.stepExit === 0}
+            {remainingText(prog.stepRemainingSeconds)} left
+          {:else}
+            advances on {PROG_EXIT_TYPES[prog.stepExit] || 'condition'}
+          {/if}
+        </p>
+        <div class="modes" style="margin-top:10px">
+          <button onclick={progSkip}>SKIP</button>
+          <button class="danger" onclick={progStop}>STOP</button>
+        </div>
+        <p class="sub" style="font-size:12px;margin-top:10px">
+          Build programs in <a href="/settings#programs">Settings</a>.
+        </p>
       </div>
     </section>
 

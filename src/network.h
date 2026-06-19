@@ -224,6 +224,7 @@ private:
   String influxLineProtocol(uint32_t nowMs) const;
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson(uint32_t nowMs) const;
+  String programJson() const;
   void recordHistory(uint32_t nowMs, bool valid, float tempC);
   String historyJson() const;
   String settingsConfigJson() const;
