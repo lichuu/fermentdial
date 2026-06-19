@@ -1,0 +1,32 @@
+{
+  "exitTypeNames": [
+    "Time",
+    "GravityBelow",
+    "GravityStable",
+    "VelocityBelow",
+    "Manual"
+  ],
+  "maxSteps": 12,
+  "programs": [
+    {
+      "index": 0,
+      "name": "Custom 1",
+      "slot": 5,
+      "steps": []
+    },
+    {
+      "index": 1,
+      "name": "Custom 2",
+      "slot": 6,
+      "steps": []
+    }
+  ],
+  "stepTypeNames": [
+    "Hold",
+    "Ramp",
+    "Crash",
+    "DRest",
+    "ManualWait"
+  ],
+  "unit": "F"
+}

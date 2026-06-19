@@ -15,6 +15,7 @@ class SettingsStorage {
   void scheduleSave(uint32_t nowMs);
   void loop(uint32_t nowMs, const Settings &settings);
   void saveNow(const Settings &settings);
+  void factoryReset();
 
  private:
   Preferences _prefs;

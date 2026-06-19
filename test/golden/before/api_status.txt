@@ -1,0 +1,148 @@
+{
+  "activeProfile": 0,
+  "brightness": 255,
+  "clock": null,
+  "coolOn": 0.5,
+  "demo": true,
+  "diacetylRest": {
+    "active": false,
+    "durationHours": 48.0,
+    "durationSeconds": 172800,
+    "remainingHours": null,
+    "remainingSeconds": null,
+    "returnProfile": 0,
+    "returnProfileName": "Ale",
+    "target": 70.0
+  },
+  "fault": "NONE",
+  "fermenterName": "Fermenter",
+  "firmwareGitSha": "d4e76d275953",
+  "firmwareVersion": "0.1.0",
+  "gradualCrashEnabled": false,
+  "gradualCrashStep": 5.0,
+  "gradualCrashStepHours": 12,
+  "heatOn": 5.0,
+  "heater": false,
+  "historyLogging": false,
+  "hold": 0.4,
+  "hostname": null,
+  "hydrometer": {
+    "abv": 3.3,
+    "address": "",
+    "batteryV": null,
+    "color": "green",
+    "enabled": false,
+    "gravity": null,
+    "gravityVelocity": null,
+    "gravityVelocityValid": false,
+    "key": "demo:test",
+    "label": "Test Hydrometer",
+    "lastSeenSeconds": null,
+    "name": "Test Hydrometer",
+    "originalGravity": 1.054,
+    "rssi": null,
+    "scanType": "UNKNOWN",
+    "selected": true,
+    "stableSeconds": null,
+    "stale": false,
+    "temperature": null,
+    "type": "TILT",
+    "valid": true
+  },
+  "hydrometerDevices": [
+    {
+      "address": "",
+      "batteryV": null,
+      "color": "green",
+      "gravity": null,
+      "key": "demo:test",
+      "label": "Test Hydrometer",
+      "lastSeenSeconds": null,
+      "name": "Test Hydrometer",
+      "rssi": null,
+      "selected": true,
+      "stale": false,
+      "temperature": null,
+      "type": "TILT",
+      "valid": true
+    }
+  ],
+  "ip": null,
+  "mode": "OFF",
+  "otaEnabled": true,
+  "profileName": "Ale",
+  "profiles": [
+    {
+      "default": 68.0,
+      "editable": false,
+      "index": 0,
+      "name": "Ale",
+      "target": 68.0
+    },
+    {
+      "default": 55.0,
+      "editable": false,
+      "index": 1,
+      "name": "Lager",
+      "target": 55.0
+    },
+    {
+      "default": 90.0,
+      "editable": false,
+      "index": 2,
+      "name": "Kveik",
+      "target": 90.0
+    },
+    {
+      "default": 55.0,
+      "editable": false,
+      "index": 3,
+      "name": "Soft Crash",
+      "target": 55.0
+    },
+    {
+      "default": 37.0,
+      "editable": false,
+      "index": 4,
+      "name": "Crash",
+      "target": 37.0
+    },
+    {
+      "default": 72.0,
+      "editable": true,
+      "index": 5,
+      "name": "Custom 1",
+      "target": 72.0
+    },
+    {
+      "default": 64.0,
+      "editable": true,
+      "index": 6,
+      "name": "Custom 2",
+      "target": 64.0
+    }
+  ],
+  "program": {
+    "active": false,
+    "runIndex": 0,
+    "slot": 5,
+    "stepCount": 0,
+    "stepDurationSeconds": 0,
+    "stepElapsedSeconds": null,
+    "stepExit": 0,
+    "stepIndex": 0,
+    "stepRemainingSeconds": null,
+    "stepTarget": null,
+    "stepType": 0
+  },
+  "pump": false,
+  "state": "OFF",
+  "target": null,
+  "tempOffset": 0.0,
+  "tempValid": true,
+  "temperature": null,
+  "unit": "F",
+  "uptimeSeconds": null,
+  "wifiConnected": null,
+  "wifiStatus": null
+}

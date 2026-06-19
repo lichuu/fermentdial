@@ -63,6 +63,13 @@ void prepareForFirmwareUpdate() {
   eventLog.flush();
 }
 
+void prepareFactoryReset() {
+  controller.forceOutputsOff(millis());
+  storage.factoryReset();
+  eventLog.clear();
+  historyLog.clear();
+}
+
 void logStatus(uint32_t nowMs) {
   if (nowMs - lastSerialLogMs < 2000) {
     return;
@@ -437,6 +444,7 @@ void setup() {
   temperatureSensor.begin(millis());
   hydrometer.begin();
   network.setFirmwareUpdateSafetyCallback(prepareForFirmwareUpdate);
+  network.setFactoryResetCallback(prepareFactoryReset);
   network.setBrightnessPreviewCallback(
       [](uint8_t brightness) { ui.previewBrightness(brightness); });
   network.begin(settings, hydrometer);

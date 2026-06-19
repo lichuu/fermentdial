@@ -23,6 +23,14 @@ void HistoryLog::markSampled(uint32_t nowMs) {
   _sampled = true;
 }
 
+void HistoryLog::clear() {
+  LittleFS.remove(HISTORY_CSV_PATH);
+  LittleFS.remove(HISTORY_CSV_PRIOR_PATH);
+  _size = 0;
+  _sampled = false;
+  _lastSampleMs = 0;
+}
+
 void HistoryLog::append(const String &row) {
   // Rotate when the current file would exceed the cap: drop the old prior file,
   // move current to prior, and start a fresh current file.

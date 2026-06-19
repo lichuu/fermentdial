@@ -126,6 +126,13 @@ void EventLog::upgradeUptimeTimestamps(uint32_t nowMs) {
   }
 }
 
+void EventLog::clear() {
+  _count = 0;
+  _head = 0;
+  _dirty = false;
+  LittleFS.remove(EVENTS_PATH);
+}
+
 void EventLog::flush() {
   if (!_dirty) {
     return;

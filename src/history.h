@@ -20,6 +20,7 @@ class HistoryLog {
   bool due(uint32_t nowMs) const;
   void markSampled(uint32_t nowMs);
   void append(const String &row);  // appends, rotating if the file is full
+  void clear();
 
  private:
   uint32_t _lastSampleMs = 0;

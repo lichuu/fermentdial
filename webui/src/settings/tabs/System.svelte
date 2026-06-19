@@ -17,6 +17,8 @@
   let wifiNetworks = $state([]);
   let firmwareFile = $state(null);
   let firmwareInput = $state(null);
+  let factoryResetConfirm = $state('');
+  let factoryResetStatus = $state('');
   let brightnessAdjusting = $state(false);
   let brightnessTouchedAt = 0;
   let brightnessPreviewTimer = null;
@@ -78,6 +80,25 @@
 
   function onFirmwarePick(ev) {
     firmwareFile = ev.target.files[0] || null;
+  }
+
+  async function factoryReset() {
+    if (factoryResetConfirm !== 'RESET') {
+      factoryResetStatus = 'Type RESET to confirm.';
+      return;
+    }
+    factoryResetStatus = 'Resetting...';
+    try {
+      const r = await postForm('/settings/factory-reset', {
+        confirm: factoryResetConfirm,
+      });
+      factoryResetStatus = r.ok
+        ? 'Reset complete. Reconnect to the setup Wi-Fi to configure the device.'
+        : 'Factory reset failed.';
+    } catch (e) {
+      factoryResetStatus =
+        'Device is rebooting. Join the FermentDial setup network to reconnect.';
+    }
   }
 
   async function scanWifi() {
@@ -204,6 +225,30 @@
       <dt>Setup AP</dt>
       <dd>{config.apSsid}</dd>
     </dl>
+  </article>
+
+  <article class="stackedRow dangerZone">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Factory Reset</h3>
+        <span class="panelBadge panelBadge-warn">Destructive</span>
+      </div>
+    </div>
+    <p class="formHint">
+      Clears controller settings, Wi-Fi credentials, integrations, admin password,
+      event log, and CSV history, then reboots into setup mode. You will need to
+      rejoin the setup access point and configure Wi-Fi again.
+    </p>
+    <form class="panelForm" onsubmit={(e) => { e.preventDefault(); factoryReset(); }}>
+      <label>
+        Type RESET to confirm
+        <input autocomplete="off" placeholder="RESET" bind:value={factoryResetConfirm} />
+      </label>
+      <button type="submit" class="formSubmit danger" disabled={factoryResetConfirm !== 'RESET'}>
+        Factory reset &amp; reboot
+      </button>
+    </form>
+    {#if factoryResetStatus}<p class="formFeedback">{factoryResetStatus}</p>{/if}
   </article>
 
   <article class="stackedRow">

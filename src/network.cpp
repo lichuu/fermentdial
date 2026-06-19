@@ -545,6 +545,10 @@ void NetworkManager::setFirmwareUpdateSafetyCallback(
   _firmwareUpdateSafetyCallback = callback;
 }
 
+void NetworkManager::setFactoryResetCallback(FactoryResetCallback callback) {
+  _factoryResetCallback = callback;
+}
+
 void NetworkManager::setBrightnessPreviewCallback(
     BrightnessPreviewCallback callback) {
   _brightnessPreviewCallback = callback;
@@ -793,6 +797,8 @@ void NetworkManager::startWebServer() {
   });
   _server.on("/settings/security", HTTP_POST,
              [this]() { handleSecurityPost(); });
+  _server.on("/settings/factory-reset", HTTP_POST,
+             [this]() { handleFactoryResetPost(); });
   _server.on("/settings/influx", HTTP_POST, [this]() {
     if (!requireAuth()) {
       return;
@@ -1092,6 +1098,41 @@ void NetworkManager::handleLogout() {
   _server.sendHeader("Set-Cookie", "fdsession=; Path=/; Max-Age=0");
   _server.sendHeader("Location", "/dashboard", true);
   _server.send(302, "text/plain", "");
+#endif
+}
+
+void NetworkManager::handleFactoryResetPost() {
+#if FERM_ENABLE_NETWORK
+  if (!requireAuth()) {
+    return;
+  }
+
+  String confirm = _server.arg("confirm");
+  confirm.trim();
+  confirm.toUpperCase();
+  if (confirm != "RESET") {
+    _server.send(400, "application/json",
+                 "{\"ok\":false,\"error\":\"type RESET to confirm\"}");
+    return;
+  }
+
+  Serial.println(F("Factory reset requested; clearing NVS and rebooting"));
+  if (_factoryResetCallback != nullptr) {
+    _factoryResetCallback();
+  }
+  _sessionToken = "";
+  _prefs.clear();
+
+  _server.send(200, "text/html; charset=utf-8",
+               "<!doctype html><meta name='viewport' "
+               "content='width=device-width,initial-scale=1'>"
+               "<body style='font-family:sans-serif;padding:2rem;"
+               "background:#071015;color:#f8fbff'>"
+               "<h1>Factory reset</h1>"
+               "<p>Settings, Wi-Fi, integrations, and logs were cleared. "
+               "Rebooting to setup mode...</p></body>");
+  delay(500);
+  ESP.restart();
 #endif
 }
 
