@@ -57,7 +57,7 @@ auth_curl() {
 }
 
 normalize_html() {
-  tr -d '\r'
+  tr -d '\r' | sed -E 's/[?&]v=[a-f0-9]+//g'
 }
 
 normalize_program_json() {
@@ -79,6 +79,7 @@ normalize_status_json() {
     | .target = null
     | .ip = null
     | .hostname = null
+    | .firmwareGitSha = null
     | .wifiConnected = null
     | .wifiStatus = null
     | .program.stepElapsedSeconds = null
@@ -92,6 +93,7 @@ normalize_status_json() {
     | .hydrometer.stableSeconds = null
     | .hydrometer.lastSeenSeconds = null
     | .hydrometer.batteryV = null
+    | .hydrometer.abv = null
     | .hydrometerDevices = (
         .hydrometerDevices
         | map(

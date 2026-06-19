@@ -1,0 +1,40 @@
+{
+  "brewfather": {
+    "deviceName": "",
+    "enabled": false,
+    "intervalSeconds": 900,
+    "lastStatus": null,
+    "loggingId": "",
+    "payloadScope": "all",
+    "url": "https://log.brewfather.net/stream"
+  },
+  "firmwareName": "FermentDial",
+  "firmwareVersion": "0.1.0",
+  "influx": {
+    "bucket": "fermentdial",
+    "database": "fermentdial",
+    "enabled": false,
+    "intervalSeconds": 30,
+    "lastStatus": null,
+    "measurement": "fermentdial",
+    "org": "",
+    "retentionPolicy": "",
+    "target": "1",
+    "url": "",
+    "username": ""
+  },
+  "mqtt": {
+    "baseTopic": "fermentdial",
+    "computedBaseTopic": "fermentdial",
+    "discoveryPrefix": "homeassistant",
+    "enabled": false,
+    "haDiscovery": true,
+    "host": "",
+    "intervalSeconds": 30,
+    "lastStatus": null,
+    "payloadScope": "all",
+    "port": 1883,
+    "username": ""
+  },
+  "passwordSet": false
+}
