@@ -138,11 +138,15 @@ private:
   uint32_t _lastInfluxPublishMs = 0;
   uint32_t _lastBrewfatherPublishMs = 0;
   WebStatus _webStatus;
-  // Rolling temperature history for the dashboard sparkline: deci-degrees C,
-  // sampled at a fixed cadence so points are evenly spaced (no timestamps).
+  // Rolling dashboard history, sampled at a fixed cadence so points are evenly
+  // spaced. Temperatures are deci-degrees C; gravity is SG * 10000.
   static constexpr uint8_t HISTORY_LEN = 120;
   static constexpr uint32_t HISTORY_INTERVAL_MS = 30000;
-  int16_t _history[HISTORY_LEN] = {0};
+  int16_t _historyTempC[HISTORY_LEN] = {0};
+  int16_t _historyHydroTempC[HISTORY_LEN] = {0};
+  uint16_t _historyGravity[HISTORY_LEN] = {0};
+  bool _historyHydroTempValid[HISTORY_LEN] = {false};
+  bool _historyGravityValid[HISTORY_LEN] = {false};
   uint8_t _historyCount = 0;
   uint8_t _historyHead = 0;
   uint32_t _lastSampleMs = 0;
@@ -230,7 +234,8 @@ private:
   String programJson() const;
   String selfCheckJson(uint32_t nowMs) const;
   void streamHistoryFile(const char *path);
-  void recordHistory(uint32_t nowMs, bool valid, float tempC);
+  void recordHistory(uint32_t nowMs, bool valid, float tempC,
+                     const HydrometerReading &hydro);
   String historyJson() const;
   String settingsConfigJson() const;
   String metricsText(uint32_t nowMs) const;

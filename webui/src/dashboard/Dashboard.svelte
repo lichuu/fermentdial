@@ -1,13 +1,16 @@
 <script>
   import Menu from '../shared/Menu.svelte';
   import Sparkline from './Sparkline.svelte';
+  import HydrometerChart from './HydrometerChart.svelte';
   import EventLog from './EventLog.svelte';
-  import { getStatus, getHistory, postSettings } from '../api.js';
+  import { getStatus, getHistory, getHistoryCsv, postSettings } from '../api.js';
 
   const deg = String.fromCharCode(176);
 
   let s = $state(null);
   let spark = $state([]);
+  let graphSamples = $state([]);
+  let graphSource = $state('live');
 
   let profileSelectEl;
   let targetInputEl;
@@ -59,6 +62,49 @@
     post({ dRestAction: 'end' });
   }
 
+  function num(value) {
+    const n = parseFloat(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function liveSamples(history) {
+    const temps = history?.tempsC || [];
+    const gravity = history?.gravity || [];
+    const hydroTemps = history?.hydroTempsC || [];
+    const count = Math.max(temps.length, gravity.length, hydroTemps.length);
+    const samples = [];
+    for (let i = 0; i < count; i++) {
+      samples.push({
+        tempC: num(temps[i]),
+        gravity: num(gravity[i]),
+        hydroTempC: num(hydroTemps[i]),
+      });
+    }
+    return samples;
+  }
+
+  function csvSamples(text) {
+    const lines = (text || '').trim().split(/\r?\n/);
+    const samples = [];
+    for (let i = 1; i < lines.length; i++) {
+      const row = lines[i].split(',');
+      if (row.length < 5) continue;
+      const sample = {
+        tempC: num(row[2]),
+        gravity: num(row[4]),
+        hydroTempC: num(row[10]),
+      };
+      if (sample.tempC != null || sample.gravity != null || sample.hydroTempC != null) {
+        samples.push(sample);
+      }
+    }
+    return samples;
+  }
+
+  function hasHydrometerSeries(samples) {
+    return samples.some((p) => p.gravity != null || p.hydroTempC != null);
+  }
+
   async function tick() {
     const next = await getStatus();
     s = next;
@@ -86,8 +132,20 @@
 
   async function loadHistory() {
     try {
-      const j = await getHistory();
-      spark = j.tempsC || [];
+      const live = await getHistory();
+      spark = live.tempsC || [];
+      graphSamples = liveSamples(live);
+      graphSource = 'live';
+
+      try {
+        const persisted = csvSamples(await getHistoryCsv());
+        if (persisted.length >= 2 && hasHydrometerSeries(persisted)) {
+          graphSamples = persisted;
+          graphSource = 'csv';
+        }
+      } catch (e) {
+        // live history remains available
+      }
     } catch (e) {
       // ignore transient fetch failures
     }
@@ -107,6 +165,9 @@
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
+  const hydroGraphEnabled = $derived(
+    !!hydro.enabled && (hydro.scanType || '').toUpperCase() !== 'UNKNOWN'
+  );
   const prog = $derived(s?.program || {});
   const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
   const PROG_EXIT_TYPES = [
@@ -278,6 +339,14 @@
       <div class="card"><div class="label">Gravity</div><div class="value">{hydro.valid ? 'SG ' + hydro.gravity.toFixed(3) : '--.--'}</div></div>
       <div class="card"><div class="label">Temp</div><div class="value">{hydro.valid ? hydro.temperature.toFixed(1) + (unit || '') : '--.-'}</div></div>
       <div class="card"><div class="label">ABV</div><div class="value">{hydro.valid && hydro.abv != null ? hydro.abv.toFixed(1) + '%' : '--.-%'}</div></div>
+    </section>
+
+    <section class="panel historyPanel" hidden={!hydroGraphEnabled}>
+      <div class="panelHead">
+        <h2>Hydrometer History</h2>
+        <span>{graphSource === 'csv' ? 'CSV' : 'Live'}</span>
+      </div>
+      <HydrometerChart samples={graphSamples} unit={s?.unit || 'F'} source={graphSource} />
     </section>
 
     <EventLog />

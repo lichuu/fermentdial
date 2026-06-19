@@ -395,6 +395,10 @@ String buildHistoryRow(uint32_t nowMs, const HydrometerReading &hydro) {
   if (settings.programActive) {
     row += String(settings.programStepIndex + 1);
   }
+  row += ',';
+  if (hydro.valid && !hydro.stale && !isnan(hydro.temperatureC)) {
+    row += String(hydro.temperatureC, 2);
+  }
   row += '\n';
   return row;
 }
