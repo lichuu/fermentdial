@@ -14,8 +14,8 @@ This plan adds that net. The codebase splits cleanly into three testability tier
 different (and appropriate) tactic. All three are in scope.
 
 What this deliberately does **not** cover: `ui.cpp` display rendering — it's TFT framebuffer
-output with no cheap host-side capture path. That split leans on compile+link plus a manual
-smoke pass. Honest gap, called out so it isn't mistaken for covered.
+output with no cheap host-side capture path. That split leans on compile+link plus the manual
+UI smoke checklist below. Honest gap, called out so it isn't mistaken for covered.
 
 Findings below were verified against the source (three Explore passes); line numbers are current.
 
@@ -191,3 +191,44 @@ value). The `mock_gpio[]` recorder in `Arduino.h` lets the demo test observe pin
 4. **Success criteria:** native suites green on both envs; golden-master self-diff empty; all
    three device envs still build. The net is then in place — run the golden capture to
    `golden/before/` immediately before the decomposition starts.
+5. **UI smoke:** after any UI change, run the manual checklist below on real hardware (one
+   firmware env is enough; `m5stack_dial_demo` is the usual choice).
+
+---
+
+## Manual UI smoke (required after any UI change)
+
+Display rendering has no host-side test net (`ui_draw.cpp` writes to the TFT framebuffer).
+Compile+link catches linkage and guard mistakes; this checklist is the behavioral net for
+`ui.cpp` / `ui_input.cpp` / `ui_draw.cpp`. Flash a build to the M5Stack Dial and confirm:
+
+1. **Main screen** — gauge ring, live temperature, setpoint confirm/cancel buttons, output
+   chips, page dots.
+2. **Encoder** — short press (menu / confirm), long press (back / cancel), setpoint nudge on
+   main, menu scroll in settings.
+3. **Touch** — swipes between main and hydrometer pages; menu item taps register.
+4. **Quick menu** — profile and mode shortcuts, crash gradual prompt, confirm/cancel flow.
+5. **Settings menu** — open each item, edit a value, save, cancel, and reset paths behave.
+6. **About / Help** — screens render without garbled or missing fonts.
+7. **Output tests** — heater and pump test prompts appear; rejection toast when blocked.
+8. **Wi-Fi menu item** — correct toast for network-disabled vs setup-AP-available builds.
+9. **Brightness** — idle dimming works; web brightness preview updates the panel if network
+   is enabled.
+
+All nine pass → UI change is verified for this plan. Any failure is a regression until fixed or
+the checklist is updated deliberately.
+
+---
+
+## UI follow-ups (not required for decomposition)
+
+These are optional maintenance or future work — not gaps in the current net:
+
+- **`ui_common.h` dedup** — `MenuIndex`, palette colors, and gauge geometry are duplicated in
+  anonymous namespaces across `ui.cpp`, `ui_input.cpp`, and `ui_draw.cpp`. Extracting a shared
+  header is a pure maintenance win; correctness does not depend on it.
+- **Native unit tests for input logic** — `ui_input.cpp` is coupled to `M5Dial`, touch, and
+  encoder APIs. A host suite would need a large M5GFX/LovyanGFX mock (or a refactor to isolate
+  pure settings-delta functions). Deferred unless UI logic churn justifies the investment.
+- **Render golden tests** — framebuffer snapshot comparison would require on-device capture or
+  an emulator. Out of scope; manual smoke above remains the render net.
