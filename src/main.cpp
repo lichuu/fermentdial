@@ -459,7 +459,7 @@ void loop() {
     lastEventFlushMs = nowMs;
     eventLog.flush();
   }
-  if (historyLog.due(nowMs)) {
+  if (settings.historyLoggingEnabled && historyLog.due(nowMs)) {
     historyLog.markSampled(nowMs);
     historyLog.append(buildHistoryRow(nowMs, selectedHydrometer));
   }

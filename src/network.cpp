@@ -2106,6 +2106,11 @@ void NetworkManager::handleSettingsPost() {
       changed = true;
     }
   }
+  if (_server.hasArg("historyLogging")) {
+    _settings->historyLoggingEnabled =
+        _server.arg("historyLogging").toInt() != 0;
+    changed = true;
+  }
   if (_server.hasArg("programAction")) {
     String action = _server.arg("programAction");
     action.trim();
@@ -2732,6 +2737,11 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
           jsonFloat(toDisplayDelta(_webStatus.gradualCrashStepC, f), 1) + ",";
   json += "\"gradualCrashStepHours\":" +
           String(_webStatus.gradualCrashStepIntervalHours) + ",";
+  json += "\"historyLogging\":" +
+          String((_settings != nullptr && _settings->historyLoggingEnabled)
+                     ? "true"
+                     : "false") +
+          ",";
   json += "\"coolOn\":" + jsonFloat(coolOn) + ",";
   json += "\"heatOn\":" + jsonFloat(heatOn) + ",";
   json += "\"hold\":" + jsonFloat(hold) + ",";
