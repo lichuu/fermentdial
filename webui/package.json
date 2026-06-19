@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:device": "vite --host",
     "build": "vite build && node tools/build-header.mjs"
   },
   "devDependencies": {

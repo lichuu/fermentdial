@@ -22,6 +22,22 @@
 
   const metricsHost = $derived(config.wifiIp || config.apSsid);
 
+  function integrationBadge(enabled, lastStatus) {
+    if (!enabled) return { text: 'Off', class: 'panelBadge-off' };
+    const status = (lastStatus || '').toLowerCase();
+    if (status.startsWith('ok') || status === 'connected' || status === 'saved') {
+      return { text: 'Active', class: 'panelBadge-on' };
+    }
+    if (status === 'disabled' || status === 'waiting') {
+      return { text: 'Waiting', class: 'panelBadge-warn' };
+    }
+    return { text: 'On', class: 'panelBadge-info' };
+  }
+
+  const influxBadge = $derived(integrationBadge(influx.enabled, config.influx.lastStatus));
+  const brewfatherBadge = $derived(integrationBadge(brewfather.enabled, config.brewfather.lastStatus));
+  const mqttBadge = $derived(integrationBadge(mqtt.enabled, config.mqtt.lastStatus));
+
   async function saveInflux() {
     influxStatus = 'Saving...';
     await postForm('/settings/influx', {
@@ -75,21 +91,48 @@
   }
 </script>
 
-<div class="grid">
-  <section class="panel">
-    <h2>Prometheus</h2>
-    <div class="status">/metrics</div>
-    <p class="hint">
-      Scrape <code class="url">http://{metricsHost}/metrics</code>. Values are emitted in Celsius
-      and output states are 0/1 gauges. The measurement / metric name set under Influx Export is
-      also used as the Prometheus metric prefix.
-    </p>
-  </section>
+<section class="stackedCard">
+  <header class="stackedCardHeader">
+    <h2>Integrations</h2>
+    <p class="stackedCardDesc">Scrape metrics locally or push telemetry to external services.</p>
+  </header>
 
-  <section class="panel">
-    <h2>Influx Export</h2>
-    <form onsubmit={(e) => { e.preventDefault(); saveInflux(); }}>
-      <label><input type="checkbox" bind:checked={influx.enabled} />Enable push export</label>
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Prometheus</h3>
+        <span class="panelBadge panelBadge-info">Pull</span>
+      </div>
+    </div>
+    <p class="stackedRowDesc">
+      Scrape endpoint for Prometheus. Values are emitted in Celsius with 0/1 output gauges.
+      The measurement name from Influx Export is also used as the Prometheus metric prefix.
+    </p>
+    <div class="scrapeEndpoint">
+      <div class="scrapeEndpointUrl">http://{metricsHost}/metrics</div>
+    </div>
+  </article>
+
+  <article class="stackedRow">
+    <form class="integrationForm" onsubmit={(e) => { e.preventDefault(); saveInflux(); }}>
+      <div class="stackedRowTop">
+        <div class="stackedRowTitle">
+          <h3>Influx Export</h3>
+          <span class="panelBadge {influxBadge.class}">{influxBadge.text}</span>
+        </div>
+        <div class="integrationBar">
+          <div class="scanModes integrationToggle">
+            <button type="button" class:active={!influx.enabled} onclick={() => { influx.enabled = false; }}>Off</button>
+            <button type="button" class:active={influx.enabled} onclick={() => { influx.enabled = true; }}>On</button>
+          </div>
+          <button type="submit" class="btnCompact">Save</button>
+        </div>
+      </div>
+      <p class="stackedRowDesc">
+        Push line protocol to InfluxDB, VictoriaMetrics, or compatible backends.
+        VictoriaMetrics accepts Influx line protocol at <code>/write</code> unless the URL already
+        includes a write path.
+      </p>
       {#if influx.enabled}
         <div class="integrationDetails">
           <label>
@@ -124,19 +167,33 @@
           <label>Interval seconds<input inputmode="numeric" bind:value={influx.intervalSeconds} /></label>
         </div>
       {/if}
-      <button type="submit">Save export settings</button>
+      {#if influxStatus}<p class="formFeedback">{influxStatus}</p>{/if}
+      <dl class="metaLine">
+        <dt>Last export</dt>
+        <dd>{config.influx.lastStatus}</dd>
+      </dl>
     </form>
-    <div class="saveStatus">{influxStatus}</div>
-    <p class="hint">
-      Last export: {config.influx.lastStatus}. VictoriaMetrics uses Influx line protocol at
-      <code>/write</code> unless the URL already includes an Influx write path.
-    </p>
-  </section>
+  </article>
 
-  <section class="panel">
-    <h2>Brewfather</h2>
-    <form onsubmit={(e) => { e.preventDefault(); saveBrewfather(); }}>
-      <label><input type="checkbox" bind:checked={brewfather.enabled} />Enable Custom Stream logging</label>
+  <article class="stackedRow">
+    <form class="integrationForm" onsubmit={(e) => { e.preventDefault(); saveBrewfather(); }}>
+      <div class="stackedRowTop">
+        <div class="stackedRowTitle">
+          <h3>Brewfather</h3>
+          <span class="panelBadge {brewfatherBadge.class}">{brewfatherBadge.text}</span>
+        </div>
+        <div class="integrationBar">
+          <div class="scanModes integrationToggle">
+            <button type="button" class:active={!brewfather.enabled} onclick={() => { brewfather.enabled = false; }}>Off</button>
+            <button type="button" class:active={brewfather.enabled} onclick={() => { brewfather.enabled = true; }}>On</button>
+          </div>
+          <button type="submit" class="btnCompact">Save</button>
+        </div>
+      </div>
+      <p class="stackedRowDesc">
+        Post Custom Stream JSON to Brewfather (up to once every 15 minutes per device).
+        Use the logging ID from Brewfather Settings &gt; Power-ups &gt; Custom Stream.
+      </p>
       {#if brewfather.enabled}
         <div class="integrationDetails">
           <label>
@@ -152,20 +209,38 @@
           <label>Interval seconds<input inputmode="numeric" min="900" bind:value={brewfather.intervalSeconds} /></label>
         </div>
       {/if}
-      <button type="submit">Save Brewfather settings</button>
+      {#if brewfatherStatus}<p class="formFeedback">{brewfatherStatus}</p>{/if}
+      <dl class="metaLine">
+        <dt>Status</dt>
+        <dd>{config.brewfather.lastStatus}</dd>
+      </dl>
     </form>
-    <div class="saveStatus">{brewfatherStatus}</div>
-    <p class="hint">
-      Posts Custom Stream JSON no more than once every 15 minutes per device name. Hydrometer only
-      sends each fresh discovered Tilt/RAPT without controller target or state. Use the ID from
-      Settings &gt; Power-ups &gt; Custom Stream. Status: {config.brewfather.lastStatus}
-    </p>
-  </section>
+  </article>
 
-  <section class="panel">
-    <h2>MQTT / Home Assistant</h2>
-    <form onsubmit={(e) => { e.preventDefault(); saveMqtt(); }}>
-      <label><input type="checkbox" bind:checked={mqtt.enabled} />Enable MQTT publishing</label>
+  <article class="stackedRow">
+    <form class="integrationForm" onsubmit={(e) => { e.preventDefault(); saveMqtt(); }}>
+      <div class="stackedRowTop">
+        <div class="stackedRowTitle">
+          <h3>MQTT / Home Assistant</h3>
+          <span class="panelBadge {mqttBadge.class}">{mqttBadge.text}</span>
+        </div>
+        <div class="integrationBar">
+          <div class="scanModes integrationToggle">
+            <button type="button" class:active={!mqtt.enabled} onclick={() => { mqtt.enabled = false; }}>Off</button>
+            <button type="button" class:active={mqtt.enabled} onclick={() => { mqtt.enabled = true; }}>On</button>
+          </div>
+          <button type="submit" class="btnCompact">Save</button>
+        </div>
+      </div>
+      <p class="stackedRowDesc">
+        Publish state to an MQTT broker or Home Assistant.
+        Topics: <code>{config.mqtt.computedBaseTopic}/state</code> and
+        <code>{config.mqtt.computedBaseTopic}/availability</code>.
+        Hydrometer-only mode publishes one retained topic per Tilt/RAPT under
+        <code>{config.mqtt.computedBaseTopic}/hydrometer/&lt;id&gt;/state</code>. With discovery
+        enabled, Home Assistant gets gravity, temperature, ABV, velocity, stability, battery, and
+        signal entities per device.
+      </p>
       {#if mqtt.enabled}
         <div class="integrationDetails">
           <label>
@@ -190,16 +265,11 @@
           <label>Interval seconds<input inputmode="numeric" bind:value={mqtt.intervalSeconds} /></label>
         </div>
       {/if}
-      <button type="submit">Save MQTT settings</button>
+      {#if mqttStatus}<p class="formFeedback">{mqttStatus}</p>{/if}
+      <dl class="metaLine">
+        <dt>Status</dt>
+        <dd>{config.mqtt.lastStatus}</dd>
+      </dl>
     </form>
-    <div class="saveStatus">{mqttStatus}</div>
-    <p class="hint">
-      Publishes the status JSON to <code>{config.mqtt.computedBaseTopic}/state</code> (retained),
-      with availability on <code>{config.mqtt.computedBaseTopic}/availability</code>. Hydrometer
-      only publishes one retained state topic per discovered Tilt/RAPT under
-      <code>{config.mqtt.computedBaseTopic}/hydrometer/&lt;id&gt;/state</code>, and (when
-      discovery is on) auto-creates a Home Assistant device with gravity, temperature, ABV,
-      velocity, stability, battery, and signal entities. Status: {config.mqtt.lastStatus}
-    </p>
-  </section>
-</div>
+  </article>
+</section>

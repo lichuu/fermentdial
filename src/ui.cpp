@@ -160,7 +160,9 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   }
 
   const uint8_t activeBrightness = settings.brightness;
-  if (!_dimmed && nowMs - _lastActivityMs > DISPLAY_DIM_MS) {
+  if (nowMs < _brightnessPreviewUntilMs) {
+    // Web preview owns backlight until holdoff expires.
+  } else if (!_dimmed && nowMs - _lastActivityMs > DISPLAY_DIM_MS) {
     const uint8_t dim =
         DIM_BRIGHTNESS < activeBrightness ? DIM_BRIGHTNESS : activeBrightness;
     M5Dial.Display.setBrightness(dim);
@@ -375,6 +377,18 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     return;
   }
 
+  if (_screen == Screen::EditInfo) {
+    const int16_t cx = M5Dial.Display.width() / 2;
+    const int16_t cy = h / 2;
+    const int16_t backY = cy + 66;
+    if (touch.y >= backY && touch.y <= backY + 24) {
+      _screen = Screen::Menu;
+      resetSettingsEncoderFilters();
+      _dirty = true;
+    }
+    return;
+  }
+
   if (_screen == Screen::Edit) {
     // Hit zones must match the rendered button rects in drawEdit().
     const int16_t cx = M5Dial.Display.width() / 2;
@@ -382,7 +396,7 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t topY = cy + 34;   // Reset / Save row (height 24)
     const int16_t backY = cy + 66;  // Back row (height 24)
     if (touch.y >= topY && touch.y < topY + 24) {
-      if (!editHasReset()) {
+      if (!editHasReset(settings)) {
         if (touch.x >= cx - 55 && touch.x <= cx + 55) {
           requestEditConfirm(EditConfirmAction::Save);
         }
@@ -494,6 +508,15 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
       }
     }
     _dirty = true;
+    return;
+  }
+
+  if (_screen == Screen::EditInfo) {
+    if (dy > 0 || (horizontal && dx < 0)) {
+      _screen = Screen::Menu;
+      resetSettingsEncoderFilters();
+      _dirty = true;
+    }
     return;
   }
 
@@ -670,6 +693,9 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       _screen = Screen::About;
       resetSettingsEncoderFilters();
     }
+  } else if (_screen == Screen::EditInfo) {
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
   } else if (_screen == Screen::Edit) {
     requestEditConfirm(EditConfirmAction::Save);
   } else if (_screen == Screen::ConfirmEdit) {
@@ -705,6 +731,11 @@ void DisplayUI::handleLongPress(Settings &settings) {
   } else if (_screen == Screen::QuickProfile ||
              _screen == Screen::QuickMode ||
              _screen == Screen::QuickConfirm) {
+    _screen = Screen::Menu;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+    return;
+  } else if (_screen == Screen::EditInfo) {
     _screen = Screen::Menu;
     resetSettingsEncoderFilters();
     _dirty = true;
@@ -871,6 +902,13 @@ void DisplayUI::cancelQuickFlow() {
 
 void DisplayUI::beginEdit(uint8_t index, const Settings &settings) {
   _editIndex = index;
+  if (index == MENU_TARGET &&
+      !profileSlotEditable(activeProfileIndex(settings))) {
+    _screen = Screen::EditInfo;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+    return;
+  }
   _editSnapshot = settings;
   _editSnapshotValid = true;
   _screen = Screen::Edit;
@@ -906,6 +944,13 @@ void DisplayUI::saveEdit(Settings &settings) {
   if (_editIndex == MENU_PROFILE || _editIndex == MENU_TARGET) {
     cancelDiacetylRest(settings);
     applyActiveProfileTarget(settings);
+    if (_editIndex == MENU_TARGET &&
+        profileSlotEditable(activeProfileIndex(settings))) {
+      _toast = String("Saved: ") + activeProfile(settings).name;
+    } else {
+      _toast = String("Profile: ") + activeProfile(settings).name;
+    }
+    _toastUntilMs = millis() + 1800;
   } else if (_editIndex == MENU_DREST) {
     startDiacetylRest(settings);
     _toast = "D-rest started";
@@ -958,6 +1003,9 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     break;
   }
   case MENU_TARGET:
+    if (!profileSlotEditable(activeProfileIndex(settings))) {
+      break;
+    }
     setActiveTargetC(
         settings,
         activeTargetC(settings) +
@@ -1032,9 +1080,8 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     settings.unitsFahrenheit = !settings.unitsFahrenheit;
     break;
   case MENU_HYDROMETER: {
-    // Options: 0 = off, 1 = scan Tilt, 2 = scan RAPT, 3+ = a discovered
-    // device for whichever type is currently being scanned.
-    const int32_t total = 3 + static_cast<int32_t>(_hydroDeviceCount);
+    // Options: 0 = off, 1 = scan on, 2+ = a discovered device.
+    const int32_t total = 2 + static_cast<int32_t>(_hydroDeviceCount);
     int32_t next = _hydroOptionIndex + (delta > 0 ? 1 : -1);
     while (next < 0) {
       next += total;
@@ -1042,19 +1089,13 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
     next %= total;
     _hydroOptionIndex = next;
     if (next == 0) {
-      settings.hydrometerScanType = HydrometerScanType::Unknown;
-      clearHydrometerSelection(settings);
-    } else if (next == 1 || next == 2) {
-      settings.hydrometerScanType =
-          next == 1 ? HydrometerScanType::Tilt : HydrometerScanType::Rapt;
-      clearHydrometerSelection(settings);
+      setHydrometerScanEnabled(settings, false);
+    } else if (next == 1) {
+      setHydrometerScanTypeFromUi(settings, HydrometerScanType::All);
     } else {
-      const uint8_t devIndex = static_cast<uint8_t>(next - 3);
+      const uint8_t devIndex = static_cast<uint8_t>(next - 2);
       if (devIndex < _hydroDeviceCount) {
-        settings.hydrometerSelectionKey = _hydroDevices[devIndex].key;
-        settings.hydrometerScanType =
-            hydrometerScanTypeFromKey(settings.hydrometerSelectionKey);
-        resetHydrometerSession(settings);
+        selectHydrometerDevice(settings, _hydroDevices[devIndex].key);
       }
     }
     break;
@@ -1067,11 +1108,16 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
 void DisplayUI::resetCurrentValue(Settings &settings) {
   switch (_editIndex) {
   case MENU_PROFILE:
-    setActiveTargetC(settings,
-                     defaultProfileTargetC(activeProfileIndex(settings)));
+    if (profileSlotEditable(activeProfileIndex(settings))) {
+      setActiveTargetC(settings,
+                       defaultProfileTargetC(activeProfileIndex(settings)));
+    }
     break;
   case MENU_TARGET:
-    setActiveTargetC(settings, defaultProfileTargetC(settings.activeProfile));
+    if (profileSlotEditable(settings.activeProfile)) {
+      setActiveTargetC(settings,
+                       defaultProfileTargetC(settings.activeProfile));
+    }
     break;
   case MENU_DREST:
     settings.diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
@@ -1137,6 +1183,15 @@ void DisplayUI::markActivity(uint32_t nowMs) {
   }
 }
 
+void DisplayUI::previewBrightness(uint8_t brightness) {
+  brightness = clampBrightness(brightness);
+  M5Dial.Display.setBrightness(brightness);
+  _appliedBrightness = brightness;
+  _dimmed = false;
+  _lastActivityMs = millis();
+  _brightnessPreviewUntilMs = millis() + 400;
+}
+
 void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
                      const UiModel &model) {
   if (_screen != Screen::Main) {
@@ -1159,6 +1214,8 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
     drawMenu(settings, model.network);
   } else if (_screen == Screen::Edit) {
     drawEdit(settings);
+  } else if (_screen == Screen::EditInfo) {
+    drawEditInfo(settings);
   } else if (_screen == Screen::ConfirmEdit) {
     drawConfirmEdit(settings);
   } else if (_screen == Screen::ConfirmTest) {
@@ -1908,28 +1965,51 @@ void DisplayUI::drawEdit(const Settings &settings) {
   _canvas.drawString(editDefaultLine(settings), cx, cy - 2, &fonts::DejaVu12);
 
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(_editIndex == MENU_PROFILE || _editIndex == MENU_HYDROMETER
-                         ? "swipe/rotate to choose"
-                         : _editIndex == MENU_DREST
-                               ? "swipe/rotate to set hours"
-                               : "swipe/rotate to change",
-                     cx, cy + 18, &fonts::DejaVu12);
+  _canvas.drawString(
+      _editIndex == MENU_PROFILE || _editIndex == MENU_HYDROMETER
+          ? "swipe/rotate to choose"
+          : _editIndex == MENU_DREST
+                ? "swipe/rotate to set hours"
+                : "swipe/rotate to change",
+      cx, cy + 18, &fonts::DejaVu12);
 
   const int16_t topY = cy + 34;
   const int16_t backY = cy + 66;
   const int16_t buttonW = 82;
   const int16_t buttonH = 24;
-  const char *commitLabel = _editIndex == MENU_DREST ? "Start" : "Save";
-  if (editHasReset()) {
+  const char *commitLabel = editCommitLabel();
+  if (editHasReset(settings)) {
     drawSolidButton(cx - 47, topY + 12, buttonW, buttonH, "Reset", COLOR_PANEL,
                     COLOR_ACCENT, &fonts::DejaVu12, COLOR_BLUE);
-    drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, commitLabel, COLOR_BLUE,
-                    TFT_WHITE, &fonts::DejaVu12);
+    drawSolidButton(cx + 47, topY + 12, buttonW, buttonH, commitLabel,
+                    COLOR_BLUE, TFT_WHITE, &fonts::DejaVu12);
   } else {
-    drawSolidButton(cx, topY + 12, 110, buttonH, "Save", COLOR_BLUE, TFT_WHITE,
-                    &fonts::DejaVu12);
+    drawSolidButton(cx, topY + 12, 110, buttonH, commitLabel, COLOR_BLUE,
+                    TFT_WHITE, &fonts::DejaVu12);
   }
 
+  drawGhostButton(cx, backY + 12, 96, 24, "Back", COLOR_TEXT_MUTED, &fonts::DejaVu12);
+}
+
+void DisplayUI::drawEditInfo(const Settings &settings) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
+  _canvas.drawString(MENU_LABELS[_editIndex], cx, cy - 68, &fonts::DejaVu18);
+
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString(formatTemperature(currentTargetC(settings),
+                                     settings.unitsFahrenheit),
+                     cx, cy - 30, &fonts::FreeSansBold18pt7b);
+
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  _canvas.drawString("Live setpoint", cx, cy - 2, &fonts::DejaVu12);
+  _canvas.drawString("Built-in preset - adjust on main screen", cx, cy + 18,
+                     &fonts::DejaVu12);
+
+  const int16_t backY = cy + 66;
   drawGhostButton(cx, backY + 12, 96, 24, "Back", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
 
@@ -1947,7 +2027,9 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
   _canvas.setTextColor(accent, COLOR_PANEL);
   const char *confirmTitle =
       reset ? "Confirm reset"
-            : (_editIndex == MENU_DREST ? "Confirm start" : "Confirm save");
+            : (_editIndex == MENU_DREST ? "Confirm start"
+                                        : editCommitsProfile() ? "Confirm apply"
+                                                               : "Confirm save");
   _canvas.drawString(confirmTitle, cx, cy - 64, &fonts::DejaVu18);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
@@ -1958,9 +2040,8 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(editConfirmLine(settings), cx, cy + 6, &fonts::DejaVu12);
 
-  // Action row: Cancel (left, ghost) and Reset/Save (right, filled).
-  const char *commitLabel =
-      reset ? "Reset" : (_editIndex == MENU_DREST ? "Start" : "Save");
+  // Action row: Cancel (left, ghost) and Reset/Apply/Save (right, filled).
+  const char *commitLabel = reset ? "Reset" : editCommitLabel();
   drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
                   &fonts::DejaVu12);
   drawSolidButton(cx + 48, cy + 57, 84, 26, commitLabel, accent,
@@ -2275,9 +2356,9 @@ String DisplayUI::hydrometerValueText(const Settings &settings) const {
   }
   switch (settings.hydrometerScanType) {
   case HydrometerScanType::Tilt:
-    return "Tilt";
   case HydrometerScanType::Rapt:
-    return "Rapt";
+  case HydrometerScanType::All:
+    return "On";
   default:
     return "Off";
   }
@@ -2288,35 +2369,58 @@ int32_t DisplayUI::hydrometerOptionIndexFromSettings(
   if (settings.hydrometerSelectionKey.length() > 0) {
     for (uint8_t i = 0; i < _hydroDeviceCount; i++) {
       if (_hydroDevices[i].key == settings.hydrometerSelectionKey) {
-        return 3 + static_cast<int32_t>(i);
+        return 2 + static_cast<int32_t>(i);
       }
     }
   }
-  if (settings.hydrometerScanType == HydrometerScanType::Tilt) {
+  if (settings.hydrometerScanType != HydrometerScanType::Unknown) {
     return 1;
-  }
-  if (settings.hydrometerScanType == HydrometerScanType::Rapt) {
-    return 2;
   }
   return 0;
 }
 
-bool DisplayUI::editHasReset() const {
+bool DisplayUI::editHasReset(const Settings &settings) const {
   // Mode just cycles OFF/AUTO/HEAT/COOL, and Hydrometer just cycles
-  // Off/Tilt/Rapt/devices, so a "reset to default" button adds nothing over
+  // Off/On/devices, so a "reset to default" button adds nothing over
   // rotating or swiping back to the first option directly.
-  return _editIndex != MENU_MODE && _editIndex != MENU_HYDROMETER;
+  if (_editIndex == MENU_MODE || _editIndex == MENU_HYDROMETER) {
+    return false;
+  }
+  if (_editIndex == MENU_PROFILE &&
+      !profileSlotEditable(activeProfileIndex(settings))) {
+    return false;
+  }
+  return true;
+}
+
+bool DisplayUI::editCommitsProfile() const {
+  return _editIndex == MENU_PROFILE || _editIndex == MENU_TARGET;
+}
+
+const char *DisplayUI::editCommitLabel() const {
+  if (_editIndex == MENU_DREST) {
+    return "Start";
+  }
+  if (editCommitsProfile()) {
+    return "Apply";
+  }
+  return "Save";
 }
 
 String DisplayUI::editDefaultLine(const Settings &settings) const {
-  if (!editHasReset()) {
-    return "";  // no Reset button, so no "Default ..." reset hint
-  }
   if (_editIndex == MENU_PROFILE) {
     // Picking a profile reads as "this profile holds at N", so show the
     // selected profile's target plainly rather than a reset preview.
     return String("Target ") +
            formatTemperature(activeTargetC(settings), settings.unitsFahrenheit);
+  }
+  if (_editIndex == MENU_TARGET &&
+      profileSlotEditable(activeProfileIndex(settings))) {
+    return String("Live ") +
+           formatTemperature(currentTargetC(settings), settings.unitsFahrenheit);
+  }
+  if (!editHasReset(settings)) {
+    return "";  // no Reset button, so no "Default ..." reset hint
   }
   // The current value is already shown large above; this just notes what the
   // Reset button restores, so keep it to the default alone.
@@ -2337,10 +2441,13 @@ String DisplayUI::editConfirmLine(const Settings &settings) const {
            defaultMenuValue(_editIndex, settings);
   }
   if (_editIndex == MENU_PROFILE) {
-    return String("Save ") + activeProfile(settings).name;
+    return String("Apply ") + activeProfile(settings).name;
   }
   if (_editIndex == MENU_DREST) {
     return String("Start for ") + diacetylRestRemainingText(settings);
+  }
+  if (_editIndex == MENU_TARGET) {
+    return String("Apply ") + menuValue(_editIndex, settings);
   }
   return String("Save ") + menuValue(_editIndex, settings);
 }

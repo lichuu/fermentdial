@@ -545,6 +545,31 @@ void NetworkManager::setFirmwareUpdateSafetyCallback(
   _firmwareUpdateSafetyCallback = callback;
 }
 
+void NetworkManager::setBrightnessPreviewCallback(
+    BrightnessPreviewCallback callback) {
+  _brightnessPreviewCallback = callback;
+}
+
+void NetworkManager::previewWebBrightness(int raw) {
+  const uint8_t brightness = clampBrightness(raw);
+  _webStatus.brightness = brightness;
+  if (_brightnessPreviewCallback != nullptr) {
+    _brightnessPreviewCallback(brightness);
+  }
+}
+
+void NetworkManager::applyWebBrightness(int raw) {
+  if (_settings == nullptr) {
+    return;
+  }
+  _settings->brightness = clampBrightness(raw);
+  _webStatus.brightness = _settings->brightness;
+  if (_brightnessPreviewCallback != nullptr) {
+    _brightnessPreviewCallback(_settings->brightness);
+  }
+  _settingsChanged = true;
+}
+
 void NetworkManager::update(uint32_t nowMs, Settings &settings) {
 #if FERM_ENABLE_NETWORK
   _settings = &settings;
@@ -1104,15 +1129,7 @@ void NetworkManager::handleDeviceSettingsPost() {
     _settingsChanged = true;
   }
   if (_server.hasArg("brightness")) {
-    int brightness = _server.arg("brightness").toInt();
-    if (brightness < MIN_BRIGHTNESS) {
-      brightness = MIN_BRIGHTNESS;
-    } else if (brightness > MAX_BRIGHTNESS) {
-      brightness = MAX_BRIGHTNESS;
-    }
-    _settings->brightness = static_cast<uint8_t>(brightness);
-    _webStatus.brightness = _settings->brightness;
-    _settingsChanged = true;
+    applyWebBrightness(_server.arg("brightness").toInt());
   }
   _server.sendHeader("Location", "/settings", true);
   _server.send(303, "text/plain", "");
@@ -1888,6 +1905,75 @@ void NetworkManager::publishBrewfather(uint32_t nowMs) {
 #endif
 }
 
+#if FERM_ENABLE_NETWORK
+namespace {
+
+bool applyHydrometerSettingsFromPost(WebServer &server, Settings &settings) {
+  bool changed = false;
+
+  if (server.hasArg("hydrometerBleEnabled")) {
+    setHydrometerScanEnabled(settings,
+                             server.arg("hydrometerBleEnabled").toInt() != 0);
+    changed = true;
+  }
+
+  if (server.hasArg("hydrometerScanType")) {
+    HydrometerScanType scanType = HydrometerScanType::Unknown;
+    if (parseHydrometerScanTypeArg(server.arg("hydrometerScanType"), scanType)) {
+      setHydrometerScanTypeFromUi(settings, scanType);
+      changed = true;
+    }
+  }
+
+  if (server.hasArg("hydrometerSelectKey")) {
+    String selectedKey = server.arg("hydrometerSelectKey");
+    selectedKey.trim();
+    if (selectedKey != settings.hydrometerSelectionKey) {
+      selectHydrometerDevice(settings, selectedKey);
+      changed = true;
+    }
+  }
+
+  if (server.hasArg("hydrometerClearSelection")) {
+    if (settings.hydrometerSelectionKey.length() > 0) {
+      clearHydrometerSelection(settings);
+      changed = true;
+    }
+  }
+
+  if (server.hasArg("hydrometerResetOg")) {
+    resetHydrometerSession(settings);
+    changed = true;
+  }
+
+  return changed;
+}
+
+bool applyEditableProfileFieldsFromPost(WebServer &server, Settings &settings,
+                                        bool unitsF) {
+  bool changed = false;
+  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
+    if (!profileSlotEditable(i)) {
+      continue;
+    }
+    const String nameArg = String("profile") + String(i) + "Name";
+    const String targetArg = String("profile") + String(i) + "Target";
+    if (server.hasArg(nameArg)) {
+      settings.profiles[i].name = server.arg(nameArg);
+      changed = true;
+    }
+    if (server.hasArg(targetArg)) {
+      settings.profiles[i].targetC =
+          fromDisplayTemp(server.arg(targetArg).toFloat(), unitsF);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+} // namespace
+#endif
+
 void NetworkManager::handleSettingsPost() {
 #if FERM_ENABLE_NETWORK
   if (_settings == nullptr) {
@@ -1901,6 +1987,17 @@ void NetworkManager::handleSettingsPost() {
   if (_server.hasArg("fermenterName")) {
     _settings->fermenterName = _server.arg("fermenterName");
     changed = true;
+  }
+
+  if (_server.hasArg("brightness")) {
+    const int raw = _server.arg("brightness").toInt();
+    if (_server.hasArg("brightnessPreview") &&
+        _server.arg("brightnessPreview").toInt() != 0) {
+      previewWebBrightness(raw);
+    } else {
+      applyWebBrightness(raw);
+      changed = true;
+    }
   }
 
   if (_server.hasArg("profile")) {
@@ -1960,59 +2057,7 @@ void NetworkManager::handleSettingsPost() {
     changed = true;
   }
 
-  if (_server.hasArg("hydrometerBleEnabled")) {
-    _settings->hydrometerBleEnabled = _server.arg("hydrometerBleEnabled").toInt() != 0;
-    changed = true;
-  }
-
-  if (_server.hasArg("hydrometerScanType")) {
-    String scanTypeArg = _server.arg("hydrometerScanType");
-    scanTypeArg.trim();
-    scanTypeArg.toUpperCase();
-    HydrometerScanType scanType = HydrometerScanType::Unknown;
-    bool scanTypeValid = true;
-    if (scanTypeArg == "OFF" || scanTypeArg == "UNKNOWN" ||
-        scanTypeArg.length() == 0) {
-      scanType = HydrometerScanType::Unknown;
-    } else if (scanTypeArg == "TILT") {
-      scanType = HydrometerScanType::Tilt;
-    } else if (scanTypeArg == "RAPT") {
-      scanType = HydrometerScanType::Rapt;
-    } else {
-      scanTypeValid = false;
-    }
-    if (scanTypeValid) {
-      _settings->hydrometerScanType = scanType;
-      clearHydrometerSelection(*_settings);
-      changed = true;
-    }
-  }
-
-  if (_server.hasArg("hydrometerSelectKey")) {
-    String selectedKey = _server.arg("hydrometerSelectKey");
-    selectedKey.trim();
-    if (selectedKey != _settings->hydrometerSelectionKey) {
-      _settings->hydrometerSelectionKey = selectedKey;
-      const HydrometerScanType inferredScanType =
-          hydrometerScanTypeFromKey(selectedKey);
-      if (inferredScanType != HydrometerScanType::Unknown &&
-          inferredScanType != _settings->hydrometerScanType) {
-        _settings->hydrometerScanType = inferredScanType;
-      }
-      resetHydrometerSession(*_settings);
-      changed = true;
-    }
-  }
-
-  if (_server.hasArg("hydrometerClearSelection")) {
-    if (_settings->hydrometerSelectionKey.length() > 0) {
-      clearHydrometerSelection(*_settings);
-      changed = true;
-    }
-  }
-
-  if (_server.hasArg("hydrometerResetOg")) {
-    resetHydrometerSession(*_settings);
+  if (applyHydrometerSettingsFromPost(_server, *_settings)) {
     changed = true;
   }
 
@@ -2070,18 +2115,8 @@ void NetworkManager::handleSettingsPost() {
     changed = true;
   }
 
-  for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
-    String nameArg = String("profile") + String(i) + "Name";
-    String targetArg = String("profile") + String(i) + "Target";
-    if (_server.hasArg(nameArg)) {
-      _settings->profiles[i].name = _server.arg(nameArg);
-      changed = true;
-    }
-    if (_server.hasArg(targetArg)) {
-      _settings->profiles[i].targetC =
-          fromDisplayTemp(_server.arg(targetArg).toFloat(), unitsF);
-      changed = true;
-    }
+  if (applyEditableProfileFieldsFromPost(_server, *_settings, unitsF)) {
+    changed = true;
   }
 
   if (_server.hasArg("gradualCrashEnabled")) {
@@ -2167,6 +2202,7 @@ void NetworkManager::handleSettingsPost() {
     _webStatus.gradualCrashStepC = _settings->gradualCrashStepC;
     _webStatus.gradualCrashStepIntervalHours =
         _settings->gradualCrashStepIntervalHours;
+    _webStatus.brightness = _settings->brightness;
     _settingsChanged = true;
   }
 
@@ -2733,7 +2769,9 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
     json += "{\"index\":" + String(i) +
             ",\"name\":" + jsonString(_webStatus.profiles[i].name) +
             ",\"target\":" + jsonFloat(profileTarget) +
-            ",\"default\":" + jsonFloat(profileDefault) + "}";
+            ",\"default\":" + jsonFloat(profileDefault) +
+            ",\"editable\":" +
+            String(profileSlotEditable(i) ? "true" : "false") + "}";
   }
   json += "],";
   json += "\"program\":{";

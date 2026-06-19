@@ -35,6 +35,7 @@ class DisplayUI {
   OutputTestKind consumeOutputTestRequest();
   bool consumeWifiSetupRequested();
   void notifyOutputTestRejected();
+  void previewBrightness(uint8_t brightness);
 
  private:
   enum class Screen : uint8_t {
@@ -46,6 +47,7 @@ class DisplayUI {
     QuickConfirm,
     Menu,
     Edit,
+    EditInfo,
     ConfirmEdit,
     ConfirmTest,
     About,
@@ -114,6 +116,7 @@ class DisplayUI {
   bool quickCancelHit(int16_t x, int16_t y) const;
   void drawMenu(const Settings &settings, const NetworkSnapshot &network);
   void drawEdit(const Settings &settings);
+  void drawEditInfo(const Settings &settings);
   void drawConfirmEdit(const Settings &settings);
   void drawConfirmTest();
   void drawAbout();
@@ -162,7 +165,9 @@ class DisplayUI {
   String quickPendingValue(const Settings &settings) const;
   String menuValue(uint8_t index, const Settings &settings, const NetworkSnapshot &network = NetworkSnapshot{}) const;
   String defaultMenuValue(uint8_t index, const Settings &settings) const;
-  bool editHasReset() const;
+  bool editHasReset(const Settings &settings) const;
+  bool editCommitsProfile() const;
+  const char *editCommitLabel() const;
   String editDefaultLine(const Settings &settings) const;
   String editConfirmLine(const Settings &settings) const;
   uint16_t stateColor(RuntimeState state, FaultCode fault) const;
@@ -199,6 +204,7 @@ class DisplayUI {
   int16_t _pressY = -1;
   bool _dimmed = false;
   uint8_t _appliedBrightness = 255;
+  uint32_t _brightnessPreviewUntilMs = 0;
   uint32_t _setpointFocusUntilMs = 0;
   // Main-screen setpoint adjustments are previewed, not committed, until the
   // user confirms — guards against an accidental bump of the dial.

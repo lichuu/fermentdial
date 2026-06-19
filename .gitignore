@@ -11,3 +11,4 @@ include/secrets.h
 design/
 webui/node_modules/
 webui/dist/
+webui/.env.local

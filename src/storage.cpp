@@ -12,8 +12,67 @@ String profileTargetKey(uint8_t index) {
   return String("profTgt") + String(index);
 }
 
-String programKey(uint8_t index) {
+// Legacy POD blob keys (prog0/prog1). Read for one-time migration only.
+String programBlobKey(uint8_t index) {
   return String("prog") + String(index);
+}
+
+// Field keys stay within the ESP32 NVS 15-character limit (p0cnt, p0s3t, ...).
+String programCountKey(uint8_t index) {
+  return String("p") + String(index) + "cnt";
+}
+
+String programStepKey(uint8_t progIndex, uint8_t stepIndex, char field) {
+  return String("p") + String(progIndex) + "s" + String(stepIndex) + field;
+}
+
+void loadProgram(Preferences &prefs, uint8_t index, ProgramSettings &program,
+                 bool &needsRewrite) {
+  const String cntKey = programCountKey(index);
+  if (prefs.isKey(cntKey.c_str())) {
+    program.stepCount = prefs.getUChar(cntKey.c_str(), 0);
+    for (uint8_t s = 0; s < MAX_PROGRAM_STEPS; ++s) {
+      ProfileStep &step = program.steps[s];
+      step.type = static_cast<StepType>(prefs.getUChar(
+          programStepKey(index, s, 't').c_str(),
+          static_cast<uint8_t>(StepType::Hold)));
+      step.exit = static_cast<StepExit>(prefs.getUChar(
+          programStepKey(index, s, 'e').c_str(),
+          static_cast<uint8_t>(StepExit::Time)));
+      step.targetC =
+          prefs.getFloat(programStepKey(index, s, 'g').c_str(), DEFAULT_TARGET_C);
+      step.durationSeconds =
+          prefs.getUInt(programStepKey(index, s, 'd').c_str(), 0);
+      step.gravityThreshold =
+          prefs.getFloat(programStepKey(index, s, 'b').c_str(), 1.010f);
+      step.stableHours =
+          prefs.getUShort(programStepKey(index, s, 'h').c_str(), 24);
+    }
+    return;
+  }
+
+  const String blobKey = programBlobKey(index);
+  if (prefs.getBytesLength(blobKey.c_str()) == sizeof(ProgramSettings)) {
+    prefs.getBytes(blobKey.c_str(), &program, sizeof(ProgramSettings));
+    needsRewrite = true;
+  }
+}
+
+void saveProgram(Preferences &prefs, uint8_t index,
+                 const ProgramSettings &program) {
+  prefs.putUChar(programCountKey(index).c_str(), program.stepCount);
+  for (uint8_t s = 0; s < MAX_PROGRAM_STEPS; ++s) {
+    const ProfileStep &step = program.steps[s];
+    prefs.putUChar(programStepKey(index, s, 't').c_str(),
+                   static_cast<uint8_t>(step.type));
+    prefs.putUChar(programStepKey(index, s, 'e').c_str(),
+                   static_cast<uint8_t>(step.exit));
+    prefs.putFloat(programStepKey(index, s, 'g').c_str(), step.targetC);
+    prefs.putUInt(programStepKey(index, s, 'd').c_str(), step.durationSeconds);
+    prefs.putFloat(programStepKey(index, s, 'b').c_str(), step.gravityThreshold);
+    prefs.putUShort(programStepKey(index, s, 'h').c_str(), step.stableHours);
+  }
+  prefs.remove(programBlobKey(index).c_str());
 }
 
 } // namespace
@@ -24,20 +83,23 @@ bool SettingsStorage::load(Settings &settings) {
   Settings defaults;
   settings = defaults;
 
-  uint16_t version = _prefs.getUShort("version", 0);
-  if (version == 0) {
-    // Nothing stored yet (fresh or erased NVS): keep safe defaults.
+  const bool hadFermName = _prefs.isKey("fermName");
+  const bool hadLegacyVersion = _prefs.isKey("version");
+  if (!hadFermName && !hadLegacyVersion) {
     sanitizeSettings(settings);
     return false;
   }
 
-  // Single additive load path. Every field below reads its own key with a
-  // default, so any older store upgrades in place: keys that did not exist yet
-  // fall back to their default, and the record is re-stamped to SETTINGS_VERSION
-  // at the end. Schema changes must stay additive (add new keys, never
-  // reinterpret existing ones), which is why no per-version migration code is
-  // needed here.
-  settings.version = version;
+  bool needsRewrite = hadLegacyVersion;
+  if (hadLegacyVersion) {
+    _prefs.remove("version");
+  }
+
+  // Single additive load path. Every field is read by name with an explicit
+  // default. Missing keys (older stores) simply receive their default; no
+  // schema version or per-key migration is used or needed. Add new settings by
+  // adding a getX(...) read here and the matching putX in saveNow. Never
+  // reinterpret the meaning or encoding of an existing key.
   settings.fermenterName =
       _prefs.getString("fermName", DEFAULT_FERMENTER_NAME);
   settings.activeProfile =
@@ -48,7 +110,7 @@ bool SettingsStorage::load(Settings &settings) {
     settings.profiles[i].targetC =
         _prefs.getFloat(profileTargetKey(i).c_str(), defaultProfileTargetC(i));
   }
-  // Live setpoint (v7+). Older stores fall back to the active profile preset.
+  // Live setpoint. If absent, fall back to the active profile's preset.
   settings.liveTargetC = _prefs.getFloat("liveTgt", activeTargetC(settings));
   settings.diacetylRestActive = _prefs.getBool("dRestAct", false);
   settings.diacetylRestTargetC =
@@ -88,11 +150,7 @@ bool SettingsStorage::load(Settings &settings) {
   settings.gradualCrashStepIntervalHours = _prefs.getUInt(
       "gradStepHrs", DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS);
   for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
-    const String key = programKey(i);
-    if (_prefs.getBytesLength(key.c_str()) == sizeof(ProgramSettings)) {
-      _prefs.getBytes(key.c_str(), &settings.programs[i],
-                      sizeof(ProgramSettings));
-    }
+    loadProgram(_prefs, i, settings.programs[i], needsRewrite);
   }
   settings.programActive = _prefs.getBool("progAct", false);
   settings.programRunIndex = _prefs.getUChar("progRun", 0);
@@ -107,7 +165,9 @@ bool SettingsStorage::load(Settings &settings) {
         settings.diacetylRestDurationSeconds;
   }
   sanitizeSettings(settings);
-  if (version != SETTINGS_VERSION) {
+
+  // One-shot rewrite after legacy version removal or program blob migration.
+  if (needsRewrite) {
     saveNow(settings);
   }
   return true;
@@ -129,7 +189,6 @@ void SettingsStorage::saveNow(const Settings &settings) {
   Settings copy = settings;
   sanitizeSettings(copy);
 
-  _prefs.putUShort("version", SETTINGS_VERSION);
   _prefs.putString("fermName", copy.fermenterName);
   _prefs.putUChar("profile", copy.activeProfile);
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
@@ -162,8 +221,7 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putFloat("gradStepC", copy.gradualCrashStepC);
   _prefs.putUInt("gradStepHrs", copy.gradualCrashStepIntervalHours);
   for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
-    _prefs.putBytes(programKey(i).c_str(), &copy.programs[i],
-                    sizeof(ProgramSettings));
+    saveProgram(_prefs, i, copy.programs[i]);
   }
   _prefs.putBool("progAct", copy.programActive);
   _prefs.putUChar("progRun", copy.programRunIndex);

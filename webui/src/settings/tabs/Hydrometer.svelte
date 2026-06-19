@@ -4,15 +4,10 @@
   let { status, refresh } = $props();
   const deg = String.fromCharCode(176);
 
-  let bleEnabled = $state(false);
-
-  $effect(() => {
-    bleEnabled = !!(status.hydrometer && status.hydrometer.enabled);
-  });
-
   const hydro = $derived(status.hydrometer || {});
   const devices = $derived(status.hydrometerDevices || []);
   const scanType = $derived((hydro.scanType || 'UNKNOWN').toUpperCase());
+  const scanOn = $derived(!!hydro.enabled && scanType !== 'UNKNOWN');
 
   const statusText = $derived(
     hydro.selected
@@ -25,11 +20,7 @@
   );
 
   const scanHint = $derived(
-    scanType === 'TILT'
-      ? 'Scanning for Tilt devices only.'
-      : scanType === 'RAPT'
-        ? 'Scanning for RAPT devices only.'
-        : 'Scanning is off.'
+    scanOn ? 'Scanning for Tilt and RAPT devices.' : 'Scanning is off.'
   );
 
   const selectionSummary = $derived(
@@ -63,13 +54,10 @@
     return parts.join(' · ');
   }
 
-  async function setScanType(type) {
-    await postSettings({ hydrometerScanType: type });
-    await refresh();
-  }
-
-  async function saveHydroSettings() {
-    await postSettings({ hydrometerBleEnabled: bleEnabled ? 1 : 0 });
+  async function setScanEnabled(on) {
+    await postSettings({
+      hydrometerScanType: on ? 'ALL' : 'OFF',
+    });
     await refresh();
   }
 
@@ -89,41 +77,53 @@
   }
 </script>
 
-<section class="panel">
-  <h2>Hydrometer</h2>
-  <label><input type="checkbox" bind:checked={bleEnabled} onchange={saveHydroSettings} />Enable BLE scanning</label>
-  <div class="scanModes">
-    <button class:active={scanType === 'UNKNOWN'} onclick={() => setScanType('OFF')}>Off</button>
-    <button class:active={scanType === 'TILT'} onclick={() => setScanType('TILT')}>Scan Tilt</button>
-    <button class:active={scanType === 'RAPT'} onclick={() => setScanType('RAPT')}>Scan RAPT</button>
-  </div>
-  <div class="hint">{scanHint}</div>
-  <div class="hint">The selected hydrometer is used for display and fermentation metrics only.</div>
-  {#if hydro.selected}
-    <div class="selectedDevice">
-      <div class="selectedDeviceTitle">{selectionSummary}</div>
-      <div class="selectedDeviceDetails">{selectionDetails}</div>
-    </div>
-  {/if}
-  <div class="row" style="margin-top:10px">
-    <button type="button" onclick={resetHydrometerOg}>Reset OG</button>
-    <button type="button" onclick={clearHydrometer}>Clear selection</button>
-  </div>
-  <div class="saveStatus">{statusText}</div>
-  <div class="networkList">
-    {#if !devices.length}
-      <div class="hint">
-        {scanType === 'UNKNOWN'
-          ? 'Scanning is off.'
-          : 'No ' + scanType + ' devices have been decoded yet.'}
+<section class="stackedCard">
+  <header class="stackedCardHeader">
+    <h2>Hydrometer</h2>
+    <p class="stackedCardDesc">BLE scan, device selection, and gravity display for fermentation metrics.</p>
+  </header>
+
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Scan &amp; selection</h3>
+        <span class="panelBadge" class:panelBadge-on={scanOn} class:panelBadge-off={!scanOn}>
+          {scanOn ? 'Scanning' : 'Off'}
+        </span>
       </div>
-    {:else}
-      {#each devices as dev}
-        <button type="button" class:selected={dev.selected} onclick={() => selectHydrometer(dev.key)}>
-          <span>{(dev.label || dev.key || 'Device') + (dev.selected ? ' (Selected)' : '')}</span>
-          <span class="networkMeta">{deviceMeta(dev)}</span>
-        </button>
-      {/each}
+      <div class="scanModes integrationToggle">
+        <button type="button" class:active={!scanOn} onclick={() => setScanEnabled(false)}>Off</button>
+        <button type="button" class:active={scanOn} onclick={() => setScanEnabled(true)}>On</button>
+      </div>
+    </div>
+    <p class="formHint">{scanHint}</p>
+    <p class="formHint">The selected hydrometer is used for display and fermentation metrics only.</p>
+    {#if hydro.selected}
+      <div class="selectedDevice">
+        <div class="selectedDeviceTitle">{selectionSummary}</div>
+        <div class="selectedDeviceDetails">{selectionDetails}</div>
+      </div>
     {/if}
-  </div>
+    <div class="row">
+      <button type="button" onclick={resetHydrometerOg}>Reset OG</button>
+      <button type="button" onclick={clearHydrometer}>Clear selection</button>
+    </div>
+    <div class="saveStatus">{statusText}</div>
+    <div class="networkList">
+      {#if !devices.length}
+        <p class="formHint">
+          {scanOn
+            ? 'No hydrometers have been decoded yet.'
+            : 'Scanning is off.'}
+        </p>
+      {:else}
+        {#each devices as dev}
+          <button type="button" class:selected={dev.selected} onclick={() => selectHydrometer(dev.key)}>
+            <span>{(dev.label || dev.key || 'Device') + (dev.selected ? ' (Selected)' : '')}</span>
+            <span class="networkMeta">{deviceMeta(dev)}</span>
+          </button>
+        {/each}
+      {/if}
+    </div>
+  </article>
 </section>

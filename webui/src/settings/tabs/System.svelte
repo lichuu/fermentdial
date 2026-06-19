@@ -1,5 +1,5 @@
 <script>
-  import { postForm, getWifiScan } from '../../api.js';
+  import { postForm, postBrightnessPreview, getWifiScan } from '../../api.js';
 
   let { status, config } = $props();
 
@@ -13,14 +13,48 @@
 
   let ssid = $state('');
   let pass = $state('');
-  let wifiScanStatus = $state('Select a scanned network or enter the name manually.');
+  let wifiScanStatus = $state('');
   let wifiNetworks = $state([]);
+  let firmwareFile = $state(null);
+  let firmwareInput = $state(null);
+  let brightnessAdjusting = $state(false);
+  let brightnessTouchedAt = 0;
+  let brightnessPreviewTimer = null;
+  let brightnessPreviewAbort = null;
+
+  const wifiConnected = $derived(!!config.wifiIp);
 
   $effect(() => {
     fermenterName = status.fermenterName;
-    brightness = status.brightness;
+    if (!brightnessAdjusting && Date.now() - brightnessTouchedAt > 4000) {
+      brightness = status.brightness;
+    }
     ssid = config.wifiSsid;
   });
+
+  function scheduleBrightnessPreview() {
+    clearTimeout(brightnessPreviewTimer);
+    brightnessPreviewTimer = setTimeout(sendBrightnessPreview, 60);
+  }
+
+  async function sendBrightnessPreview() {
+    brightnessPreviewAbort?.abort();
+    brightnessPreviewAbort = new AbortController();
+    try {
+      await postBrightnessPreview(Number(brightness), {
+        signal: brightnessPreviewAbort.signal,
+      });
+    } catch (e) {
+      // Ignore transient preview failures (including aborts) while dragging.
+    }
+  }
+
+  function finishBrightnessAdjust() {
+    clearTimeout(brightnessPreviewTimer);
+    void sendBrightnessPreview();
+    brightnessTouchedAt = Date.now();
+    brightnessAdjusting = false;
+  }
 
   async function saveDevice() {
     deviceStatus = 'Saving...';
@@ -42,6 +76,10 @@
     ssid = s;
   }
 
+  function onFirmwarePick(ev) {
+    firmwareFile = ev.target.files[0] || null;
+  }
+
   async function scanWifi() {
     wifiScanStatus = 'Scanning...';
     wifiNetworks = [];
@@ -49,84 +87,155 @@
       const data = await getWifiScan();
       const nets = (data.networks || []).filter((n) => n.ssid);
       if (!nets.length) {
-        wifiScanStatus = 'No networks found. Enter the name manually.';
+        wifiScanStatus = 'No networks found.';
         return;
       }
-      wifiScanStatus = 'Select a network or enter the name manually.';
+      wifiScanStatus = '';
       wifiNetworks = nets;
     } catch (e) {
-      wifiScanStatus = 'Scan failed. Enter the name manually.';
+      wifiScanStatus = 'Scan failed.';
     }
   }
 </script>
 
-<div class="grid">
-  <section class="panel">
-    <h2>Device</h2>
-    <form onsubmit={(e) => { e.preventDefault(); saveDevice(); }}>
-      <label>Fermenter name<input maxlength="24" bind:value={fermenterName} /></label>
-      <label>Screen brightness<input type="range" min="30" max="255" step="5" bind:value={brightness} /></label>
-      <button type="submit">Save device settings</button>
-    </form>
-    <div class="saveStatus">{deviceStatus}</div>
-    <p class="hint">Firmware: {config.firmwareName} v{config.firmwareVersion}</p>
-    <p class="hint">Hostname: <code>{config.hostname}</code></p>
-  </section>
+<section class="stackedCard">
+  <header class="stackedCardHeader">
+    <h2>System</h2>
+    <p class="stackedCardDesc">Device identity, security, network, and firmware updates.</p>
+  </header>
 
-  <section class="panel">
-    <h2>Security</h2>
-    <form onsubmit={(e) => { e.preventDefault(); saveSecurity(); }}>
-      <label>New admin password<input type="password" autocomplete="new-password" placeholder="leave blank to disable the lock" bind:value={newPassword} /></label>
-      <label>Confirm password<input type="password" autocomplete="new-password" bind:value={confirmPassword} /></label>
-      <button type="submit">Update password</button>
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Device</h3>
+        <span class="panelBadge panelBadge-info">v{config.firmwareVersion}</span>
+      </div>
+    </div>
+    <form class="panelForm" onsubmit={(e) => { e.preventDefault(); saveDevice(); }}>
+      <label>Fermenter name<input maxlength="24" bind:value={fermenterName} /></label>
+      <label>
+        Screen brightness
+        <input
+          type="range"
+          min="30"
+          max="255"
+          step="5"
+          bind:value={brightness}
+          onpointerdown={() => {
+            brightnessAdjusting = true;
+            brightnessTouchedAt = Date.now();
+          }}
+          onpointerup={finishBrightnessAdjust}
+          onpointercancel={finishBrightnessAdjust}
+          oninput={scheduleBrightnessPreview}
+          onchange={finishBrightnessAdjust}
+        />
+      </label>
+      <button type="submit" class="formSubmit">Save</button>
     </form>
-    <div class="saveStatus">{securityStatus}</div>
-    <p class="hint">
+    {#if deviceStatus}<p class="formFeedback">{deviceStatus}</p>{/if}
+    <dl class="metaLine">
+      <dt>Firmware</dt>
+      <dd>{config.firmwareName}</dd>
+    </dl>
+    <dl class="metaLine">
+      <dt>Hostname</dt>
+      <dd><code>{config.hostname}</code></dd>
+    </dl>
+  </article>
+
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Security</h3>
+        <span class="panelBadge" class:panelBadge-on={config.passwordSet} class:panelBadge-warn={!config.passwordSet}>
+          {config.passwordSet ? 'Locked' : 'Unlocked'}
+        </span>
+      </div>
+    </div>
+    <form class="panelForm" onsubmit={(e) => { e.preventDefault(); saveSecurity(); }}>
+      <label>New admin password<input type="password" autocomplete="new-password" placeholder="leave blank to disable" bind:value={newPassword} /></label>
+      <label>Confirm password<input type="password" autocomplete="new-password" bind:value={confirmPassword} /></label>
+      <button type="submit" class="formSubmit">Save</button>
+    </form>
+    {#if securityStatus}<p class="formFeedback">{securityStatus}</p>{/if}
+    <p class="formHint">
       {#if config.passwordSet}
-        Config pages are <b>locked</b>. The live dashboard and metrics stay public.
+        Config pages require the admin password. Dashboard and metrics stay public.
       {:else}
-        Config pages are <span class="warn">unlocked</span> &mdash; anyone on the network can change settings.
+        Anyone on the network can change settings until a password is set.
       {/if}
     </p>
-  </section>
+  </article>
 
-  <section class="panel">
-    <h2>Wi-Fi</h2>
-    <form method="post" action="/wifi">
-      <label>Wi-Fi name<input name="ssid" autocomplete="off" required bind:value={ssid} /></label>
-      <div class="wifiTools">
-        <button type="button" onclick={scanWifi}>Scan for networks</button>
-        <div class="hint scanStatus">{wifiScanStatus}</div>
-        <div class="networkList">
-          {#each wifiNetworks as n}
-            <button type="button" onclick={() => pickWifi(n.ssid)}>
-              <span>{n.ssid}</span>
-              <span class="networkMeta">{(n.secure ? 'secured' : 'open') + ' ' + n.rssi + ' dBm'}</span>
-            </button>
-          {/each}
-        </div>
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Wi-Fi</h3>
+        <span class="panelBadge" class:panelBadge-on={wifiConnected} class:panelBadge-off={!wifiConnected}>
+          {wifiConnected ? 'Connected' : 'Offline'}
+        </span>
+      </div>
+    </div>
+    <form class="panelForm" method="post" action="/wifi">
+      <label>Network name<input name="ssid" autocomplete="off" required bind:value={ssid} /></label>
+      <div class="formSection">
+        <button type="button" class="btnSecondary" onclick={scanWifi}>Scan networks</button>
+        {#if wifiScanStatus}<p class="formHint">{wifiScanStatus}</p>{/if}
+        {#if wifiNetworks.length}
+          <div class="networkList">
+            {#each wifiNetworks as n}
+              <button type="button" class:selected={ssid === n.ssid} onclick={() => pickWifi(n.ssid)}>
+                <span>{n.ssid}</span>
+                <span class="networkMeta">{(n.secure ? 'secured' : 'open') + ' · ' + n.rssi + ' dBm'}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
       </div>
       <label>Password<input name="pass" type="password" placeholder="leave blank to keep saved" bind:value={pass} /></label>
-      <button type="submit">Save and reboot</button>
+      <button type="submit" class="formSubmit">Save &amp; reboot</button>
     </form>
-    <p class="hint">Connected IP: {config.wifiIp || 'not connected'}</p>
-    <p class="hint">Setup AP: {config.apSsid} (open network)</p>
-  </section>
+    <dl class="metaLine">
+      <dt>Connected IP</dt>
+      <dd>{config.wifiIp || 'not connected'}</dd>
+    </dl>
+    <dl class="metaLine">
+      <dt>Setup AP</dt>
+      <dd>{config.apSsid}</dd>
+    </dl>
+  </article>
 
-  <section class="panel">
-    <h2>Firmware Update</h2>
-    <p class="warn">Outputs turn off before upload starts. The controller reboots after a successful update.</p>
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle">
+        <h3>Firmware Update</h3>
+        <span class="panelBadge" class:panelBadge-on={status.otaEnabled} class:panelBadge-off={!status.otaEnabled}>
+          {status.otaEnabled ? 'Ready' : 'Disabled'}
+        </span>
+      </div>
+    </div>
     {#if status.otaEnabled}
-      <form method="post" action="/firmware" enctype="multipart/form-data">
-        <label>Firmware .bin<input type="file" name="firmware" accept=".bin" required /></label>
-        <button type="submit">Upload and reboot</button>
+      <form class="panelForm" method="post" action="/firmware" enctype="multipart/form-data">
+        <label>
+          Firmware .bin
+          <div class="fileRow">
+            <span class="fileName" class:selected={!!firmwareFile}>
+              {firmwareFile ? firmwareFile.name : 'No file selected'}
+            </span>
+            <button type="button" class="btnBrowse" onclick={() => firmwareInput.click()}>Browse</button>
+            <input type="file" name="firmware" accept=".bin" required bind:this={firmwareInput} onchange={onFirmwarePick} />
+          </div>
+        </label>
+        <button type="submit" class="formSubmit" disabled={!firmwareFile}>Upload &amp; reboot</button>
       </form>
     {:else}
-      <p class="hint">Firmware upload is disabled in this build.</p>
+      <p class="formHint">Firmware upload is disabled in this build.</p>
     {/if}
-    <p class="hint">
+    <p class="formHint">Outputs turn off during upload. Device reboots on success.</p>
+    <p class="formHint">
       Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload
       <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.
     </p>
-  </section>
-</div>
+  </article>
+</section>

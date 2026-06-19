@@ -425,6 +425,9 @@ void HydrometerManager::handleAdvertised(
       ok = decodeTilt(device, manufacturerData, decoded);
     } else if (_scanType == HydrometerScanType::Rapt) {
       ok = decodeRapt(device, manufacturerData, decoded);
+    } else if (_scanType == HydrometerScanType::All) {
+      ok = decodeTilt(device, manufacturerData, decoded) ||
+           decodeRapt(device, manufacturerData, decoded);
     }
     if (ok) {
       break;
