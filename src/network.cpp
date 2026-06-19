@@ -1,5 +1,7 @@
 #include "network.h"
 
+#include "time_sync.h"
+
 #if FERM_ENABLE_NETWORK
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -470,6 +472,7 @@ void NetworkManager::begin(const Settings &settings,
   // discovery is not implemented yet; local control continues regardless of
   // Wi-Fi/MQTT availability.
   _mqtt.setBufferSize(4096);
+  timeSyncBegin();
 #endif
 
 }
@@ -501,6 +504,7 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
 
   wl_status_t status = WiFi.status();
   _snapshot.wifiConnected = status == WL_CONNECTED;
+  timeSyncLoop(nowMs, _snapshot.wifiConnected);
   if (_snapshot.wifiConnected) {
     _snapshot.ipAddress = WiFi.localIP().toString();
     _snapshot.status = _snapshot.ipAddress;
@@ -2345,6 +2349,11 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   json += "\"wifiStatus\":" + jsonString(_snapshot.status) + ",";
   json += "\"ip\":" + jsonString(_snapshot.ipAddress) + ",";
   json += "\"hostname\":" + jsonString(_snapshot.hostname) + ",";
+  const Timestamp clock = nowEpochOrUptime(nowMs);
+  json += "\"clock\":{";
+  json += "\"wallClock\":" + String(clock.wallClock ? "true" : "false") + ",";
+  json += "\"seconds\":" + String(clock.seconds);
+  json += "},";
   json += "\"otaEnabled\":" + String(FERM_ENABLE_OTA ? "true" : "false") + ",";
   json += "\"firmwareVersion\":" + jsonString(FIRMWARE_VERSION) + ",";
   json += "\"firmwareGitSha\":" + jsonString(FIRMWARE_GIT_SHA) + ",";
