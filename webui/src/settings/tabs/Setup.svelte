@@ -25,8 +25,8 @@
   <header class="stackedCardHeader">
     <h2>Setup</h2>
     <p class="stackedCardDesc">
-      A quick pass over the sensor, outputs, hydrometer, network, integrations, and
-      program config. Re-run after changing wiring or settings.
+      A quick pass over the sensor, outputs, hydrometer, network, and integrations.
+      Re-run after changing wiring or settings.
     </p>
   </header>
 

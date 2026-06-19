@@ -32,6 +32,8 @@ class EventLog {
 
   void begin();  // mount-independent; loads any persisted log from LittleFS
   void add(EventType type, const String &message, const Timestamp &ts);
+  // Convert same-boot uptime stamps to epoch once wall clock is available.
+  void upgradeUptimeTimestamps(uint32_t nowMs);
   String toJson() const;
   void flush();  // persist to LittleFS if dirty
   bool dirty() const { return _dirty; }

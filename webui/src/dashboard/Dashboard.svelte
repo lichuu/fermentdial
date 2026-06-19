@@ -4,6 +4,14 @@
   import HydrometerChart from './HydrometerChart.svelte';
   import EventLog from './EventLog.svelte';
   import { formatMode, getStatus, getHistory, getHistoryCsv, postSettings } from '../api.js';
+  import {
+    coerceDecimal,
+    decimalError,
+    DREST_HOURS_LIMITS,
+    filterDecimalInput,
+    filterIntegerInput,
+    targetLimits,
+  } from '../validation.js';
 
   const deg = String.fromCharCode(176);
 
@@ -30,14 +38,28 @@
     await tick();
   }
 
+  function tempLimits() {
+    return targetLimits(s?.unit || 'F');
+  }
+
   function applyTarget() {
-    const v = parseFloat(targetInputEl.value);
-    if (!isNaN(v)) post({ target: v.toFixed(1) });
+    if (!targetInputEl) return;
+    const limits = tempLimits();
+    targetInputEl.value = coerceDecimal(targetInputEl.value, limits);
+    if (decimalError(targetInputEl.value, limits, 'Setpoint')) return;
+    post({ target: targetInputEl.value });
+  }
+
+  function onTargetInput() {
+    if (!targetInputEl) return;
+    targetInputEl.value = filterDecimalInput(targetInputEl.value);
   }
 
   function nudge(delta) {
-    const v = parseFloat(targetInputEl.value || '68') + delta;
-    targetInputEl.value = (Math.round(v * 10) / 10).toFixed(1);
+    if (!targetInputEl) return;
+    const limits = tempLimits();
+    const v = parseFloat(coerceDecimal(targetInputEl.value || String(limits.fallback), limits)) + delta;
+    targetInputEl.value = coerceDecimal(v, limits);
     applyTarget();
   }
 
@@ -50,12 +72,30 @@
   }
 
   function startDrest() {
+    if (!dRestTargetInputEl || !dRestHoursInputEl) return;
+    const limits = tempLimits();
+    dRestTargetInputEl.value = coerceDecimal(dRestTargetInputEl.value, limits);
+    dRestHoursInputEl.value = coerceDecimal(dRestHoursInputEl.value, DREST_HOURS_LIMITS);
+    const err =
+      decimalError(dRestTargetInputEl.value, limits, 'Rest temp') ||
+      decimalError(dRestHoursInputEl.value, DREST_HOURS_LIMITS, 'Duration hours');
+    if (err) return;
     post({
       dRestAction: 'start',
       dRestTarget: dRestTargetInputEl.value,
       dRestHours: dRestHoursInputEl.value,
       dRestReturnProfile: dRestReturnSelectEl.value,
     });
+  }
+
+  function onDrestTargetInput() {
+    if (!dRestTargetInputEl) return;
+    dRestTargetInputEl.value = filterDecimalInput(dRestTargetInputEl.value);
+  }
+
+  function onDrestHoursInput() {
+    if (!dRestHoursInputEl) return;
+    dRestHoursInputEl.value = filterIntegerInput(dRestHoursInputEl.value);
   }
 
   function endDrest() {
@@ -295,7 +335,14 @@
         <div class="fieldLabel" style="margin-top:12px">Setpoint</div>
         <div class="targetCtl" style="margin-top:6px">
           <button onclick={() => nudge(-0.1)}>-</button>
-          <input bind:this={targetInputEl} inputmode="decimal" step="0.1" onchange={applyTarget} />
+          <input
+            bind:this={targetInputEl}
+            inputmode="decimal"
+            step="0.1"
+            oninput={onTargetInput}
+            onchange={applyTarget}
+            onblur={applyTarget}
+          />
           <button onclick={() => nudge(0.1)}>+</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">
@@ -306,8 +353,33 @@
       <div class="panel">
         <h2>Diacetyl Rest</h2>
         <div class="row">
-          <label class="fieldLabel">Rest temp<input bind:this={dRestTargetInputEl} inputmode="decimal" step="0.1" /></label>
-          <label class="fieldLabel">Hours<input bind:this={dRestHoursInputEl} inputmode="numeric" step="24" min="24" max="96" /></label>
+          <label class="fieldLabel">Rest temp<input
+            bind:this={dRestTargetInputEl}
+            inputmode="decimal"
+            step="0.1"
+            oninput={onDrestTargetInput}
+            onblur={() => {
+              if (dRestTargetInputEl) {
+                dRestTargetInputEl.value = coerceDecimal(dRestTargetInputEl.value, tempLimits());
+              }
+            }}
+          /></label>
+          <label class="fieldLabel">Hours<input
+            bind:this={dRestHoursInputEl}
+            inputmode="numeric"
+            step="24"
+            min="24"
+            max="96"
+            oninput={onDrestHoursInput}
+            onblur={() => {
+              if (dRestHoursInputEl) {
+                dRestHoursInputEl.value = coerceDecimal(
+                  dRestHoursInputEl.value,
+                  DREST_HOURS_LIMITS,
+                );
+              }
+            }}
+          /></label>
         </div>
         <label class="fieldLabel" style="margin-top:8px">
           After rest
@@ -364,7 +436,7 @@
       <HydrometerChart samples={graphSamples} unit={s?.unit || 'F'} source={graphSource} />
     </section>
 
-    <EventLog />
+    <EventLog clock={s?.clock} uptimeSeconds={s?.uptimeSeconds} />
 
     <section class="panel dashFooter">
       <div class="dashFooterRow">
@@ -376,6 +448,7 @@
             class:bad={!!s?.fault && s.fault !== 'NONE'}
           >{s ? s.fault : 'NONE'}</span>
         </div>
+        <span class="dashFooterUptime">{s ? remainingText(s.uptimeSeconds) + ' uptime' : '-- uptime'}</span>
         <label class="dashFooterCheck">
           <input
             type="checkbox"

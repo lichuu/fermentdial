@@ -441,8 +441,6 @@ void setup() {
       [](uint8_t brightness) { ui.previewBrightness(brightness); });
   network.begin(settings, hydrometer);
   network.setEventLog(&eventLog);
-  eventLog.add(EventType::Info, String(F("Booted ")) + FIRMWARE_VERSION,
-               nowEpochOrUptime(millis()));
 }
 
 void loop() {
@@ -461,6 +459,7 @@ void loop() {
                     temperatureSensor.temperatureC());
 
   evaluateAlerts(nowMs, selectedHydrometer);
+  eventLog.upgradeUptimeTimestamps(nowMs);
   if (eventLog.dirty() && nowMs - lastEventFlushMs >= EVENT_FLUSH_INTERVAL_MS) {
     lastEventFlushMs = nowMs;
     eventLog.flush();
