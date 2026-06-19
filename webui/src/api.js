@@ -22,6 +22,10 @@ export function getEvents() {
   return fetch('/api/events').then((r) => r.json());
 }
 
+export function getSelfCheck() {
+  return fetch('/api/selfcheck').then((r) => r.json());
+}
+
 export function postSettings(fields) {
   return fetch('/api/settings', {
     method: 'POST',

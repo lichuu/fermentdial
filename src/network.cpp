@@ -867,6 +867,9 @@ void NetworkManager::startWebServer() {
     _server.send(200, "application/json",
                  _eventLog != nullptr ? _eventLog->toJson() : String("[]"));
   });
+  _server.on("/api/selfcheck", HTTP_GET, [this]() {
+    _server.send(200, "application/json", selfCheckJson(millis()));
+  });
   _server.on("/api/history.csv", HTTP_GET, [this]() {
     _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
     _server.sendHeader("Content-Disposition",
@@ -2484,6 +2487,141 @@ String NetworkManager::programJson() const {
     json += "]}";
   }
   json += "]}";
+  return json;
+}
+
+String NetworkManager::selfCheckJson(uint32_t nowMs) const {
+  const bool f = _webStatus.unitsFahrenheit;
+  String json = "[";
+  bool first = true;
+  auto add = [&](const String &id, const String &label, const char *status,
+                 const String &detail) {
+    if (!first) {
+      json += ",";
+    }
+    first = false;
+    json += "{\"id\":" + jsonString(id) + ",\"label\":" + jsonString(label) +
+            ",\"status\":\"" + String(status) +
+            "\",\"detail\":" + jsonString(detail) + "}";
+  };
+
+  if (_webStatus.demoSensor) {
+    add("sensor", "Temperature sensor", "warn",
+        "Demo sensor - simulated readings, not for real fermentation.");
+  } else if (_webStatus.tempValid) {
+    add("sensor", "Temperature sensor", "ok",
+        "Reading " + String(toDisplayTemp(_webStatus.tempC, f), 1) +
+            unitLabel(f));
+  } else {
+    add("sensor", "Temperature sensor", "fail",
+        "No valid reading - check the DS18B20 wiring (GPIO13, 3.3V).");
+  }
+
+  if (_webStatus.demoSensor) {
+    add("outputs", "Heater & pump outputs", "warn",
+        "Demo build - physical outputs are forced OFF.");
+  } else {
+    add("outputs", "Heater & pump outputs", "ok",
+        "Interlock active (never both on). Bench-test from Dial settings.");
+  }
+
+  if (_settings == nullptr || !_settings->hydrometerBleEnabled) {
+    add("hydrometer", "Hydrometer", "warn", "BLE scanning is disabled.");
+  } else if (_settings->hydrometerSelectionKey.length() == 0) {
+    add("hydrometer", "Hydrometer", "warn",
+        "Scanning, but no device is selected.");
+  } else {
+    HydrometerReading sel;
+    if (_hydrometer != nullptr) {
+      sel = _hydrometer->selectedReading(*_settings, nowMs);
+    }
+    if (!sel.valid || sel.stale) {
+      add("hydrometer", "Hydrometer", "fail",
+          "Selected device is not reporting (stale).");
+    } else {
+      add("hydrometer", "Hydrometer", "ok",
+          "SG " + String(sel.gravity, 3) + " from " +
+              (sel.label.length() ? sel.label : String("device")));
+    }
+  }
+
+  if (_snapshot.wifiConnected) {
+    add("wifi", "Wi-Fi", "ok", _snapshot.ipAddress);
+  } else {
+    add("wifi", "Wi-Fi", "warn",
+        "Not connected - local control still runs without it.");
+  }
+
+  auto integrationStatus = [](const String &s) -> const char * {
+    if (s.startsWith("OK") || s == "Saved" || s == "Connected" ||
+        s == "Waiting") {
+      return "ok";
+    }
+    return "warn";
+  };
+  if (_mqttConfig.enabled) {
+    add("mqtt", "MQTT / Home Assistant", integrationStatus(_lastMqttStatus),
+        _lastMqttStatus);
+  }
+  if (_brewfather.enabled) {
+    add("brewfather", "Brewfather", integrationStatus(_lastBrewfatherStatus),
+        _lastBrewfatherStatus);
+  }
+  if (_influx.enabled) {
+    add("influx", "InfluxDB", integrationStatus(_lastInfluxStatus),
+        _lastInfluxStatus);
+  }
+
+  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
+    const uint8_t slot = profileSlotForProgramIndex(i);
+    const String id = String("program") + String(i);
+    const String label = (_settings != nullptr)
+                             ? _settings->profiles[slot].name
+                             : String(defaultProfileName(slot));
+    if (_settings == nullptr || _settings->programs[i].stepCount == 0) {
+      add(id, label, "warn", "No steps defined.");
+      continue;
+    }
+    const ProgramSettings &prog = _settings->programs[i];
+    bool badDuration = false;
+    bool badTarget = false;
+    bool needsHydro = false;
+    bool tiltVelocity = false;
+    for (uint8_t s = 0; s < prog.stepCount; ++s) {
+      const ProfileStep &st = prog.steps[s];
+      const StepExit ex = effectiveStepExit(st);
+      if (ex == StepExit::Time && st.durationSeconds == 0) {
+        badDuration = true;
+      }
+      if (ex == StepExit::GravityBelow || ex == StepExit::GravityStable ||
+          ex == StepExit::VelocityBelow) {
+        needsHydro = true;
+      }
+      if (ex == StepExit::VelocityBelow &&
+          _settings->hydrometerScanType == HydrometerScanType::Tilt) {
+        tiltVelocity = true;
+      }
+      if (st.targetC < MIN_TARGET_C - 0.1f || st.targetC > MAX_TARGET_C + 0.1f) {
+        badTarget = true;
+      }
+    }
+    const bool hydroSelected = _settings->hydrometerSelectionKey.length() > 0;
+    if (badDuration) {
+      add(id, label, "fail", "A time-based step has no duration set.");
+    } else if (badTarget) {
+      add(id, label, "fail", "A step target is out of the allowed range.");
+    } else if (needsHydro && !hydroSelected) {
+      add(id, label, "warn",
+          "Uses a gravity exit but no hydrometer is selected.");
+    } else if (tiltVelocity) {
+      add(id, label, "warn",
+          "Velocity exit with a Tilt falls back to gravity-stable.");
+    } else {
+      add(id, label, "ok", String(prog.stepCount) + " steps, ready to run.");
+    }
+  }
+
+  json += "]";
   return json;
 }
 

@@ -7,8 +7,9 @@
   import Controller from './tabs/Controller.svelte';
   import System from './tabs/System.svelte';
   import Monitoring from './tabs/Monitoring.svelte';
+  import Setup from './tabs/Setup.svelte';
 
-  const TABS = ['profiles', 'programs', 'hydrometer', 'controller', 'system', 'monitoring'];
+  const TABS = ['profiles', 'programs', 'hydrometer', 'controller', 'system', 'monitoring', 'setup'];
 
   let status = $state(null);
   let config = $state(null);
@@ -94,5 +95,8 @@
     {#if config}
       <Monitoring {config} />
     {/if}
+  </div>
+  <div class="tabpanel" class:tabpanel-shown={activeTab === 'setup'}>
+    <Setup />
   </div>
 </main>

@@ -228,6 +228,7 @@ private:
   bool parseMode(const String &value, UserMode &mode) const;
   String statusJson(uint32_t nowMs) const;
   String programJson() const;
+  String selfCheckJson(uint32_t nowMs) const;
   void streamHistoryFile(const char *path);
   void recordHistory(uint32_t nowMs, bool valid, float tempC);
   String historyJson() const;
