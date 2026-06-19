@@ -100,6 +100,7 @@ bool SettingsStorage::load(Settings &settings) {
   settings.programStepElapsedSeconds = _prefs.getUInt("progElap", 0);
   settings.programStepStartTargetC =
       _prefs.getFloat("progStart", DEFAULT_TARGET_C);
+  settings.historyLoggingEnabled = _prefs.getBool("histLog", false);
   if (settings.diacetylRestActive &&
       settings.diacetylRestRemainingSeconds == 0) {
     settings.diacetylRestRemainingSeconds =
@@ -169,6 +170,7 @@ void SettingsStorage::saveNow(const Settings &settings) {
   _prefs.putUChar("progStep", copy.programStepIndex);
   _prefs.putUInt("progElap", copy.programStepElapsedSeconds);
   _prefs.putFloat("progStart", copy.programStepStartTargetC);
+  _prefs.putBool("histLog", copy.historyLoggingEnabled);
   _pending = false;
 }
 

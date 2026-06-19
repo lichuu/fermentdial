@@ -284,6 +284,13 @@
 
     <div class="footer">
       Fault: <span>{s ? s.fault : 'NONE'}</span>
+      <label style="margin-left:14px">
+        <input
+          type="checkbox"
+          checked={!!s?.historyLogging}
+          onchange={(e) => post({ historyLogging: e.target.checked ? 1 : 0 })}
+        /> Log history
+      </label>
       <a href="/api/history.csv" download style="margin-left:14px">Download history CSV</a>
     </div>
   </div>

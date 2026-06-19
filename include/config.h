@@ -351,6 +351,7 @@ struct Settings {
   uint32_t programStepElapsedSeconds = 0;
   float programStepStartTargetC = DEFAULT_TARGET_C;  // ramp baseline
   bool programManualAdvance = false;  // one-shot advance request from UI/API
+  bool historyLoggingEnabled = false;  // opt-in CSV history sampling to LittleFS
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
