@@ -1,5 +1,16 @@
 <script>
   import { getProgram, postSettings } from '../../api.js';
+  import {
+    coerceDecimal,
+    decimalError,
+    filterDecimalInput,
+    filterIntegerInput,
+    GRAVITY_LIMITS,
+    HOURS_LIMITS,
+    showDecimalInvalid,
+    STABLE_HOURS_LIMITS,
+    targetLimits,
+  } from '../../validation.js';
 
   let { status, refresh } = $props();
   const deg = String.fromCharCode(176);
@@ -105,6 +116,48 @@
     dragOver = null;
   }
 
+  const tempLimits = $derived(targetLimits(unit));
+
+  function normalizeStep(step) {
+    step.target = coerceDecimal(step.target, tempLimits);
+    step.hours = coerceDecimal(step.hours, HOURS_LIMITS);
+    if (step.exit === 1 || step.exit === 3) {
+      step.gravity = coerceDecimal(step.gravity, GRAVITY_LIMITS);
+    }
+    if (step.exit === 2) {
+      step.stableHours = coerceDecimal(step.stableHours, STABLE_HOURS_LIMITS);
+    }
+  }
+
+  function validateSteps(steps) {
+    const errors = [];
+    steps.forEach((step, i) => {
+      const label = 'Step ' + (i + 1);
+      const targetErr = decimalError(step.target, tempLimits, label + ' target');
+      if (targetErr) errors.push(targetErr);
+      const hoursErr = decimalError(step.hours, HOURS_LIMITS, label + ' ramp/hold hours');
+      if (hoursErr) errors.push(hoursErr);
+      if (step.exit === 1 || step.exit === 3) {
+        const gravityErr = decimalError(step.gravity, GRAVITY_LIMITS, label + ' gravity');
+        if (gravityErr) errors.push(gravityErr);
+      }
+      if (step.exit === 2) {
+        const stableErr = decimalError(
+          step.stableHours,
+          STABLE_HOURS_LIMITS,
+          label + ' stable hours',
+        );
+        if (stableErr) errors.push(stableErr);
+      }
+    });
+    return errors;
+  }
+
+  function prepareProgram(prog) {
+    prog.steps.forEach(normalizeStep);
+    return validateSteps(prog.steps);
+  }
+
   function encode(prog) {
     return prog.steps
       .map((s) =>
@@ -121,6 +174,11 @@
   }
 
   async function save(pi) {
+    const errors = prepareProgram(progs[pi]);
+    if (errors.length > 0) {
+      saveStatus = errors[0];
+      return;
+    }
     saveStatus = 'Saving ' + progs[pi].name + '...';
     await postSettings({
       programSaveSlot: progs[pi].index,
@@ -134,6 +192,11 @@
   async function start(pi) {
     if (progs[pi].steps.length === 0) {
       saveStatus = 'Save a step before starting.';
+      return;
+    }
+    const errors = prepareProgram(progs[pi]);
+    if (errors.length > 0) {
+      saveStatus = errors[0];
       return;
     }
     await postSettings({ programAction: 'start', programSlot: progs[pi].index });
@@ -165,14 +228,18 @@
     try {
       const obj = JSON.parse(await file.text());
       const steps = Array.isArray(obj.steps) ? obj.steps : obj;
-      progs[pi].steps = steps.slice(0, maxSteps).map((s) => ({
-        type: s.type | 0,
-        exit: s.exit | 0,
-        target: String(s.target ?? '68.0'),
-        hours: String(s.hours ?? '24'),
-        gravity: String(s.gravity ?? '1.010'),
-        stableHours: String(s.stableHours ?? '24'),
-      }));
+      progs[pi].steps = steps.slice(0, maxSteps).map((s) => {
+        const step = {
+          type: s.type | 0,
+          exit: s.exit | 0,
+          target: String(s.target ?? '68.0'),
+          hours: String(s.hours ?? '24'),
+          gravity: String(s.gravity ?? '1.010'),
+          stableHours: String(s.stableHours ?? '24'),
+        };
+        normalizeStep(step);
+        return step;
+      });
       saveStatus = 'Imported into ' + progs[pi].name + ' (not yet saved).';
     } catch (e) {
       saveStatus = 'Import failed: ' + e.message;
@@ -238,8 +305,31 @@
           <select bind:value={step.type}>
             {#each STEP_TYPES as t, ti}<option value={ti}>{t}</option>{/each}
           </select>
-          <input inputmode="decimal" step="0.1" bind:value={step.target} />
-          <input inputmode="decimal" step="0.5" min="0" bind:value={step.hours} />
+          <input
+            inputmode="decimal"
+            step="0.1"
+            class:inputInvalid={showDecimalInvalid(step.target, tempLimits)}
+            value={step.target}
+            oninput={(e) => {
+              step.target = filterDecimalInput(e.currentTarget.value);
+            }}
+            onblur={() => {
+              step.target = coerceDecimal(step.target, tempLimits);
+            }}
+          />
+          <input
+            inputmode="decimal"
+            step="0.5"
+            min="0"
+            class:inputInvalid={showDecimalInvalid(step.hours, HOURS_LIMITS)}
+            value={step.hours}
+            oninput={(e) => {
+              step.hours = filterDecimalInput(e.currentTarget.value);
+            }}
+            onblur={() => {
+              step.hours = coerceDecimal(step.hours, HOURS_LIMITS);
+            }}
+          />
           <select bind:value={step.exit}>
             {#each EXIT_TYPES as x, xi}<option value={xi}>{x}</option>{/each}
           </select>
@@ -247,15 +337,52 @@
             {#if step.exit === 1}
               <span class="condLabel">SG</span>
               <span class="condOp">&le;</span>
-              <input class="condValue" inputmode="decimal" step="0.001" bind:value={step.gravity} />
+              <input
+                class="condValue"
+                class:inputInvalid={showDecimalInvalid(step.gravity, GRAVITY_LIMITS)}
+                inputmode="decimal"
+                step="0.001"
+                value={step.gravity}
+                oninput={(e) => {
+                  step.gravity = filterDecimalInput(e.currentTarget.value);
+                }}
+                onblur={() => {
+                  step.gravity = coerceDecimal(step.gravity, GRAVITY_LIMITS);
+                }}
+              />
             {:else if step.exit === 2}
               <span class="condLabel">Stable</span>
-              <input class="condValue condValueWide" inputmode="numeric" step="1" min="1" bind:value={step.stableHours} />
+              <input
+                class="condValue condValueWide"
+                class:inputInvalid={showDecimalInvalid(step.stableHours, STABLE_HOURS_LIMITS)}
+                inputmode="numeric"
+                step="1"
+                min="1"
+                value={step.stableHours}
+                oninput={(e) => {
+                  step.stableHours = filterIntegerInput(e.currentTarget.value);
+                }}
+                onblur={() => {
+                  step.stableHours = coerceDecimal(step.stableHours, STABLE_HOURS_LIMITS);
+                }}
+              />
               <span class="condUnit">h</span>
             {:else if step.exit === 3}
               <span class="condLabel">Vel</span>
               <span class="condOp">&le;</span>
-              <input class="condValue" inputmode="decimal" step="0.001" bind:value={step.gravity} />
+              <input
+                class="condValue"
+                class:inputInvalid={showDecimalInvalid(step.gravity, GRAVITY_LIMITS)}
+                inputmode="decimal"
+                step="0.001"
+                value={step.gravity}
+                oninput={(e) => {
+                  step.gravity = filterDecimalInput(e.currentTarget.value);
+                }}
+                onblur={() => {
+                  step.gravity = coerceDecimal(step.gravity, GRAVITY_LIMITS);
+                }}
+              />
             {:else if step.exit === 0}
               <span class="condHint">Ramp/hold timer</span>
             {:else}
@@ -299,12 +426,15 @@
   .stepRows { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
   .stepRow {
     display: grid;
-    grid-template-columns: 32px 1.2fr 0.9fr 0.9fr 1.2fr 1.4fr auto;
+    /* Fixed action column — per-row `auto` was narrower on the header row and shifted labels. */
+    grid-template-columns: 32px 1.2fr 0.9fr 0.9fr 1.2fr 1.4fr 132px;
     gap: 6px;
     align-items: center;
   }
   .stepHead { font-size: 0.72rem; color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
-  .stepRow input, .stepRow select { width: 100%; min-width: 0; }
+  .stepHead span:not(:first-child):not(:last-child) { text-align: center; }
+  .stepRow input, .stepRow select { width: 100%; min-width: 0; margin-top: 0; }
+  .stepRow input.inputInvalid { border-color: var(--fault); }
   .condBox {
     display: flex;
     align-items: center;
@@ -362,8 +492,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     margin: 0;
     padding: 0;
     border: 1px solid var(--border);

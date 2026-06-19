@@ -61,6 +61,7 @@ void EventLog::begin() {
   _count = 0;
   _head = 0;
   _dirty = false;
+  bool droppedBoot = false;
   File f = LittleFS.open(EVENTS_PATH, "r");
   if (!f) {
     return;
@@ -83,9 +84,16 @@ void EventLog::begin() {
     e.wallClock = line.substring(p1 + 1, p2).toInt() != 0;
     e.type = static_cast<EventType>(line.substring(p2 + 1, p3).toInt());
     e.message = line.substring(p3 + 1);
+    if (e.type == EventType::Info && e.message.startsWith(F("Booted "))) {
+      droppedBoot = true;
+      continue;
+    }
     push(e);
   }
   f.close();
+  if (droppedBoot) {
+    _dirty = true;
+  }
 }
 
 void EventLog::add(EventType type, const String &message, const Timestamp &ts) {
@@ -96,6 +104,26 @@ void EventLog::add(EventType type, const String &message, const Timestamp &ts) {
   e.message = message;
   push(e);
   _dirty = true;
+}
+
+void EventLog::upgradeUptimeTimestamps(uint32_t nowMs) {
+  const Timestamp now = nowEpochOrUptime(nowMs);
+  if (!now.wallClock) {
+    return;
+  }
+  const uint32_t uptimeSec = nowMs / 1000U;
+  bool changed = false;
+  for (uint8_t i = 0; i < _count; ++i) {
+    Event &e = _events[(_head + i) % CAPACITY];
+    if (!e.wallClock && e.ts <= uptimeSec) {
+      e.ts = now.seconds - (uptimeSec - e.ts);
+      e.wallClock = true;
+      changed = true;
+    }
+  }
+  if (changed) {
+    _dirty = true;
+  }
 }
 
 void EventLog::flush() {

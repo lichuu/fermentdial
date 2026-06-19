@@ -1,7 +1,17 @@
 <script>
   import { getEvents } from '../api.js';
 
+  let { clock = null, uptimeSeconds = null } = $props();
+
   let events = $state([]);
+
+  const TIME_FMT = {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+  };
 
   async function load() {
     try {
@@ -17,13 +27,42 @@
     return () => clearInterval(id);
   });
 
-  function when(e) {
+  function epochForEvent(e) {
     if (e.wallClock) {
-      return new Date(e.ts * 1000).toLocaleString();
+      return e.ts;
     }
-    const h = Math.floor(e.ts / 3600);
-    const m = Math.floor((e.ts % 3600) / 60);
-    return '+' + (h > 0 ? h + 'h ' + m + 'm' : m + 'm') + ' uptime';
+    if (clock?.wallClock && uptimeSeconds != null && e.ts <= uptimeSeconds) {
+      return clock.seconds - (uptimeSeconds - e.ts);
+    }
+    return null;
+  }
+
+  function formatEpoch(sec) {
+    return new Date(sec * 1000).toLocaleString(undefined, TIME_FMT);
+  }
+
+  function formatUptime(sec) {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    if (h > 0) {
+      return m > 0 || s > 0 ? `${h}h ${m}m ${s}s` : `${h}h`;
+    }
+    if (m > 0) {
+      return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+    return `${s}s`;
+  }
+
+  function when(e) {
+    const epoch = epochForEvent(e);
+    if (epoch != null) {
+      return formatEpoch(epoch);
+    }
+    if (!e.wallClock && uptimeSeconds != null && e.ts > uptimeSeconds) {
+      return 'before last reboot';
+    }
+    return formatUptime(e.ts) + ' after boot';
   }
 
   const FAULTY = new Set([
@@ -71,7 +110,13 @@
     font-size: 0.85rem;
   }
   .ev:last-child { border-bottom: none; }
-  .evWhen { color: var(--muted); white-space: nowrap; min-width: 9em; font-variant-numeric: tabular-nums; }
-  .evMsg { flex: 1; }
+  .evWhen {
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 10.5em;
+    font-variant-numeric: tabular-nums;
+  }
+  .evMsg { flex: 1; min-width: 0; }
   .ev.warn .evMsg { color: #f7a; }
 </style>

@@ -864,6 +864,11 @@ inline void sanitizeSettings(Settings &settings) {
         settings.hydrometerSelectionKey.substring(0, 64);
   }
   normalizeHydrometerScanSettings(settings);
+#if FERM_DEMO_SENSOR
+  if (settings.hydrometerSelectionKey.length() == 0) {
+    settings.hydrometerSelectionKey = DEMO_HYDROMETER_KEY;
+  }
+#endif
   if (!gravityIsValid(settings.hydrometerOriginalGravity)) {
     settings.hydrometerOriginalGravity = NAN;
   }

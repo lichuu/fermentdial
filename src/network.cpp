@@ -2672,55 +2672,6 @@ String NetworkManager::selfCheckJson(uint32_t nowMs) const {
         _lastInfluxStatus);
   }
 
-  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
-    const uint8_t slot = profileSlotForProgramIndex(i);
-    const String id = String("program") + String(i);
-    const String label = (_settings != nullptr)
-                             ? _settings->profiles[slot].name
-                             : String(defaultProfileName(slot));
-    if (_settings == nullptr || _settings->programs[i].stepCount == 0) {
-      add(id, label, "warn", "No steps defined.");
-      continue;
-    }
-    const ProgramSettings &prog = _settings->programs[i];
-    bool badDuration = false;
-    bool badTarget = false;
-    bool needsHydro = false;
-    bool tiltVelocity = false;
-    for (uint8_t s = 0; s < prog.stepCount; ++s) {
-      const ProfileStep &st = prog.steps[s];
-      const StepExit ex = effectiveStepExit(st);
-      if (ex == StepExit::Time && st.durationSeconds == 0) {
-        badDuration = true;
-      }
-      if (ex == StepExit::GravityBelow || ex == StepExit::GravityStable ||
-          ex == StepExit::VelocityBelow) {
-        needsHydro = true;
-      }
-      if (ex == StepExit::VelocityBelow &&
-          _settings->hydrometerScanType == HydrometerScanType::Tilt) {
-        tiltVelocity = true;
-      }
-      if (st.targetC < MIN_TARGET_C - 0.1f || st.targetC > MAX_TARGET_C + 0.1f) {
-        badTarget = true;
-      }
-    }
-    const bool hydroSelected = _settings->hydrometerSelectionKey.length() > 0;
-    if (badDuration) {
-      add(id, label, "fail", "A time-based step has no duration set.");
-    } else if (badTarget) {
-      add(id, label, "fail", "A step target is out of the allowed range.");
-    } else if (needsHydro && !hydroSelected) {
-      add(id, label, "warn",
-          "Uses a gravity exit but no hydrometer is selected.");
-    } else if (tiltVelocity) {
-      add(id, label, "warn",
-          "Velocity exit with a Tilt falls back to gravity-stable.");
-    } else {
-      add(id, label, "ok", String(prog.stepCount) + " steps, ready to run.");
-    }
-  }
-
   json += "]";
   return json;
 }
@@ -2762,6 +2713,7 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   json += "\"wallClock\":" + String(clock.wallClock ? "true" : "false") + ",";
   json += "\"seconds\":" + String(clock.seconds);
   json += "},";
+  json += "\"uptimeSeconds\":" + String(nowMs / 1000U) + ",";
   json += "\"otaEnabled\":" + String(FERM_ENABLE_OTA ? "true" : "false") + ",";
   json += "\"firmwareVersion\":" + jsonString(FIRMWARE_VERSION) + ",";
   json += "\"firmwareGitSha\":" + jsonString(FIRMWARE_GIT_SHA) + ",";
