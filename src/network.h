@@ -32,14 +32,14 @@ struct WebStatus {
   float tempC = NAN;
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
-  uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
   float liveTargetC = DEFAULT_TARGET_C;
   bool diacetylRestActive = false;
   float diacetylRestTargetC = DEFAULT_DIACETYL_REST_TARGET_C;
   uint32_t diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
   uint32_t diacetylRestRemainingSeconds = 0;
   uint8_t diacetylRestReturnProfile =
-      static_cast<uint8_t>(ProfileSlot::Ferment);
+      static_cast<uint8_t>(ProfileSlot::Ale);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;

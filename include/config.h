@@ -48,17 +48,12 @@ namespace ferm {
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
-constexpr uint16_t SETTINGS_VERSION = 14;
-constexpr uint16_t SETTINGS_VERSION_FAHRENHEIT_STORAGE = 1;
-constexpr uint16_t SETTINGS_VERSION_SINGLE_TARGET_STORAGE = 2;
-constexpr uint16_t SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE = 4;
-constexpr uint16_t SETTINGS_VERSION_FERMENTER_NAME_STORAGE = 5;
-constexpr uint16_t SETTINGS_VERSION_PRELIVE_TARGET_STORAGE = 6;
-constexpr uint16_t SETTINGS_VERSION_DIACETYL_REST_STORAGE = 7;
-constexpr uint16_t SETTINGS_VERSION_HYDROMETER_STORAGE = 9;
-constexpr uint16_t SETTINGS_VERSION_PRE_GRADUAL_CRASH_STORAGE = 10;
-constexpr uint16_t SETTINGS_VERSION_PRE_PROFILE_WORKFLOW_STORAGE = 11;
-constexpr uint16_t SETTINGS_VERSION_PRE_CONFIGURABLE_GRADUAL_CRASH_STORAGE = 12;
+// Stored-settings schema version, stamped into the "fermctl" NVS namespace.
+// Every field is read by name with a default (see SettingsStorage::load), so
+// additive changes (new keys) upgrade in place with no migration code. Keep
+// changes additive -- never reinterpret an existing key. Wi-Fi and integration
+// config live in the separate "net" namespace and are unaffected by this.
+constexpr uint16_t SETTINGS_VERSION = 16;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -154,6 +149,7 @@ constexpr float DEFAULT_TARGET_F = 68.0f;
 constexpr float DEFAULT_SOFT_CRASH_TARGET_F = 55.0f;
 constexpr float DEFAULT_CRASH_TARGET_F = 37.0f;
 constexpr float DEFAULT_LAGER_TARGET_F = 55.0f;
+constexpr float DEFAULT_KVEIK_TARGET_F = 90.0f;
 constexpr float DEFAULT_CUSTOM1_TARGET_F = 72.0f;
 constexpr float DEFAULT_CUSTOM2_TARGET_F = 64.0f;
 constexpr float DEFAULT_DIACETYL_REST_TARGET_F = 70.0f;
@@ -171,6 +167,7 @@ constexpr float DEFAULT_TARGET_C = fToC(DEFAULT_TARGET_F);
 constexpr float DEFAULT_SOFT_CRASH_TARGET_C = fToC(DEFAULT_SOFT_CRASH_TARGET_F);
 constexpr float DEFAULT_CRASH_TARGET_C = fToC(DEFAULT_CRASH_TARGET_F);
 constexpr float DEFAULT_LAGER_TARGET_C = fToC(DEFAULT_LAGER_TARGET_F);
+constexpr float DEFAULT_KVEIK_TARGET_C = fToC(DEFAULT_KVEIK_TARGET_F);
 constexpr float DEFAULT_CUSTOM1_TARGET_C = fToC(DEFAULT_CUSTOM1_TARGET_F);
 constexpr float DEFAULT_CUSTOM2_TARGET_C = fToC(DEFAULT_CUSTOM2_TARGET_F);
 constexpr float DEFAULT_DIACETYL_REST_TARGET_C =
@@ -221,7 +218,7 @@ constexpr float MAX_VALID_GRAVITY = 1.200f;
 constexpr float GAUGE_MIN_C = 0.0f;
 constexpr float GAUGE_MAX_C = 35.0f;
 
-constexpr uint8_t PROFILE_COUNT = 6;
+constexpr uint8_t PROFILE_COUNT = 7;
 constexpr size_t MAX_FERMENTER_NAME_LENGTH = 24;
 constexpr size_t MAX_PROFILE_NAME_LENGTH = 15;
 
@@ -260,12 +257,13 @@ enum class HydrometerScanType : uint8_t {
 };
 
 enum class ProfileSlot : uint8_t {
-  Ferment = 0,
-  SoftCrash = 1,
-  Crash = 2,
-  Lager = 3,
-  Custom1 = 4,
-  Custom2 = 5,
+  Ale = 0,
+  Lager = 1,
+  Kveik = 2,
+  SoftCrash = 3,
+  Crash = 4,
+  Custom1 = 5,
+  Custom2 = 6,
 };
 
 struct ProfileSettings {
@@ -277,7 +275,7 @@ struct Settings {
   uint16_t version = SETTINGS_VERSION;
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
-  uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+  uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
   // Live operating setpoint. Profiles hold recallable presets; this is the
   // value the controller actually regulates to and what the dial nudges.
   float liveTargetC = DEFAULT_TARGET_C;
@@ -286,7 +284,7 @@ struct Settings {
   uint32_t diacetylRestDurationSeconds = DEFAULT_DIACETYL_REST_DURATION_SECONDS;
   uint32_t diacetylRestRemainingSeconds = 0;
   uint8_t diacetylRestReturnProfile =
-      static_cast<uint8_t>(ProfileSlot::Ferment);
+      static_cast<uint8_t>(ProfileSlot::Ale);
   float coolOnDeltaC = DEFAULT_COOL_ON_DELTA_C;
   float heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
   float holdDeltaC = DEFAULT_HOLD_DELTA_C;
@@ -394,14 +392,16 @@ inline const char *faultText(FaultCode fault) {
 
 inline const char *defaultProfileName(uint8_t index) {
   switch (index) {
-  case static_cast<uint8_t>(ProfileSlot::Ferment):
-    return "Ferment";
+  case static_cast<uint8_t>(ProfileSlot::Ale):
+    return "Ale";
+  case static_cast<uint8_t>(ProfileSlot::Lager):
+    return "Lager";
+  case static_cast<uint8_t>(ProfileSlot::Kveik):
+    return "Kveik";
   case static_cast<uint8_t>(ProfileSlot::SoftCrash):
     return "Soft Crash";
   case static_cast<uint8_t>(ProfileSlot::Crash):
     return "Crash";
-  case static_cast<uint8_t>(ProfileSlot::Lager):
-    return "Lager";
   case static_cast<uint8_t>(ProfileSlot::Custom1):
     return "Custom 1";
   case static_cast<uint8_t>(ProfileSlot::Custom2):
@@ -413,17 +413,19 @@ inline const char *defaultProfileName(uint8_t index) {
 
 inline float defaultProfileTargetC(uint8_t index) {
   switch (index) {
+  case static_cast<uint8_t>(ProfileSlot::Lager):
+    return DEFAULT_LAGER_TARGET_C;
+  case static_cast<uint8_t>(ProfileSlot::Kveik):
+    return DEFAULT_KVEIK_TARGET_C;
   case static_cast<uint8_t>(ProfileSlot::SoftCrash):
     return DEFAULT_SOFT_CRASH_TARGET_C;
   case static_cast<uint8_t>(ProfileSlot::Crash):
     return DEFAULT_CRASH_TARGET_C;
-  case static_cast<uint8_t>(ProfileSlot::Lager):
-    return DEFAULT_LAGER_TARGET_C;
   case static_cast<uint8_t>(ProfileSlot::Custom1):
     return DEFAULT_CUSTOM1_TARGET_C;
   case static_cast<uint8_t>(ProfileSlot::Custom2):
     return DEFAULT_CUSTOM2_TARGET_C;
-  case static_cast<uint8_t>(ProfileSlot::Ferment):
+  case static_cast<uint8_t>(ProfileSlot::Ale):
   default:
     return DEFAULT_TARGET_C;
   }
@@ -453,7 +455,7 @@ inline void setActiveTargetC(Settings &settings, float targetC) {
 inline uint8_t diacetylRestReturnProfileIndex(const Settings &settings) {
   return settings.diacetylRestReturnProfile < PROFILE_COUNT
              ? settings.diacetylRestReturnProfile
-             : static_cast<uint8_t>(ProfileSlot::Ferment);
+             : static_cast<uint8_t>(ProfileSlot::Ale);
 }
 
 // Live setpoint the controller regulates to (separate from profile presets).
@@ -586,11 +588,11 @@ inline void sanitizeSettings(Settings &settings) {
     settings.brightness = MIN_BRIGHTNESS;
   }
   if (settings.activeProfile >= PROFILE_COUNT) {
-    settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ferment);
+    settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
   }
   if (settings.diacetylRestReturnProfile >= PROFILE_COUNT) {
     settings.diacetylRestReturnProfile =
-        static_cast<uint8_t>(ProfileSlot::Ferment);
+        static_cast<uint8_t>(ProfileSlot::Ale);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     settings.profiles[i].name.trim();
@@ -598,7 +600,7 @@ inline void sanitizeSettings(Settings &settings) {
     if (nameWasEmpty) {
       settings.profiles[i].name = defaultProfileName(i);
     }
-    if (nameWasEmpty && i != static_cast<uint8_t>(ProfileSlot::Ferment) &&
+    if (nameWasEmpty && i != static_cast<uint8_t>(ProfileSlot::Ale) &&
         settings.profiles[i].targetC == DEFAULT_TARGET_C) {
       settings.profiles[i].targetC = defaultProfileTargetC(i);
     }
