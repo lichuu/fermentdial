@@ -18,6 +18,10 @@ export function getProgram() {
   return fetch('/api/program').then((r) => r.json());
 }
 
+export function getEvents() {
+  return fetch('/api/events').then((r) => r.json());
+}
+
 export function postSettings(fields) {
   return fetch('/api/settings', {
     method: 'POST',
