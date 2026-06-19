@@ -6,6 +6,10 @@ export function getHistory() {
   return fetch('/api/history').then((r) => r.json());
 }
 
+export function getHistoryCsv() {
+  return fetch('/api/history.csv').then((r) => r.text());
+}
+
 export function getWifiScan() {
   return fetch('/api/wifi/scan').then((r) => r.json());
 }

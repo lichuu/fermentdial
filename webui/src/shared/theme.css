@@ -128,6 +128,9 @@ body[data-page="settings"] .panel { padding: 14px; }
 .label { color: var(--muted); font-size: 12px; text-transform: uppercase; }
 .value { font-size: 23px; font-weight: 900; margin-top: 4px; }
 .panel h2 { font-size: 15px; margin: 0 0 11px; color: #d9e8f4; }
+.panelHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.panelHead h2 { margin: 0; }
+.panelHead span { color: var(--muted); font-size: 12px; font-weight: 900; text-transform: uppercase; }
 
 .controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
 .targetCtl { display: grid; grid-template-columns: 50px 1fr 50px; gap: 8px; align-items: center; }
@@ -149,6 +152,15 @@ body[data-page="settings"] button { background: var(--blue); color: #fff; font-w
 .heat { background: #3b1807; }
 .cool { background: #123040; }
 .footer { margin-top: 12px; color: #8da2b0; font-size: 13px; }
+.historyPanel { margin-top: 12px; }
+.chartWrap { position: relative; min-height: 250px; }
+.hydroChart { display: block; width: 100%; height: 250px; }
+.chartLegend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 900; }
+.chartLegend span { display: inline-flex; align-items: center; gap: 5px; }
+.chartLegend i { display: inline-block; width: 18px; height: 3px; border-radius: 999px; }
+.chartLegend .sg { background: var(--fault); }
+.chartLegend .beer { background: var(--cool); }
+.chartLegend .hydro { background: var(--ok); }
 
 @media (max-width: 760px) {
   body[data-page="dashboard"] main { padding: 12px; }
@@ -157,6 +169,7 @@ body[data-page="settings"] button { background: var(--blue); color: #fff; font-w
   .outputs { grid-template-columns: 1fr 1fr; margin-top: 14px; }
   .temp { font-size: 58px; }
   .unit { font-size: 22px; }
+  .hydroChart { height: 220px; }
 }
 
 /* Settings page */

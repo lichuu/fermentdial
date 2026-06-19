@@ -604,7 +604,8 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   _hydrometer = &hydrometer;
   _webStatus.tempValid = sensor.isValid();
   _webStatus.tempC = sensor.temperatureC();
-  recordHistory(nowMs, _webStatus.tempValid, _webStatus.tempC);
+  recordHistory(nowMs, _webStatus.tempValid, _webStatus.tempC,
+                hydrometer.selectedReading(settings, nowMs));
   _webStatus.fermenterName = settings.fermenterName;
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     _webStatus.profiles[i] = settings.profiles[i];
@@ -2111,6 +2112,13 @@ void NetworkManager::handleSettingsPost() {
         _server.arg("historyLogging").toInt() != 0;
     changed = true;
   }
+  if ((_server.hasArg("hydrometerBleEnabled") ||
+       _server.hasArg("hydrometerScanType")) &&
+      _settings->hydrometerBleEnabled &&
+      _settings->hydrometerScanType != HydrometerScanType::Unknown) {
+    _settings->historyLoggingEnabled = true;
+    changed = true;
+  }
   if (_server.hasArg("programAction")) {
     String action = _server.arg("programAction");
     action.trim();
@@ -2405,7 +2413,8 @@ void NetworkManager::haResetAnnounced() {
   _haAnnouncedCount = 0;
 }
 
-void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC) {
+void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC,
+                                   const HydrometerReading &hydro) {
   if (!valid || isnan(tempC)) {
     return;  // only store real readings; gaps just leave the trace shorter
   }
@@ -2413,7 +2422,20 @@ void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC) {
     return;
   }
   _lastSampleMs = nowMs;
-  _history[_historyHead] = static_cast<int16_t>(lroundf(tempC * 10.0f));
+  _historyTempC[_historyHead] = static_cast<int16_t>(lroundf(tempC * 10.0f));
+  const bool hydroFresh = hydro.valid && !hydro.stale;
+  _historyGravityValid[_historyHead] =
+      hydroFresh && gravityIsValid(hydro.gravity);
+  _historyHydroTempValid[_historyHead] =
+      hydroFresh && !isnan(hydro.temperatureC);
+  _historyGravity[_historyHead] = _historyGravityValid[_historyHead]
+                                      ? static_cast<uint16_t>(
+                                            lroundf(hydro.gravity * 10000.0f))
+                                      : 0;
+  _historyHydroTempC[_historyHead] =
+      _historyHydroTempValid[_historyHead]
+          ? static_cast<int16_t>(lroundf(hydro.temperatureC * 10.0f))
+          : 0;
   _historyHead = (_historyHead + 1) % HISTORY_LEN;
   if (_historyCount < HISTORY_LEN) {
     _historyCount++;
@@ -2424,12 +2446,33 @@ String NetworkManager::historyJson() const {
   // Oldest sample first so the client can plot left-to-right.
   const uint8_t start =
       _historyCount < HISTORY_LEN ? 0 : _historyHead;
-  String out = "{\"intervalMs\":" + String(HISTORY_INTERVAL_MS) + ",\"tempsC\":[";
+  String out =
+      "{\"intervalMs\":" + String(HISTORY_INTERVAL_MS) + ",\"tempsC\":[";
   for (uint8_t i = 0; i < _historyCount; ++i) {
     if (i > 0) {
       out += ",";
     }
-    out += String(_history[(start + i) % HISTORY_LEN] / 10.0f, 1);
+    out += String(_historyTempC[(start + i) % HISTORY_LEN] / 10.0f, 1);
+  }
+  out += "],\"gravity\":[";
+  for (uint8_t i = 0; i < _historyCount; ++i) {
+    if (i > 0) {
+      out += ",";
+    }
+    const uint8_t idx = (start + i) % HISTORY_LEN;
+    out += _historyGravityValid[idx]
+               ? String(_historyGravity[idx] / 10000.0f, 4)
+               : String("null");
+  }
+  out += "],\"hydroTempsC\":[";
+  for (uint8_t i = 0; i < _historyCount; ++i) {
+    if (i > 0) {
+      out += ",";
+    }
+    const uint8_t idx = (start + i) % HISTORY_LEN;
+    out += _historyHydroTempValid[idx]
+               ? String(_historyHydroTempC[idx] / 10.0f, 1)
+               : String("null");
   }
   out += "]}";
   return out;
