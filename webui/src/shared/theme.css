@@ -267,12 +267,76 @@ body[data-state="fault"] .state { color: var(--fault); }
 }
 .chartWrap { position: relative; min-height: 250px; }
 .hydroChart { display: block; width: 100%; height: 250px; }
-.chartLegend { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: 12px; font-weight: 600; }
-.chartLegend span { display: inline-flex; align-items: center; gap: 5px; }
-.chartLegend i { display: inline-block; width: 18px; height: 3px; border-radius: 999px; }
-.chartLegend .sg { background: var(--fault); }
-.chartLegend .beer { background: var(--cool); }
-.chartLegend .hydro { background: var(--ok); }
+.chartLegend { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.chartLegendBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(176, 216, 248, 0.18);
+  background: rgba(176, 216, 248, 0.06);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+.chartLegendBtn:hover {
+  background: rgba(176, 216, 248, 0.12);
+  border-color: rgba(176, 216, 248, 0.28);
+  color: var(--text);
+}
+.chartLegendBtn.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+  background: transparent;
+  border-color: rgba(176, 216, 248, 0.1);
+}
+.chartLegendBtn i { display: inline-block; width: 18px; height: 3px; border-radius: 999px; flex-shrink: 0; }
+.chartLegendBtn.off i { opacity: 0.35; }
+.chartLegendBtn .sg { background: var(--fault); }
+.chartLegendBtn .beer { background: var(--cool); }
+.chartLegendBtn .hydro { background: var(--ok); }
+.chartTooltip {
+  position: absolute;
+  z-index: 3;
+  min-width: 168px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(176, 216, 248, 0.22);
+  background: rgba(7, 16, 21, 0.94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  transform: translateY(-100%);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.chartTooltipTime {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.chartTooltipRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+.chartTooltipRow span::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+.chartTooltipRow.sg span::before { background: var(--fault); }
+.chartTooltipRow.beer span::before { background: var(--cool); }
+.chartTooltipRow.hydro span::before { background: var(--ok); }
+.chartTooltipRow strong { font-weight: 700; color: var(--text); }
 
 @media (max-width: 760px) {
   body[data-page="dashboard"] main { padding: 14px 12px; }

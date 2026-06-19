@@ -1,6 +1,5 @@
-// Generates ../src/web_assets.h from dist/app.js + dist/app.css.
-// Run via `npm run build` (postbuild step after `vite build`). Do not hand-edit
-// the generated header — re-run the build instead.
+// Generates ../src/web_assets.h from dist/ build outputs.
+// Run via `npm run build` from webui/. Do not hand-edit the header.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync, constants as zlibConstants } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
@@ -27,12 +26,21 @@ function toByteArray(buf) {
   return lines.join(',\n');
 }
 
+function escapeCString(text) {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n');
+}
+
 const jsGz = gzipBytes(join(distDir, 'app.js'));
 const cssGz = gzipBytes(join(distDir, 'app.css'));
+const iconPng = readFileSync(join(distDir, 'icon-192.png'));
+const manifest = readFileSync(join(distDir, 'manifest.webmanifest'), 'utf8').trim();
 
 const header = `// GENERATED FILE - do not hand-edit.
-// Produced by webui/tools/build-header.mjs from webui/dist/app.js and
-// webui/dist/app.css. Run \`npm run build\` from webui/ to regenerate.
+// Produced by webui/tools/build-header.mjs. Run \`npm run build\` from webui/.
 #pragma once
 
 #include <pgmspace.h>
@@ -48,9 +56,16 @@ static const uint8_t APP_CSS_GZ[] PROGMEM = {
 ${toByteArray(cssGz)}
 };
 static const size_t APP_CSS_GZ_LEN = sizeof(APP_CSS_GZ);
+
+static const uint8_t APP_ICON_PNG[] PROGMEM = {
+${toByteArray(iconPng)}
+};
+static const size_t APP_ICON_PNG_LEN = sizeof(APP_ICON_PNG);
+
+static const char APP_MANIFEST[] PROGMEM = "${escapeCString(manifest)}";
 `;
 
 writeFileSync(outPath, header);
 console.log(
-  `Wrote ${outPath} (app.js ${jsGz.length}B gz, app.css ${cssGz.length}B gz)`
+  `Wrote ${outPath} (app.js ${jsGz.length}B gz, app.css ${cssGz.length}B gz, icon ${iconPng.length}B, manifest ${manifest.length}B)`
 );

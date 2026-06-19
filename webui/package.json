@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:device": "vite --host",
-    "build": "vite build && node tools/build-header.mjs"
+    "build": "vite build && node tools/build-header.mjs",
+    "icons": "node tools/generate-pwa-assets.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^4.0.0",

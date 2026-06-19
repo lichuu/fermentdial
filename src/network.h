@@ -244,6 +244,9 @@ private:
   String historyJson() const;
   String settingsConfigJson() const;
   String metricsText(uint32_t nowMs) const;
+  String assetVersionQuery() const;
+  String webAppHead(const char *title, bool appCss,
+                    const char *extraHead = nullptr) const;
   String pageHtml() const;
   String setupHtml() const;
   String settingsHtml() const;

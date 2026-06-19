@@ -7,6 +7,16 @@ namespace ferm {
 
 namespace {
 
+// True only for the synthetic demo device; compiles to false in real builds.
+bool isDemoKey(const String &key) {
+#if FERM_DEMO_SENSOR
+  return key == DEMO_HYDROMETER_KEY;
+#else
+  (void)key;
+  return false;
+#endif
+}
+
 constexpr uint8_t TILT_UUIDS[][16] = {
     {0xA4, 0x95, 0xBB, 0x10, 0xC5, 0xB1, 0x4B, 0x44, 0xB5, 0x12, 0x13, 0x70,
      0xF0, 0x2D, 0x74, 0xDE}, // red
@@ -69,6 +79,77 @@ const char *tiltColorName(const uint8_t *uuid) {
   }
   return nullptr;
 }
+
+#if FERM_DEMO_SENSOR
+float demoLogistic(float p) {
+  return 1.0f / (1.0f + expf(-DEMO_FERMENT_LOGISTIC_STEEPNESS *
+                              (p - DEMO_FERMENT_LOGISTIC_MIDPOINT)));
+}
+
+float demoAttenuation(float p) {
+  const float l0 = demoLogistic(0.0f);
+  const float l1 = demoLogistic(1.0f);
+  const float lp = demoLogistic(p);
+  return (lp - l0) / (l1 - l0);
+}
+
+float demoActivity(float p) {
+  const float l0 = demoLogistic(0.0f);
+  const float l1 = demoLogistic(1.0f);
+  const float denom = l1 - l0;
+  const float lp = demoLogistic(p);
+  const float dLp = DEMO_FERMENT_LOGISTIC_STEEPNESS * lp * (1.0f - lp);
+  const float daDp = dLp / denom;
+  const float maxLp = demoLogistic(DEMO_FERMENT_LOGISTIC_MIDPOINT);
+  const float maxDaDp =
+      DEMO_FERMENT_LOGISTIC_STEEPNESS * maxLp * (1.0f - maxLp) / denom;
+  return maxDaDp > 0.0f ? daDp / maxDaDp : 0.0f;
+}
+
+struct DemoFermentSample {
+  float gravity = NAN;
+  float temperatureC = NAN;
+  float originalGravity = NAN;
+  float abv = NAN;
+  uint32_t stableSeconds = 0;
+  int8_t rssi = -55;
+  float batteryV = NAN;
+};
+
+DemoFermentSample computeDemoFerment(uint32_t nowMs, float targetC) {
+  DemoFermentSample sample;
+  const float progress =
+      clampFloat(static_cast<float>(nowMs) /
+                     static_cast<float>(DEMO_FERMENT_DURATION_MS),
+                 0.0f, 1.0f);
+  const float attenuation = progress >= 1.0f ? 1.0f : demoAttenuation(progress);
+  const float activity = progress >= 1.0f ? 0.0f : demoActivity(progress);
+  const float rippleG =
+      DEMO_FERMENT_GRAVITY_RIPPLE * sinf(static_cast<float>(nowMs) * 0.002f);
+  const float rippleT =
+      DEMO_FERMENT_TEMP_RIPPLE_C * sinf(static_cast<float>(nowMs) * 0.0015f);
+
+  sample.originalGravity = DEMO_FERMENT_OG;
+  sample.gravity = progress >= 1.0f
+                       ? DEMO_FERMENT_FG
+                       : DEMO_FERMENT_OG -
+                             (DEMO_FERMENT_OG - DEMO_FERMENT_FG) * attenuation;
+  sample.gravity = clampFloat(sample.gravity + rippleG, DEMO_FERMENT_FG,
+                              DEMO_FERMENT_OG);
+  sample.temperatureC =
+      targetC + DEMO_FERMENT_TEMP_BUMP_C * activity + rippleT;
+  sample.abv = (sample.originalGravity - sample.gravity) * 131.25f;
+  if (progress >= 1.0f && nowMs > DEMO_FERMENT_DURATION_MS) {
+    sample.stableSeconds =
+        (nowMs - DEMO_FERMENT_DURATION_MS) / 1000UL;
+  }
+  sample.batteryV =
+      3.3f - 0.3f * clampFloat(static_cast<float>(nowMs) /
+                                    static_cast<float>(DEMO_FERMENT_DURATION_MS),
+                                 0.0f, 1.0f);
+  return sample;
+}
+#endif
 
 } // namespace
 
@@ -174,6 +255,10 @@ bool HydrometerManager::update(uint32_t nowMs, Settings &settings) {
 #endif
   }
 
+#if FERM_DEMO_SENSOR
+  updateDemoDevice(nowMs, settings);
+#endif
+
   if (!enabled(settings)) {
 #if FERM_ENABLE_HYDROMETER_BLE
     stopScan();
@@ -212,7 +297,7 @@ bool HydrometerManager::update(uint32_t nowMs, Settings &settings) {
   const HydrometerReading *selected =
       findByKey(settings.hydrometerSelectionKey);
   if (selected != nullptr && selected->valid &&
-      !readingIsStale(*selected, nowMs)) {
+      !readingIsStale(*selected, nowMs) && !isDemoKey(settings.hydrometerSelectionKey)) {
     if (!gravityIsValid(settings.hydrometerOriginalGravity)) {
       settings.hydrometerOriginalGravity = selected->gravity;
       changed = true;
@@ -302,6 +387,39 @@ bool HydrometerManager::readingIsStale(const HydrometerReading &reading,
                                        uint32_t nowMs) {
   return reading.lastSeenMs == 0 || nowMs - reading.lastSeenMs > STALE_AFTER_MS;
 }
+
+#if FERM_DEMO_SENSOR
+void HydrometerManager::updateDemoDevice(uint32_t nowMs,
+                                         const Settings &settings) {
+  HydrometerReading *slot =
+      findOrCreate(DEMO_HYDROMETER_KEY, HydrometerType::Tilt);
+  if (slot == nullptr) {
+    return;
+  }
+
+  const DemoFermentSample sample =
+      computeDemoFerment(nowMs, currentTargetC(settings));
+  slot->valid = true;
+  slot->stale = false;
+  slot->discovered = true;
+  slot->type = HydrometerType::Tilt;
+  slot->label = DEMO_HYDROMETER_LABEL;
+  slot->name = DEMO_HYDROMETER_LABEL;
+  slot->color = "green";
+  slot->address = "";
+  slot->lastSeenMs = nowMs;
+  slot->rssi = sample.rssi;
+  slot->batteryV = sample.batteryV;
+  slot->originalGravity = sample.originalGravity;
+  slot->gravity = sample.gravity;
+  slot->temperatureC = sample.temperatureC;
+  slot->abv = sample.abv;
+  slot->stableSeconds = sample.stableSeconds;
+  slot->gravityVelocity = NAN;
+  slot->gravityVelocityValid = false;
+  slot->rawVersion = 0;
+}
+#endif
 
 #if FERM_ENABLE_HYDROMETER_BLE
 String HydrometerManager::normalizeAddress(const NimBLEAddress &address) {

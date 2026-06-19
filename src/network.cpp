@@ -749,15 +749,31 @@ void NetworkManager::startWebServer() {
   });
   _server.on("/app.js", HTTP_GET, [this]() {
     _server.sendHeader("Content-Encoding", "gzip");
-    _server.sendHeader("Cache-Control", "no-cache");
+    _server.sendHeader("Cache-Control", "no-cache, must-revalidate");
     _server.send_P(200, "application/javascript; charset=utf-8",
                    reinterpret_cast<PGM_P>(APP_JS_GZ), APP_JS_GZ_LEN);
   });
   _server.on("/app.css", HTTP_GET, [this]() {
     _server.sendHeader("Content-Encoding", "gzip");
-    _server.sendHeader("Cache-Control", "no-cache");
+    _server.sendHeader("Cache-Control", "no-cache, must-revalidate");
     _server.send_P(200, "text/css; charset=utf-8",
                    reinterpret_cast<PGM_P>(APP_CSS_GZ), APP_CSS_GZ_LEN);
+  });
+  _server.on("/manifest.webmanifest", HTTP_GET, [this]() {
+    _server.sendHeader("Cache-Control", "no-cache, must-revalidate");
+    _server.send_P(200, "application/manifest+json; charset=utf-8",
+                   reinterpret_cast<PGM_P>(APP_MANIFEST),
+                   strlen_P(APP_MANIFEST));
+  });
+  _server.on("/icon-192.png", HTTP_GET, [this]() {
+    _server.sendHeader("Cache-Control", "max-age=86400");
+    _server.send_P(200, "image/png",
+                   reinterpret_cast<PGM_P>(APP_ICON_PNG), APP_ICON_PNG_LEN);
+  });
+  _server.on("/apple-touch-icon.png", HTTP_GET, [this]() {
+    _server.sendHeader("Cache-Control", "max-age=86400");
+    _server.send_P(200, "image/png",
+                   reinterpret_cast<PGM_P>(APP_ICON_PNG), APP_ICON_PNG_LEN);
   });
   _server.on("/login", HTTP_GET, [this]() { handleLogin(); });
   _server.on("/login", HTTP_POST, [this]() { handleLogin(); });
@@ -3104,39 +3120,88 @@ String NetworkManager::metricsText(uint32_t nowMs) const {
   return metrics;
 }
 
-String NetworkManager::pageHtml() const {
-  return R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/app.css">
-<title>FermentDial</title>
-</head>
-<body data-page="dashboard"><div id="app"></div>
-<script src="/app.js"></script>
-</body></html>)HTML";
-}
+namespace {
+constexpr const char *LOGIN_STYLE = R"HTML(<style>
+html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
+main{max-width:420px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
+h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
+input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.err{color:#ffb4a8;font-weight:700}a{color:#79d4ff}
+</style>)HTML";
 
-String NetworkManager::settingsHtml() const {
-  return R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/app.css">
-<title>FermentDial Settings</title>
-</head>
-<body data-page="settings"><div id="app"></div>
-<script src="/app.js"></script>
-</body></html>)HTML";
-}
-
-String NetworkManager::setupHtml() const {
-  String html = R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<title>FermentDial Wi-Fi</title>
-<style>
+constexpr const char *SETUP_STYLE = R"HTML(<style>
 html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
 main{max-width:480px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}a{color:#79d4ff}
 .scanStatus{min-height:20px;margin:0 0 8px}.networkList{display:grid;gap:6px;margin:0 0 16px}.networkList button{display:flex;justify-content:space-between;gap:10px;background:#102126;color:#f8fbff;font-weight:700;text-align:left;margin:0}.networkMeta{color:#a9bac8;font-size:12px;white-space:nowrap}
-</style></head><body><main><div class="card">
+</style>)HTML";
+}  // namespace
+
+String NetworkManager::assetVersionQuery() const {
+  // ?v= is for cache-busting. Due to no-cache/must-revalidate headers on js/css/manifest,
+  // the query only meaningfully affects the long-lived icon assets.
+  return String("?v=") + String(FIRMWARE_GIT_SHA);
+}
+
+String NetworkManager::webAppHead(const char *title, bool appCss,
+                                    const char *extraHead) const {
+  const String q = assetVersionQuery();
+  String html = R"HTML(<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FermentDial">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest)HTML";
+  html += q;
+  html += R"HTML(">
+<link rel="apple-touch-icon" href="/icon-192.png)HTML";
+  html += q;
+  html += R"HTML(">
+)HTML";
+  if (appCss) {
+    html += R"HTML(<link rel="stylesheet" href="/app.css)HTML";
+    html += q;
+    html += R"HTML(">
+)HTML";
+  }
+  if (extraHead != nullptr) {
+    html += extraHead;
+  }
+  html += R"HTML(<title>)HTML";
+  html += title;
+  html += R"HTML(</title>
+</head>)HTML";
+  return html;
+}
+
+String NetworkManager::pageHtml() const {
+  String html = webAppHead("FermentDial", /*appCss=*/true);
+  html += R"HTML(
+<body data-page="dashboard"><div id="app"></div>
+<script src="/app.js)HTML";
+  html += assetVersionQuery();
+  html += R"HTML("></script>
+</body></html>)HTML";
+  return html;
+}
+
+String NetworkManager::settingsHtml() const {
+  String html = webAppHead("FermentDial Settings", /*appCss=*/true);
+  html += R"HTML(
+<body data-page="settings"><div id="app"></div>
+<script src="/app.js)HTML";
+  html += assetVersionQuery();
+  html += R"HTML("></script>
+</body></html>)HTML";
+  return html;
+}
+
+String NetworkManager::setupHtml() const {
+  String html = webAppHead("FermentDial Wi-Fi", /*appCss=*/false, SETUP_STYLE);
+  html += R"HTML(<body><main><div class="card">
 <h1>FermentDial Wi-Fi</h1>
 <p class="hint">Join your fermentation controller to your home Wi-Fi.</p>
 <p><a href="/dashboard">Open live dashboard</a></p>
@@ -3175,15 +3240,8 @@ async function scanWifi(){
 }
 
 String NetworkManager::loginHtml(bool showError) const {
-  String html = R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<title>FermentDial Login</title>
-<style>
-html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
-main{max-width:420px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
-h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
-input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.err{color:#ffb4a8;font-weight:700}a{color:#79d4ff}
-</style></head><body><main><div class="card">
+  String html = webAppHead("FermentDial Login", /*appCss=*/false, LOGIN_STYLE);
+  html += R"HTML(<body><main><div class="card">
 <h1>FermentDial</h1>
 <p class="hint">Enter the admin password to reach device settings.</p>
 )HTML";
@@ -3200,16 +3258,15 @@ input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;fon
 }
 
 String NetworkManager::firmwareHtml() const {
-  return R"HTML(<!doctype html>
-<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<title>FermentDial Firmware</title>
-<style>
+  constexpr const char *FIRMWARE_STYLE = R"HTML(<style>
 html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
 main{max-width:520px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
 h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
 input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.warn{color:#ffd178}
 a{color:#79d4ff}
-</style></head><body><main><div class="card">
+</style>)HTML";
+  String html = webAppHead("FermentDial Firmware", /*appCss=*/false, FIRMWARE_STYLE);
+  html += R"HTML(<body><main><div class="card">
 <h1>Firmware Update</h1>
 <p class="warn">Outputs turn off before the update starts. The controller reboots after a successful upload.</p>
 <form method="post" action="/firmware" enctype="multipart/form-data">
@@ -3219,6 +3276,7 @@ a{color:#79d4ff}
 <p class="hint">Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.</p>
 <p><a href="/wifi">Wi-Fi settings</a> - <a href="/dashboard">Dashboard</a></p>
 </div></main></body></html>)HTML";
+  return html;
 }
 
 } // namespace ferm

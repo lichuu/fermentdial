@@ -85,6 +85,10 @@ class HydrometerManager {
   HydrometerReading *findOrCreate(const String &key, HydrometerType type);
   static bool readingIsStale(const HydrometerReading &reading, uint32_t nowMs);
 
+#if FERM_DEMO_SENSOR
+  void updateDemoDevice(uint32_t nowMs, const Settings &settings);
+#endif
+
 #if FERM_ENABLE_HYDROMETER_BLE
   void startScan(uint32_t nowMs);
   void stopScan();
