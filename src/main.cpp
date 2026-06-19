@@ -151,7 +151,7 @@ bool updateGradualCrash(uint32_t nowMs) {
 // advances when the step's exit condition is met. Returns true when something
 // changed that warrants a settings checkpoint. Mirrors updateDiacetylRest's
 // millis-based tick so elapsed time survives reboot (outage time is not added).
-bool updateProgramRunner(uint32_t nowMs) {
+bool updateProgramRunner(uint32_t nowMs, const HydrometerReading &hydro) {
   if (!settings.programActive) {
     previousProgramActive = false;
     lastProgramTickMs = nowMs;
@@ -198,21 +198,39 @@ bool updateProgramRunner(uint32_t nowMs) {
     changed = true;
   }
 
-  // Evaluate the step's exit condition.
+  // Evaluate the step's exit condition. Gravity-based exits never fire on a
+  // stale or invalid hydrometer reading.
   bool advance = false;
+  const bool hydroUsable = hydro.valid && !hydro.stale;
+  const uint32_t stableTargetSeconds =
+      static_cast<uint32_t>(step.stableHours) * 3600UL;
   switch (effectiveStepExit(step)) {
   case StepExit::Time:
     advance = settings.programStepElapsedSeconds >= step.durationSeconds;
     break;
+  case StepExit::GravityBelow:
+    advance = hydroUsable && gravityIsValid(hydro.gravity) &&
+              hydro.gravity <= step.gravityThreshold;
+    break;
+  case StepExit::GravityStable:
+    advance = hydroUsable && hydro.stableSeconds >= stableTargetSeconds;
+    break;
+  case StepExit::VelocityBelow:
+    if (hydroUsable && hydro.gravityVelocityValid) {
+      advance = fabsf(hydro.gravityVelocity) <= step.gravityThreshold;
+    } else {
+      // Tilt has no native velocity; fall back to the stability window.
+      advance = hydroUsable && hydro.stableSeconds >= stableTargetSeconds;
+    }
+    break;
   case StepExit::Manual:
-    advance = settings.programManualAdvance;
-    break;
   default:
-    // Gravity-based exits are wired up in the gravity-trigger phase; until then
-    // they advance only on an explicit manual request so a program never stalls
-    // with no way forward.
-    advance = settings.programManualAdvance;
     break;
+  }
+  // A manual advance request always pushes the program forward, regardless of
+  // the step's own exit condition (skip button, or a stuck/stale hydrometer).
+  if (settings.programManualAdvance) {
+    advance = true;
   }
   settings.programManualAdvance = false;
 
@@ -273,7 +291,7 @@ void loop() {
   network.update(nowMs, settings);
   const bool diacetylRestChanged = updateDiacetylRest(nowMs);
   const bool gradualCrashChanged = updateGradualCrash(nowMs);
-  const bool programChanged = updateProgramRunner(nowMs);
+  const bool programChanged = updateProgramRunner(nowMs, selectedHydrometer);
 
   controller.update(nowMs, settings, temperatureSensor.isValid(),
                     temperatureSensor.temperatureC());
