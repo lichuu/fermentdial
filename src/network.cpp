@@ -1,9 +1,11 @@
 #include "network.h"
 
+#include "history.h"
 #include "time_sync.h"
 
 #if FERM_ENABLE_NETWORK
 #include <HTTPClient.h>
+#include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_random.h>
 #endif
@@ -864,6 +866,16 @@ void NetworkManager::startWebServer() {
   _server.on("/api/events", HTTP_GET, [this]() {
     _server.send(200, "application/json",
                  _eventLog != nullptr ? _eventLog->toJson() : String("[]"));
+  });
+  _server.on("/api/history.csv", HTTP_GET, [this]() {
+    _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
+    _server.sendHeader("Content-Disposition",
+                       "attachment; filename=fermentdial-history.csv");
+    _server.send(200, "text/csv", "");
+    _server.sendContent(HISTORY_CSV_HEADER);
+    streamHistoryFile(HISTORY_CSV_PRIOR_PATH);
+    streamHistoryFile(HISTORY_CSV_PATH);
+    _server.sendContent("");
   });
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
@@ -2413,6 +2425,24 @@ String NetworkManager::historyJson() const {
   }
   out += "]}";
   return out;
+}
+
+void NetworkManager::streamHistoryFile(const char *path) {
+#if FERM_ENABLE_NETWORK
+  File f = LittleFS.open(path, "r");
+  if (!f) {
+    return;
+  }
+  char buf[257];
+  while (f.available()) {
+    size_t n = f.readBytes(buf, sizeof(buf) - 1);
+    buf[n] = '\0';
+    _server.sendContent(String(buf));
+  }
+  f.close();
+#else
+  (void)path;
+#endif
 }
 
 String NetworkManager::programJson() const {

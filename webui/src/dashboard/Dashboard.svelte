@@ -282,6 +282,9 @@
 
     <EventLog />
 
-    <div class="footer">Fault: <span>{s ? s.fault : 'NONE'}</span></div>
+    <div class="footer">
+      Fault: <span>{s ? s.fault : 'NONE'}</span>
+      <a href="/api/history.csv" download style="margin-left:14px">Download history CSV</a>
+    </div>
   </div>
 </main>
