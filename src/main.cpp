@@ -4,6 +4,7 @@
 #include "config.h"
 #include "control.h"
 #include "events.h"
+#include "history.h"
 #include "hydrometer.h"
 #include "network.h"
 #include "storage.h"
@@ -38,6 +39,7 @@ bool previousGradualCrashActive = false;
 bool previousProgramActive = false;
 
 EventLog eventLog;
+HistoryLog historyLog;
 // Alert edge-detection state.
 FaultCode prevFaultCode = FaultCode::None;
 bool prevHydroStale = false;
@@ -361,6 +363,42 @@ void evaluateAlerts(uint32_t nowMs, const HydrometerReading &hydro) {
   }
 }
 
+// Builds one CSV history row from current controller/sensor/program state.
+// Temperatures are Celsius (storage unit); empty fields mean "no reading".
+String buildHistoryRow(uint32_t nowMs, const HydrometerReading &hydro) {
+  const Timestamp ts = nowEpochOrUptime(nowMs);
+  String row;
+  row += String(ts.seconds);
+  row += ',';
+  row += ts.wallClock ? '1' : '0';
+  row += ',';
+  if (temperatureSensor.isValid()) {
+    row += String(temperatureSensor.temperatureC(), 2);
+  }
+  row += ',';
+  row += String(currentTargetC(settings), 2);
+  row += ',';
+  if (hydro.valid && !isnan(hydro.gravity)) {
+    row += String(hydro.gravity, 4);
+  }
+  row += ',';
+  if (!isnan(hydro.abv)) {
+    row += String(hydro.abv, 2);
+  }
+  row += ',';
+  row += controller.heaterOn() ? '1' : '0';
+  row += ',';
+  row += controller.pumpOn() ? '1' : '0';
+  row += ',';
+  row += stateText(controller.runtimeState());
+  row += ',';
+  if (settings.programActive) {
+    row += String(settings.programStepIndex + 1);
+  }
+  row += '\n';
+  return row;
+}
+
 void setup() {
   const uint32_t nowMs = millis();
 
@@ -390,6 +428,7 @@ void setup() {
     Serial.println(F("LittleFS mount failed; event log not persisted"));
   }
   eventLog.begin();
+  historyLog.begin();
 
   temperatureSensor.begin(millis());
   hydrometer.begin();
@@ -419,6 +458,10 @@ void loop() {
   if (eventLog.dirty() && nowMs - lastEventFlushMs >= EVENT_FLUSH_INTERVAL_MS) {
     lastEventFlushMs = nowMs;
     eventLog.flush();
+  }
+  if (historyLog.due(nowMs)) {
+    historyLog.markSampled(nowMs);
+    historyLog.append(buildHistoryRow(nowMs, selectedHydrometer));
   }
 
   UiModel model;
