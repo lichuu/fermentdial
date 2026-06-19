@@ -2331,7 +2331,7 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   const uint8_t dRestReturnProfile =
       _webStatus.diacetylRestReturnProfile < PROFILE_COUNT
           ? _webStatus.diacetylRestReturnProfile
-          : static_cast<uint8_t>(ProfileSlot::Ferment);
+          : static_cast<uint8_t>(ProfileSlot::Ale);
   const char *unit = unitLabel(f);
 
   HydrometerReading selected;

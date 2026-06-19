@@ -12,32 +12,6 @@ String profileTargetKey(uint8_t index) {
   return String("profTgt") + String(index);
 }
 
-bool targetNear(float actualC, float expectedC) {
-  return fabsf(actualC - expectedC) < 0.12f;
-}
-
-bool migrateDefaultProfileTarget(Settings &settings, ProfileSlot slot,
-                                 float staleTargetC, float newTargetC) {
-  const uint8_t index = static_cast<uint8_t>(slot);
-  if (!settings.profiles[index].name.equals(defaultProfileName(index)) ||
-      !targetNear(settings.profiles[index].targetC, staleTargetC)) {
-    return false;
-  }
-  settings.profiles[index].targetC = newTargetC;
-  return true;
-}
-
-bool migrateProfileDefaults(Settings &settings) {
-  bool changed = false;
-  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Crash,
-                                         fToC(38.0f), DEFAULT_CRASH_TARGET_C);
-  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Crash,
-                                         fToC(39.9f), DEFAULT_CRASH_TARGET_C);
-  changed |= migrateDefaultProfileTarget(settings, ProfileSlot::Lager,
-                                         fToC(50.0f), DEFAULT_LAGER_TARGET_C);
-  return changed;
-}
-
 } // namespace
 
 void SettingsStorage::begin() { _prefs.begin("fermctl", false); }
@@ -47,69 +21,23 @@ bool SettingsStorage::load(Settings &settings) {
   settings = defaults;
 
   uint16_t version = _prefs.getUShort("version", 0);
-  if (version == SETTINGS_VERSION_FAHRENHEIT_STORAGE) {
-    settings.version = SETTINGS_VERSION;
-    settings.profiles[static_cast<uint8_t>(ProfileSlot::Ferment)].targetC =
-        fToC(_prefs.getFloat("targetF", DEFAULT_TARGET_F));
-    settings.coolOnDeltaC =
-        deltaFToC(_prefs.getFloat("hystF", DEFAULT_COOL_ON_DELTA_F));
-    settings.heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
-    settings.holdDeltaC = DEFAULT_HOLD_DELTA_C;
-    settings.mode = static_cast<UserMode>(
-        _prefs.getUChar("mode", static_cast<uint8_t>(UserMode::Off)));
-    settings.pumpMinOffSeconds =
-        _prefs.getUInt("pumpOff", DEFAULT_PUMP_MIN_OFF_SECONDS);
-    settings.pumpMinRunSeconds =
-        _prefs.getUInt("pumpRun", DEFAULT_PUMP_MIN_RUN_SECONDS);
-    settings.tempOffsetC =
-        deltaFToC(_prefs.getFloat("offsetF", DEFAULT_TEMP_OFFSET_F));
-    settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
-    settings.liveTargetC = activeTargetC(settings);
-    sanitizeSettings(settings);
-    saveNow(settings);
-    return true;
-  }
-
-  if (version == SETTINGS_VERSION_SINGLE_TARGET_STORAGE) {
-    settings.version = SETTINGS_VERSION;
-    settings.profiles[static_cast<uint8_t>(ProfileSlot::Ferment)].targetC =
-        _prefs.getFloat("targetC", DEFAULT_TARGET_C);
-    settings.coolOnDeltaC = _prefs.getFloat("hystC", DEFAULT_COOL_ON_DELTA_C);
-    settings.heatOnDeltaC = DEFAULT_HEAT_ON_DELTA_C;
-    settings.holdDeltaC = DEFAULT_HOLD_DELTA_C;
-    settings.mode = static_cast<UserMode>(
-        _prefs.getUChar("mode", static_cast<uint8_t>(UserMode::Off)));
-    settings.pumpMinOffSeconds =
-        _prefs.getUInt("pumpOff", DEFAULT_PUMP_MIN_OFF_SECONDS);
-    settings.pumpMinRunSeconds =
-        _prefs.getUInt("pumpRun", DEFAULT_PUMP_MIN_RUN_SECONDS);
-    settings.tempOffsetC = _prefs.getFloat("offsetC", DEFAULT_TEMP_OFFSET_C);
-    settings.unitsFahrenheit = _prefs.getBool("unitsF", true);
-    settings.liveTargetC = activeTargetC(settings);
-    sanitizeSettings(settings);
-    saveNow(settings);
-    return true;
-  }
-
-  if (version != SETTINGS_VERSION &&
-      version != 8 &&
-      version != SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE &&
-      version != SETTINGS_VERSION_FERMENTER_NAME_STORAGE &&
-      version != SETTINGS_VERSION_PRELIVE_TARGET_STORAGE &&
-      version != SETTINGS_VERSION_DIACETYL_REST_STORAGE &&
-      version != SETTINGS_VERSION_HYDROMETER_STORAGE &&
-      version != SETTINGS_VERSION_PRE_GRADUAL_CRASH_STORAGE &&
-      version != SETTINGS_VERSION_PRE_PROFILE_WORKFLOW_STORAGE &&
-      version != SETTINGS_VERSION_PRE_CONFIGURABLE_GRADUAL_CRASH_STORAGE) {
+  if (version == 0) {
+    // Nothing stored yet (fresh or erased NVS): keep safe defaults.
     sanitizeSettings(settings);
     return false;
   }
 
+  // Single additive load path. Every field below reads its own key with a
+  // default, so any older store upgrades in place: keys that did not exist yet
+  // fall back to their default, and the record is re-stamped to SETTINGS_VERSION
+  // at the end. Schema changes must stay additive (add new keys, never
+  // reinterpret existing ones), which is why no per-version migration code is
+  // needed here.
   settings.version = version;
   settings.fermenterName =
       _prefs.getString("fermName", DEFAULT_FERMENTER_NAME);
   settings.activeProfile =
-      _prefs.getUChar("profile", static_cast<uint8_t>(ProfileSlot::Ferment));
+      _prefs.getUChar("profile", static_cast<uint8_t>(ProfileSlot::Ale));
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     settings.profiles[i].name =
         _prefs.getString(profileNameKey(i).c_str(), defaultProfileName(i));
@@ -125,7 +53,7 @@ bool SettingsStorage::load(Settings &settings) {
       "dRestDur", DEFAULT_DIACETYL_REST_DURATION_SECONDS);
   settings.diacetylRestRemainingSeconds = _prefs.getUInt("dRestRem", 0);
   settings.diacetylRestReturnProfile = _prefs.getUChar(
-      "dRestRet", static_cast<uint8_t>(ProfileSlot::Ferment));
+      "dRestRet", static_cast<uint8_t>(ProfileSlot::Ale));
   settings.coolOnDeltaC = _prefs.getFloat("coolOn", DEFAULT_COOL_ON_DELTA_C);
   settings.heatOnDeltaC = _prefs.getFloat("heatOn", DEFAULT_HEAT_ON_DELTA_C);
   settings.holdDeltaC = _prefs.getFloat("hold", DEFAULT_HOLD_DELTA_C);
@@ -161,11 +89,6 @@ bool SettingsStorage::load(Settings &settings) {
         settings.diacetylRestDurationSeconds;
   }
   sanitizeSettings(settings);
-  if (version == SETTINGS_VERSION_PROFILE_DEFAULTS_STORAGE) {
-    if (migrateProfileDefaults(settings)) {
-      sanitizeSettings(settings);
-    }
-  }
   if (version != SETTINGS_VERSION) {
     saveNow(settings);
   }

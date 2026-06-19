@@ -177,7 +177,7 @@
 
     <section class="grid">
       <div class="card"><div class="label">Fermenter</div><div class="value">{s ? s.fermenterName : 'Fermenter'}</div></div>
-      <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ferment'}</div></div>
+      <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ale'}</div></div>
       <div class="card"><div class="label">Setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
       <div class="card"><div class="label">Mode</div><div class="value">{s ? s.mode : 'OFF'}</div></div>
     </section>
