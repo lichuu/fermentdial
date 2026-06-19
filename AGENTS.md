@@ -40,8 +40,11 @@ Environments:
   rewrites in UI, storage, control, or network code unless the task requires it.
 - Persisted settings use a single additive load path (`SettingsStorage::load`):
   every field is read by name with a default, so adding a new setting just means
-  adding a `getX(key, default)` read plus the matching `putX` in `saveNow` — no
-  `SETTINGS_VERSION` bump and no migration code. Never reinterpret an existing
-  key; if a change truly is incompatible, bump `SETTINGS_VERSION` deliberately
-  (that resets the `fermctl` namespace to defaults — Wi-Fi/integrations live in
-  the separate `net` namespace and are unaffected). Run the all-env build above.
+  adding a `getX(key, default)` read plus the matching `putX` in `saveNow`.
+  There is no SETTINGS_VERSION and no migration/"upgrader" code. Never
+  reinterpret an existing key's meaning or encoding. For a truly incompatible
+  change the simplest reset is to change the Preferences namespace name (or
+  clear at development time). Wi-Fi and integrations live in the separate "net"
+  namespace and are unaffected. `load` may one-shot `saveNow` to drop legacy
+  keys (old `version` stamp or program POD blobs) after reading them. Run the
+  all-env build above.

@@ -110,11 +110,13 @@ struct BrewfatherConfig {
 };
 
 using FirmwareUpdateSafetyCallback = void (*)();
+using BrightnessPreviewCallback = void (*)(uint8_t brightness);
 
 class NetworkManager {
 public:
   void begin(const Settings &settings, const HydrometerManager &hydrometer);
   void setFirmwareUpdateSafetyCallback(FirmwareUpdateSafetyCallback callback);
+  void setBrightnessPreviewCallback(BrightnessPreviewCallback callback);
   void setEventLog(EventLog *log) { _eventLog = log; }
   void update(uint32_t nowMs, Settings &settings);
   void publishState(uint32_t nowMs, const Settings &settings,
@@ -128,6 +130,7 @@ public:
 private:
   NetworkSnapshot _snapshot;
   FirmwareUpdateSafetyCallback _firmwareUpdateSafetyCallback = nullptr;
+  BrightnessPreviewCallback _brightnessPreviewCallback = nullptr;
   bool _firmwareUpdateInProgress = false;
   bool _firmwareUpdateHadError = false;
   bool _firmwareUpdateOk = false;
@@ -201,6 +204,8 @@ private:
   void handleWifiScan();
   void handleSettingsPost();
   void handleDeviceSettingsPost();
+  void previewWebBrightness(int raw);
+  void applyWebBrightness(int raw);
   void handleFirmwareUpload();
   void handleInfluxSettingsPost();
   void loadInfluxConfig();

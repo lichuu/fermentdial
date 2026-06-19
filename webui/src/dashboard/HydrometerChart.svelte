@@ -125,7 +125,7 @@
     drawLine(g, hydroTemps, xFor, yTemp, '#36c87a', 2);
     drawLine(g, gravity, xFor, yGravity, '#e44840', 2.2);
 
-    g.font = '11px "Trebuchet MS", "Avenir Next", Verdana, sans-serif';
+    g.font = '11px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
     drawLabel(g, gravityScale.hi.toFixed(3), 8, padT, '#eaa0a0');
     drawLabel(g, gravityScale.lo.toFixed(3), 8, padT + plotH, '#eaa0a0');
     drawLabel(g, tempScale.hi.toFixed(1) + deg + unit, w - 8, padT, '#b0d8f8', 'right');

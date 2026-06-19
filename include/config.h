@@ -48,12 +48,6 @@ namespace ferm {
 constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
-// Stored-settings schema version, stamped into the "fermctl" NVS namespace.
-// Every field is read by name with a default (see SettingsStorage::load), so
-// additive changes (new keys) upgrade in place with no migration code. Keep
-// changes additive -- never reinterpret an existing key. Wi-Fi and integration
-// config live in the separate "net" namespace and are unaffected by this.
-constexpr uint16_t SETTINGS_VERSION = 16;
 
 // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
@@ -191,6 +185,16 @@ constexpr uint8_t MIN_BRIGHTNESS = 30;
 constexpr uint8_t MAX_BRIGHTNESS = 255;
 constexpr uint8_t DIM_BRIGHTNESS = 60;
 
+inline uint8_t clampBrightness(int raw) {
+  if (raw < static_cast<int>(MIN_BRIGHTNESS)) {
+    return MIN_BRIGHTNESS;
+  }
+  if (raw > static_cast<int>(MAX_BRIGHTNESS)) {
+    return MAX_BRIGHTNESS;
+  }
+  return static_cast<uint8_t>(raw);
+}
+
 constexpr float MIN_VALID_TEMP_F = 20.0f;
 constexpr float MAX_VALID_TEMP_F = 120.0f;
 constexpr float MIN_TARGET_F = 35.0f;
@@ -258,6 +262,7 @@ enum class HydrometerScanType : uint8_t {
   Unknown = 0,
   Tilt = 1,
   Rapt = 2,
+  All = 3,
 };
 
 enum class ProfileSlot : uint8_t {
@@ -296,7 +301,7 @@ enum class StepExit : uint8_t {
   Manual = 4,         // advance only on user confirm
 };
 
-// POD by design: persisted as a raw blob, so keep it free of String/pointers.
+// POD by design: keep free of String/pointers (field-serialized in NVS).
 struct ProfileStep {
   StepType type = StepType::Hold;
   StepExit exit = StepExit::Time;
@@ -312,7 +317,6 @@ struct ProgramSettings {
 };
 
 struct Settings {
-  uint16_t version = SETTINGS_VERSION;
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
@@ -528,6 +532,11 @@ inline bool profileSlotHasProgram(uint8_t slot) {
          slot == static_cast<uint8_t>(ProfileSlot::Custom2);
 }
 
+// Built-in presets are fixed; only Custom slots are editable in settings UI.
+inline bool profileSlotEditable(uint8_t slot) {
+  return profileSlotHasProgram(slot);
+}
+
 inline uint8_t programIndexForSlot(uint8_t slot) {
   return slot == static_cast<uint8_t>(ProfileSlot::Custom2) ? 1 : 0;
 }
@@ -657,12 +666,83 @@ inline void clearHydrometerSelection(Settings &settings) {
   resetHydrometerSession(settings);
 }
 
+inline void applyHydrometerScanType(Settings &settings,
+                                    HydrometerScanType type) {
+  settings.hydrometerScanType = type;
+  settings.hydrometerBleEnabled = type != HydrometerScanType::Unknown;
+}
+
+inline void setHydrometerScanEnabled(Settings &settings, bool enabled) {
+  if (enabled) {
+    applyHydrometerScanType(settings, HydrometerScanType::All);
+  } else {
+    applyHydrometerScanType(settings, HydrometerScanType::Unknown);
+    clearHydrometerSelection(settings);
+  }
+}
+
+// Scan-type changes from settings UI clear any prior device selection.
+inline void setHydrometerScanTypeFromUi(Settings &settings,
+                                        HydrometerScanType type) {
+  applyHydrometerScanType(settings, type);
+  clearHydrometerSelection(settings);
+}
+
+inline bool parseHydrometerScanTypeArg(const String &scanTypeArg,
+                                       HydrometerScanType &out) {
+  String arg = scanTypeArg;
+  arg.trim();
+  arg.toUpperCase();
+  if (arg == "OFF" || arg == "UNKNOWN" || arg.length() == 0) {
+    out = HydrometerScanType::Unknown;
+    return true;
+  }
+  if (arg == "TILT") {
+    out = HydrometerScanType::Tilt;
+    return true;
+  }
+  if (arg == "RAPT") {
+    out = HydrometerScanType::Rapt;
+    return true;
+  }
+  if (arg == "ON" || arg == "ALL") {
+    out = HydrometerScanType::All;
+    return true;
+  }
+  return false;
+}
+
+inline void selectHydrometerDevice(Settings &settings, const String &key) {
+  settings.hydrometerSelectionKey = key;
+  if (settings.hydrometerScanType == HydrometerScanType::Unknown) {
+    applyHydrometerScanType(settings, HydrometerScanType::All);
+  }
+  resetHydrometerSession(settings);
+}
+
+inline void normalizeHydrometerScanSettings(Settings &settings) {
+  if (settings.hydrometerScanType != HydrometerScanType::Unknown &&
+      settings.hydrometerScanType != HydrometerScanType::Tilt &&
+      settings.hydrometerScanType != HydrometerScanType::Rapt &&
+      settings.hydrometerScanType != HydrometerScanType::All) {
+    settings.hydrometerScanType = HydrometerScanType::Unknown;
+  }
+  if (settings.hydrometerScanType == HydrometerScanType::Tilt ||
+      settings.hydrometerScanType == HydrometerScanType::Rapt) {
+    settings.hydrometerScanType = HydrometerScanType::All;
+  }
+  settings.hydrometerBleEnabled =
+      settings.hydrometerScanType != HydrometerScanType::Unknown;
+}
+
 inline const char *hydrometerScanTypeText(HydrometerScanType type) {
   switch (type) {
   case HydrometerScanType::Tilt:
     return "TILT";
   case HydrometerScanType::Rapt:
     return "RAPT";
+  case HydrometerScanType::All:
+    return "ALL";
   default:
     return "UNKNOWN";
   }
@@ -696,7 +776,6 @@ inline UserMode nextMode(UserMode mode) {
 }
 
 inline void sanitizeSettings(Settings &settings) {
-  settings.version = SETTINGS_VERSION;
   settings.fermenterName.trim();
   if (settings.fermenterName.length() == 0) {
     settings.fermenterName = DEFAULT_FERMENTER_NAME;
@@ -705,9 +784,7 @@ inline void sanitizeSettings(Settings &settings) {
     settings.fermenterName =
         settings.fermenterName.substring(0, MAX_FERMENTER_NAME_LENGTH);
   }
-  if (settings.brightness < MIN_BRIGHTNESS) {
-    settings.brightness = MIN_BRIGHTNESS;
-  }
+  settings.brightness = clampBrightness(settings.brightness);
   if (settings.activeProfile >= PROFILE_COUNT) {
     settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
   }
@@ -716,13 +793,18 @@ inline void sanitizeSettings(Settings &settings) {
         static_cast<uint8_t>(ProfileSlot::Ale);
   }
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
+    if (!profileSlotEditable(i)) {
+      settings.profiles[i].name = defaultProfileName(i);
+      settings.profiles[i].targetC = snapTempC(
+          defaultProfileTargetC(i), settings.unitsFahrenheit);
+      continue;
+    }
     settings.profiles[i].name.trim();
     bool nameWasEmpty = settings.profiles[i].name.length() == 0;
     if (nameWasEmpty) {
       settings.profiles[i].name = defaultProfileName(i);
     }
-    if (nameWasEmpty && i != static_cast<uint8_t>(ProfileSlot::Ale) &&
-        settings.profiles[i].targetC == DEFAULT_TARGET_C) {
+    if (nameWasEmpty && settings.profiles[i].targetC == DEFAULT_TARGET_C) {
       settings.profiles[i].targetC = defaultProfileTargetC(i);
     }
     if (settings.profiles[i].name.length() > MAX_PROFILE_NAME_LENGTH) {
@@ -766,18 +848,7 @@ inline void sanitizeSettings(Settings &settings) {
     settings.hydrometerSelectionKey =
         settings.hydrometerSelectionKey.substring(0, 64);
   }
-  if (settings.hydrometerScanType != HydrometerScanType::Unknown &&
-      settings.hydrometerScanType != HydrometerScanType::Tilt &&
-      settings.hydrometerScanType != HydrometerScanType::Rapt) {
-    settings.hydrometerScanType = HydrometerScanType::Unknown;
-  }
-  if (settings.hydrometerScanType == HydrometerScanType::Unknown) {
-    const HydrometerScanType inferred =
-        hydrometerScanTypeFromKey(settings.hydrometerSelectionKey);
-    if (inferred != HydrometerScanType::Unknown) {
-      settings.hydrometerScanType = inferred;
-    }
-  }
+  normalizeHydrometerScanSettings(settings);
   if (!gravityIsValid(settings.hydrometerOriginalGravity)) {
     settings.hydrometerOriginalGravity = NAN;
   }

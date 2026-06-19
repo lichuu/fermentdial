@@ -35,29 +35,43 @@
   ]);
 </script>
 
-<section class="panel" hidden={events.length === 0}>
+<section class="panel eventPanel" hidden={events.length === 0}>
   <h2>Events</h2>
-  <ul class="eventList">
-    {#each events as e}
-      <li class="ev" class:warn={FAULTY.has(e.typeName)}>
-        <span class="evWhen">{when(e)}</span>
-        <span class="evMsg">{e.message}</span>
-      </li>
-    {/each}
-  </ul>
+  <div class="eventScroll">
+    <ul class="eventList">
+      {#each events as e}
+        <li class="ev" class:warn={FAULTY.has(e.typeName)}>
+          <span class="evWhen">{when(e)}</span>
+          <span class="evMsg">{e.message}</span>
+        </li>
+      {/each}
+    </ul>
+  </div>
 </section>
 
 <style>
-  .eventList { list-style: none; margin: 8px 0 0; padding: 0; }
+  .eventScroll {
+    max-height: 11rem;
+    margin-top: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) - 2px);
+    background: var(--face);
+    padding: 0 12px;
+  }
+  .eventList { list-style: none; margin: 0; padding: 0; }
   .ev {
     display: flex;
     gap: 10px;
-    padding: 5px 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
     font-size: 0.85rem;
   }
   .ev:last-child { border-bottom: none; }
-  .evWhen { opacity: 0.55; white-space: nowrap; min-width: 9em; }
+  .evWhen { color: var(--muted); white-space: nowrap; min-width: 9em; font-variant-numeric: tabular-nums; }
   .evMsg { flex: 1; }
   .ev.warn .evMsg { color: #f7a; }
 </style>

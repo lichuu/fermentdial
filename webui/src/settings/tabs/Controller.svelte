@@ -24,15 +24,23 @@
   }
 </script>
 
-<section class="panel">
-  <h2>Regulation</h2>
-  <p class="hint">How tightly the controller holds the setpoint. Values are in {status.unit}.</p>
-  <div class="thresholds" style="margin-top:10px">
-    <label>Cool on<input inputmode="decimal" step="0.1" bind:value={coolOn} /></label>
-    <label>Heat on<input inputmode="decimal" step="0.1" bind:value={heatOn} /></label>
-    <label>Hold band<input inputmode="decimal" step="0.1" bind:value={hold} /></label>
-    <label>Sensor offset<input inputmode="decimal" step="0.1" bind:value={offset} /></label>
-  </div>
-  <button class="primary" onclick={saveControl}>Save controller settings</button>
-  <div class="saveStatus">{controllerStatus}</div>
+<section class="stackedCard">
+  <header class="stackedCardHeader">
+    <h2>Controller</h2>
+    <p class="stackedCardDesc">How tightly the controller holds the setpoint. Values are in {status.unit}.</p>
+  </header>
+
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle"><h3>Regulation</h3></div>
+    </div>
+    <div class="thresholds">
+      <label>Cool on<input inputmode="decimal" step="0.1" bind:value={coolOn} /></label>
+      <label>Heat on<input inputmode="decimal" step="0.1" bind:value={heatOn} /></label>
+      <label>Hold band<input inputmode="decimal" step="0.1" bind:value={hold} /></label>
+      <label>Sensor offset<input inputmode="decimal" step="0.1" bind:value={offset} /></label>
+    </div>
+    <button class="primary" onclick={saveControl}>Save controller settings</button>
+    <div class="saveStatus">{controllerStatus}</div>
+  </article>
 </section>

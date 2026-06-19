@@ -437,6 +437,8 @@ void setup() {
   temperatureSensor.begin(millis());
   hydrometer.begin();
   network.setFirmwareUpdateSafetyCallback(prepareForFirmwareUpdate);
+  network.setBrightnessPreviewCallback(
+      [](uint8_t brightness) { ui.previewBrightness(brightness); });
   network.begin(settings, hydrometer);
   network.setEventLog(&eventLog);
   eventLog.add(EventType::Info, String(F("Booted ")) + FIRMWARE_VERSION,

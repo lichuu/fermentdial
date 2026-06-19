@@ -3,7 +3,7 @@
   import Sparkline from './Sparkline.svelte';
   import HydrometerChart from './HydrometerChart.svelte';
   import EventLog from './EventLog.svelte';
-  import { getStatus, getHistory, getHistoryCsv, postSettings } from '../api.js';
+  import { formatMode, getStatus, getHistory, getHistoryCsv, postSettings } from '../api.js';
 
   const deg = String.fromCharCode(176);
 
@@ -242,7 +242,7 @@
             {:else if rest.active}
               D-rest {remainingText(rest.remainingSeconds)} remaining
             {:else}
-              {s.mode} mode
+              {formatMode(s.mode)} mode
             {/if}
           </div>
         </div>
@@ -257,7 +257,7 @@
       <div class="card"><div class="label">Fermenter</div><div class="value">{s ? s.fermenterName : 'Fermenter'}</div></div>
       <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ale'}</div></div>
       <div class="card"><div class="label">Setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
-      <div class="card"><div class="label">Mode</div><div class="value">{s ? s.mode : 'OFF'}</div></div>
+      <div class="card"><div class="label">Mode</div><div class="value">{formatMode(s?.mode)}</div></div>
     </section>
 
     <section class="controls">
@@ -351,16 +351,26 @@
 
     <EventLog />
 
-    <div class="footer">
-      Fault: <span>{s ? s.fault : 'NONE'}</span>
-      <label style="margin-left:14px">
-        <input
-          type="checkbox"
-          checked={!!s?.historyLogging}
-          onchange={(e) => post({ historyLogging: e.target.checked ? 1 : 0 })}
-        /> Log history
-      </label>
-      <a href="/api/history.csv" download style="margin-left:14px">Download history CSV</a>
-    </div>
+    <section class="panel dashFooter">
+      <div class="dashFooterRow">
+        <div class="dashFooterStat">
+          <span class="label">Fault</span>
+          <span
+            class="dashFooterFault"
+            class:ok={!s?.fault || s.fault === 'NONE'}
+            class:bad={!!s?.fault && s.fault !== 'NONE'}
+          >{s ? s.fault : 'NONE'}</span>
+        </div>
+        <label class="dashFooterCheck">
+          <input
+            type="checkbox"
+            checked={!!s?.historyLogging}
+            onchange={(e) => post({ historyLogging: e.target.checked ? 1 : 0 })}
+          />
+          <span>Log history</span>
+        </label>
+        <a class="dashFooterLink" href="/api/history.csv" download>Download CSV</a>
+      </div>
+    </section>
   </div>
 </main>
