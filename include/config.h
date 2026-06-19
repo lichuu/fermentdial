@@ -178,7 +178,22 @@ constexpr uint32_t DEFAULT_PUMP_MIN_RUN_SECONDS = 30;
 constexpr float DEFAULT_TEMP_OFFSET_F = 0.0f;
 constexpr float DEFAULT_TEMP_OFFSET_C = deltaFToC(DEFAULT_TEMP_OFFSET_F);
 constexpr const char *DEFAULT_FERMENTER_NAME = "Fermenter";
+
+#if FERM_DEMO_SENSOR
+constexpr const char *DEMO_HYDROMETER_KEY = "demo:test";
+constexpr const char *DEMO_HYDROMETER_LABEL = "Test Hydrometer";
+constexpr float DEMO_FERMENT_OG = 1.060f;
+constexpr float DEMO_FERMENT_FG = 1.012f;
+constexpr uint32_t DEMO_FERMENT_DURATION_MS = 5UL * 60UL * 1000UL;
+constexpr float DEMO_FERMENT_TEMP_BUMP_C = deltaFToC(2.0f);
+constexpr float DEMO_FERMENT_LOGISTIC_STEEPNESS = 12.0f;
+constexpr float DEMO_FERMENT_LOGISTIC_MIDPOINT = 0.35f;
+constexpr float DEMO_FERMENT_GRAVITY_RIPPLE = 0.0002f;
+constexpr float DEMO_FERMENT_TEMP_RIPPLE_C = 0.05f;
+constexpr const char *DEFAULT_HYDROMETER_SELECTION_KEY = DEMO_HYDROMETER_KEY;
+#else
 constexpr const char *DEFAULT_HYDROMETER_SELECTION_KEY = "";
+#endif
 
 constexpr uint8_t DEFAULT_BRIGHTNESS = 255;
 constexpr uint8_t MIN_BRIGHTNESS = 30;

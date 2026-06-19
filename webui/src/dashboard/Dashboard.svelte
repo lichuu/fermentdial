@@ -67,17 +67,23 @@
     return Number.isFinite(n) ? n : null;
   }
 
-  function liveSamples(history) {
+  function liveSamples(history, clock) {
     const temps = history?.tempsC || [];
     const gravity = history?.gravity || [];
     const hydroTemps = history?.hydroTempsC || [];
+    const intervalMs = history?.intervalMs || 30000;
     const count = Math.max(temps.length, gravity.length, hydroTemps.length);
+    const wallClock = clock?.wallClock ?? true;
+    const anchorMs = (clock?.seconds ?? Math.floor(Date.now() / 1000)) * 1000;
     const samples = [];
     for (let i = 0; i < count; i++) {
+      const ageMs = (count - 1 - i) * intervalMs;
       samples.push({
         tempC: num(temps[i]),
         gravity: num(gravity[i]),
         hydroTempC: num(hydroTemps[i]),
+        atMs: anchorMs - ageMs,
+        wallClock,
       });
     }
     return samples;
@@ -89,10 +95,13 @@
     for (let i = 1; i < lines.length; i++) {
       const row = lines[i].split(',');
       if (row.length < 5) continue;
+      const atSec = num(row[0]);
       const sample = {
         tempC: num(row[2]),
         gravity: num(row[4]),
         hydroTempC: num(row[10]),
+        wallClock: row[1] === '1',
+        atMs: atSec != null ? atSec * 1000 : null,
       };
       if (sample.tempC != null || sample.gravity != null || sample.hydroTempC != null) {
         samples.push(sample);
@@ -134,7 +143,7 @@
     try {
       const live = await getHistory();
       spark = live.tempsC || [];
-      graphSamples = liveSamples(live);
+      graphSamples = liveSamples(live, s?.clock);
       graphSource = 'live';
 
       try {
@@ -152,11 +161,18 @@
   }
 
   $effect(() => {
-    tick();
-    loadHistory();
+    let cancelled = false;
+    async function bootstrap() {
+      await tick();
+      if (!cancelled) {
+        await loadHistory();
+      }
+    }
+    bootstrap();
     const tickTimer = setInterval(tick, 2000);
     const historyTimer = setInterval(loadHistory, 30000);
     return () => {
+      cancelled = true;
       clearInterval(tickTimer);
       clearInterval(historyTimer);
     };
@@ -165,9 +181,8 @@
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
-  const hydroGraphEnabled = $derived(
-    !!hydro.enabled && (hydro.scanType || '').toUpperCase() !== 'UNKNOWN'
-  );
+  // Show when a hydrometer is selected (demo fallback or BLE); scanning need not be on.
+  const hydroGraphEnabled = $derived(!!hydro.valid);
   const prog = $derived(s?.program || {});
   const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
   const PROG_EXIT_TYPES = [
