@@ -36,6 +36,7 @@ class EventLog {
   void upgradeUptimeTimestamps(uint32_t nowMs);
   String toJson() const;
   void flush();  // persist to LittleFS if dirty
+  void clear();  // drop RAM buffer and delete the LittleFS log
   bool dirty() const { return _dirty; }
   uint8_t count() const { return _count; }
 

@@ -79,6 +79,11 @@ void saveProgram(Preferences &prefs, uint8_t index,
 
 void SettingsStorage::begin() { _prefs.begin("fermctl", false); }
 
+void SettingsStorage::factoryReset() {
+  _pending = false;
+  _prefs.clear();
+}
+
 bool SettingsStorage::load(Settings &settings) {
   Settings defaults;
   settings = defaults;

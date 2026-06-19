@@ -1,0 +1,27 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071015">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FermentDial">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest?v=d4e76d275953">
+<link rel="apple-touch-icon" href="/icon-192.png?v=d4e76d275953">
+<style>
+html{background:#071015}body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#071015;color:#f8fbff;margin:0;min-height:100vh}
+main{max-width:520px;margin:auto;padding:24px}.card{border-radius:8px;background:#132428;border:1px solid #1e3840;padding:22px}
+h1{margin-top:0;color:#b0d8f8}input,button{font:inherit;width:100%;box-sizing:border-box;margin:8px 0 16px;padding:14px;border-radius:8px;border:1px solid #1e3840}
+input{background:#102126;color:#d0e8f0}button{background:#356f89;color:white;font-weight:900}.hint{color:#a9bac8}.warn{color:#ffd178}
+a{color:#79d4ff}
+</style><title>FermentDial Firmware</title>
+</head><body><main><div class="card">
+<h1>Firmware Update</h1>
+<p class="warn">Outputs turn off before the update starts. The controller reboots after a successful upload.</p>
+<form method="post" action="/firmware" enctype="multipart/form-data">
+<label>Firmware .bin</label><input type="file" name="firmware" accept=".bin" required>
+<button type="submit">Upload and reboot</button>
+</form>
+<p class="hint">Build with <code>uv run platformio run -e m5stack_dial_demo</code>, then upload <code>.pio/build/m5stack_dial_demo/firmware.bin</code>.</p>
+<p><a href="/wifi">Wi-Fi settings</a> - <a href="/dashboard">Dashboard</a></p>
+</div></main></body></html>

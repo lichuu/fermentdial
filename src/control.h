@@ -55,11 +55,12 @@ public:
     return nowMs - _lastPumpOnMs;
   }
 
-private:
+protected:
   void applyOutputs(uint32_t nowMs, const Settings &settings,
                     bool heaterRequested, bool pumpRequested, bool safetyFault,
                     FaultCode safetyFaultCode, RuntimeState requestedState);
 
+private:
   bool pumpMinRunActive(uint32_t nowMs, const Settings &settings) const;
   bool pumpMinOffSatisfied(uint32_t nowMs, const Settings &settings) const;
 
