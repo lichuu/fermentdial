@@ -72,6 +72,7 @@ constexpr uint32_t DISPLAY_DIM_MS = 60000;
 constexpr uint32_t OUTPUT_TEST_MS = 5000;
 constexpr uint32_t DIACETYL_REST_SAVE_INTERVAL_MS = 60000;
 constexpr uint32_t HYDROMETER_SAVE_INTERVAL_MS = 60000;
+constexpr uint32_t PROGRAM_SAVE_INTERVAL_MS = 60000;
 constexpr uint32_t DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 12;
 constexpr uint32_t MIN_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 1;
 constexpr uint32_t MAX_GRADUAL_CRASH_STEP_INTERVAL_HOURS = 72;
@@ -219,6 +220,9 @@ constexpr float GAUGE_MIN_C = 0.0f;
 constexpr float GAUGE_MAX_C = 35.0f;
 
 constexpr uint8_t PROFILE_COUNT = 7;
+// The two Custom slots hold multi-step fermentation programs.
+constexpr uint8_t PROGRAM_SLOT_COUNT = 2;
+constexpr uint8_t MAX_PROGRAM_STEPS = 12;
 constexpr size_t MAX_FERMENTER_NAME_LENGTH = 24;
 constexpr size_t MAX_PROFILE_NAME_LENGTH = 15;
 
@@ -271,6 +275,42 @@ struct ProfileSettings {
   float targetC = DEFAULT_TARGET_C;
 };
 
+// --- Multi-step fermentation programs ---------------------------------------
+// A program is an ordered list of steps the runner walks through, driving the
+// live setpoint. Each step holds or ramps to a target and advances when its
+// exit condition is met. Time and Manual exits are evaluated by the runner;
+// gravity-based exits are wired up in the gravity-trigger phase.
+enum class StepType : uint8_t {
+  Hold = 0,        // hold targetC
+  Ramp = 1,        // linear ramp from the step's entry setpoint to targetC
+  Crash = 2,       // ramp down to a cold targetC (same math as Ramp)
+  DRest = 3,       // diacetyl rest: hold a warm targetC
+  ManualWait = 4,  // hold the entry setpoint; advance only on user confirm
+};
+
+enum class StepExit : uint8_t {
+  Time = 0,           // advance after durationSeconds elapsed in the step
+  GravityBelow = 1,   // advance when selected gravity <= gravityThreshold
+  GravityStable = 2,  // advance when gravity has been stable for stableHours
+  VelocityBelow = 3,  // advance when |gravity velocity| <= gravityThreshold
+  Manual = 4,         // advance only on user confirm
+};
+
+// POD by design: persisted as a raw blob, so keep it free of String/pointers.
+struct ProfileStep {
+  StepType type = StepType::Hold;
+  StepExit exit = StepExit::Time;
+  float targetC = DEFAULT_TARGET_C;
+  uint32_t durationSeconds = 0;    // Time exit window and ramp slope
+  float gravityThreshold = 1.010f; // GravityBelow / VelocityBelow
+  uint16_t stableHours = 24;       // GravityStable
+};
+
+struct ProgramSettings {
+  uint8_t stepCount = 0;
+  ProfileStep steps[MAX_PROGRAM_STEPS];
+};
+
 struct Settings {
   uint16_t version = SETTINGS_VERSION;
   String fermenterName = DEFAULT_FERMENTER_NAME;
@@ -303,6 +343,14 @@ struct Settings {
   bool gradualCrashEnabled = false;
   float gradualCrashStepC = DEFAULT_GRADUAL_CRASH_STEP_C;
   uint32_t gradualCrashStepIntervalHours = DEFAULT_GRADUAL_CRASH_STEP_INTERVAL_HOURS;
+  // Multi-step programs for the two Custom slots, plus resume-safe runner state.
+  ProgramSettings programs[PROGRAM_SLOT_COUNT];
+  bool programActive = false;
+  uint8_t programRunIndex = 0;  // 0 -> Custom 1, 1 -> Custom 2
+  uint8_t programStepIndex = 0;
+  uint32_t programStepElapsedSeconds = 0;
+  float programStepStartTargetC = DEFAULT_TARGET_C;  // ramp baseline
+  bool programManualAdvance = false;  // one-shot advance request from UI/API
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
@@ -471,6 +519,78 @@ inline void setCurrentTargetC(Settings &settings, float targetC) {
     return;
   }
   settings.liveTargetC = clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
+}
+
+// --- Program helpers ---------------------------------------------------------
+inline bool profileSlotHasProgram(uint8_t slot) {
+  return slot == static_cast<uint8_t>(ProfileSlot::Custom1) ||
+         slot == static_cast<uint8_t>(ProfileSlot::Custom2);
+}
+
+inline uint8_t programIndexForSlot(uint8_t slot) {
+  return slot == static_cast<uint8_t>(ProfileSlot::Custom2) ? 1 : 0;
+}
+
+inline uint8_t profileSlotForProgramIndex(uint8_t programIndex) {
+  return programIndex == 1 ? static_cast<uint8_t>(ProfileSlot::Custom2)
+                           : static_cast<uint8_t>(ProfileSlot::Custom1);
+}
+
+// A ManualWait step always waits for the user regardless of its stored exit.
+inline StepExit effectiveStepExit(const ProfileStep &step) {
+  return step.type == StepType::ManualWait ? StepExit::Manual : step.exit;
+}
+
+// Effective setpoint for a step given how long it has been running and the
+// setpoint it started from (the ramp baseline).
+inline float computeStepTargetC(const ProfileStep &step, uint32_t elapsedSeconds,
+                                float startTargetC) {
+  switch (step.type) {
+  case StepType::Ramp:
+  case StepType::Crash: {
+    if (step.durationSeconds == 0) {
+      return step.targetC;
+    }
+    float frac = static_cast<float>(elapsedSeconds) /
+                 static_cast<float>(step.durationSeconds);
+    if (frac > 1.0f) {
+      frac = 1.0f;
+    }
+    return startTargetC + (step.targetC - startTargetC) * frac;
+  }
+  case StepType::ManualWait:
+    return startTargetC;
+  case StepType::Hold:
+  case StepType::DRest:
+  default:
+    return step.targetC;
+  }
+}
+
+inline void stopProgram(Settings &settings) {
+  settings.programActive = false;
+  settings.programStepElapsedSeconds = 0;
+  settings.programManualAdvance = false;
+}
+
+// Start the program in the given slot (0 -> Custom 1, 1 -> Custom 2). Returns
+// false if the slot index is out of range or the program has no steps.
+inline bool startProgram(Settings &settings, uint8_t programIndex) {
+  if (programIndex >= PROGRAM_SLOT_COUNT ||
+      settings.programs[programIndex].stepCount == 0) {
+    return false;
+  }
+  settings.programActive = true;
+  settings.programRunIndex = programIndex;
+  settings.programStepIndex = 0;
+  settings.programStepElapsedSeconds = 0;
+  settings.programStepStartTargetC = settings.liveTargetC;
+  settings.programManualAdvance = false;
+  // The running program owns the setpoint: make the matching Custom slot active
+  // for display and stand down the standalone diacetyl-rest override.
+  settings.activeProfile = profileSlotForProgramIndex(programIndex);
+  settings.diacetylRestActive = false;
+  return true;
 }
 
 // Load the active profile's preset into the live setpoint (recall a preset).
@@ -699,6 +819,47 @@ inline void sanitizeSettings(Settings &settings) {
   uint8_t modeValue = static_cast<uint8_t>(settings.mode);
   if (modeValue > static_cast<uint8_t>(UserMode::CoolOnly)) {
     settings.mode = UserMode::Off;
+  }
+
+  // Programs: clamp step counts, fields, and runner state.
+  if (settings.programRunIndex >= PROGRAM_SLOT_COUNT) {
+    settings.programRunIndex = 0;
+  }
+  for (uint8_t i = 0; i < PROGRAM_SLOT_COUNT; ++i) {
+    ProgramSettings &program = settings.programs[i];
+    if (program.stepCount > MAX_PROGRAM_STEPS) {
+      program.stepCount = MAX_PROGRAM_STEPS;
+    }
+    for (uint8_t s = 0; s < program.stepCount; ++s) {
+      ProfileStep &step = program.steps[s];
+      if (static_cast<uint8_t>(step.type) >
+          static_cast<uint8_t>(StepType::ManualWait)) {
+        step.type = StepType::Hold;
+      }
+      if (static_cast<uint8_t>(step.exit) >
+          static_cast<uint8_t>(StepExit::Manual)) {
+        step.exit = StepExit::Time;
+      }
+      step.targetC = snapTempC(
+          clampFloat(step.targetC, MIN_TARGET_C, MAX_TARGET_C),
+          settings.unitsFahrenheit);
+      if (!gravityIsValid(step.gravityThreshold)) {
+        step.gravityThreshold = 1.010f;
+      }
+    }
+  }
+  if (settings.programActive) {
+    const ProgramSettings &running = settings.programs[settings.programRunIndex];
+    if (running.stepCount == 0) {
+      settings.programActive = false;
+      settings.programStepIndex = 0;
+      settings.programStepElapsedSeconds = 0;
+    } else if (settings.programStepIndex >= running.stepCount) {
+      settings.programStepIndex = running.stepCount - 1;
+    }
+  }
+  if (isnan(settings.programStepStartTargetC)) {
+    settings.programStepStartTargetC = settings.liveTargetC;
   }
 }
 
