@@ -55,6 +55,9 @@ public:
     return nowMs - _lastPumpOnMs;
   }
 
+  // Protected (not private) so native interlock tests can call applyOutputs with
+  // both outputs requested. update() never requests heater and pump together,
+  // so the guard is not reachable through the public API alone.
 protected:
   void applyOutputs(uint32_t nowMs, const Settings &settings,
                     bool heaterRequested, bool pumpRequested, bool safetyFault,

@@ -41,6 +41,7 @@ void test_sanitize_settings_normalizes_out_of_range_values() {
   Settings settings = makeDirtySettings();
   sanitizeSettings(settings);
 
+  // Truncation runs after trim, so a 24-char cap keeps the trailing space.
   TEST_ASSERT_EQUAL_STRING("Overflow Fermenter Name ",
                             settings.fermenterName);
   TEST_ASSERT_EQUAL(MIN_BRIGHTNESS, settings.brightness);

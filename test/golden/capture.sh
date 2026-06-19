@@ -9,6 +9,12 @@
 #
 # In setup mode "/" is the Wi-Fi provisioning page (stock post-reset shell).
 # Reconnect home Wi-Fi only when you want to use the device, not for goldens.
+#
+# Masking notes:
+# - HTML strips ?v=<git-sha> cache-busters (and status nulls firmwareGitSha),
+#   so build-stamped volatiles only show up in cross-commit before/after diffs,
+#   not in a same-build self-check (before vs before2).
+# - Stripping ?v= reduces golden coverage of the asset-versioning query path.
 set -euo pipefail
 
 HOST="${1:?Usage: $0 <host> [output_dir]}"
@@ -56,6 +62,7 @@ auth_curl() {
   fi
 }
 
+# Drop ?v=<sha> so HTML goldens survive rebuilds; see header masking notes.
 normalize_html() {
   tr -d '\r' | sed -E 's/[?&]v=[a-f0-9]+//g'
 }
