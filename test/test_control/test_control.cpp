@@ -4,6 +4,9 @@
 
 using namespace ferm;
 
+// Exercises the interlock guard directly. update() only ever requests one
+// output at a time, so this proves applyOutputs rejects simultaneous requests,
+// not that a production code path can reach that state.
 class TestController : public FermentationController {
 public:
   void driveOutputs(uint32_t nowMs, const Settings &settings,
@@ -73,6 +76,7 @@ void test_pump_min_off_blocks_restart() {
   Settings settings = autoSettings();
   settings.pumpMinOffSeconds = 120;
   settings.pumpMinRunSeconds = 1;
+  // Negative nowMs wraps in uint32_t so pump-off elapsed time is already large.
   controller.begin(-200000);
 
   const float hotTemp = settings.liveTargetC + settings.coolOnDeltaC + 2.0f;
