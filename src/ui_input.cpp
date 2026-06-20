@@ -91,7 +91,48 @@ constexpr const char *MENU_LABELS[MENU_COUNT] = {
 };
 
 } // namespace
+void DisplayUI::queueRemoteInput(const ScreenInputEvent &event) {
+  _pendingRemoteInput = event;
+  _hasPendingRemoteInput = true;
+}
+
+void DisplayUI::applyPendingRemoteInput(uint32_t nowMs, Settings &settings) {
+  if (!_hasPendingRemoteInput) {
+    return;
+  }
+  _hasPendingRemoteInput = false;
+  const ScreenInputEvent event = _pendingRemoteInput;
+  switch (event.kind) {
+  case ScreenInputKind::Tap:
+    handleTouchClick(event.x, event.y, nowMs, settings);
+    break;
+  case ScreenInputKind::Swipe:
+    handleSwipe(nowMs, settings, event.dx, event.dy);
+    break;
+  case ScreenInputKind::Hold:
+    if (_screen == Screen::Main || _screen == Screen::Hydrometer) {
+      if (_setpointEditing) {
+        cancelPendingSetpoint();
+      }
+      _screen = Screen::Menu;
+      resetSettingsEncoderFilters();
+      _dirty = true;
+      markActivity(nowMs);
+    } else {
+      handleLongPress(settings);
+      markActivity(nowMs);
+    }
+    break;
+  case ScreenInputKind::Scroll:
+    handleEncoder(event.delta, settings);
+    markActivity(nowMs);
+    break;
+  }
+}
+
 void DisplayUI::processInput(uint32_t nowMs, Settings &settings) {
+  applyPendingRemoteInput(nowMs, settings);
+
   int32_t encoder = M5Dial.Encoder.read();
   int32_t delta = encoder - _lastEncoder;
   if (delta != 0) {
@@ -164,6 +205,11 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     return;
   }
 
+  handleTouchClick(touch.x, touch.y, nowMs, settings);
+}
+
+void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
+                                 Settings &settings) {
   markActivity(nowMs);
 
   const int16_t h = M5Dial.Display.height();
@@ -172,16 +218,15 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t cy = h / 2;
     if (_setpointEditing) {
       // While previewing a setpoint, taps only hit the confirm/cancel row.
-      if (setpointConfirmHit(touch.x, touch.y)) {
+      if (setpointConfirmHit(x, y)) {
         commitPendingSetpoint(nowMs, settings);
-      } else if (setpointCancelHit(touch.x, touch.y)) {
+      } else if (setpointCancelHit(x, y)) {
         cancelPendingSetpoint();
       }
       return;
     }
     // Help badge carve-out (matches the "?" rendered in drawMain).
-    if (touch.x >= cx - 98 && touch.x <= cx - 70 && touch.y >= cy - 14 &&
-        touch.y <= cy + 14) {
+    if (x >= cx - 98 && x <= cx - 70 && y >= cy - 14 && y <= cy + 14) {
       _screen = Screen::Help;
       _dirty = true;
       return;
@@ -197,13 +242,13 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::QuickMenu) {
-    if (quickCancelHit(touch.x, touch.y)) {
+    if (quickCancelHit(x, y)) {
       cancelQuickFlow();
       return;
     }
-    if (touch.y < h / 3) {
+    if (y < h / 3) {
       handleEncoder(-MENU_ENCODER_DIVISOR, settings);
-    } else if (touch.y > (h * 2) / 3) {
+    } else if (y > (h * 2) / 3) {
       handleEncoder(MENU_ENCODER_DIVISOR, settings);
     } else {
       handleShortPress(nowMs, settings);
@@ -212,13 +257,13 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
   }
 
   if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
-    if (quickCancelHit(touch.x, touch.y)) {
+    if (quickCancelHit(x, y)) {
       cancelQuickFlow();
       return;
     }
-    if (touch.y < h / 3) {
+    if (y < h / 3) {
       handleEncoder(-MENU_ENCODER_DIVISOR, settings);
-    } else if (touch.y > (h * 2) / 3) {
+    } else if (y > (h * 2) / 3) {
       handleEncoder(MENU_ENCODER_DIVISOR, settings);
     } else {
       requestQuickConfirm(settings);
@@ -230,33 +275,30 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t cx = M5Dial.Display.width() / 2;
     const int16_t cy = h / 2;
     if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
-      if (touch.x >= cx - 90 && touch.x <= cx - 6 && touch.y >= cy + 44 &&
-          touch.y <= cy + 70) {
+      if (x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70) {
         _pendingGradualCrash = false;
         confirmQuickAction(settings);
-      } else if (touch.x >= cx + 6 && touch.x <= cx + 90 &&
-                 touch.y >= cy + 44 && touch.y <= cy + 70) {
+      } else if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
         _pendingGradualCrash = true;
         confirmQuickAction(settings);
       }
       return;
     }
-    if (quickCancelHit(touch.x, touch.y)) {
+    if (quickCancelHit(x, y)) {
       cancelQuickFlow();
       return;
     }
     // Apply is the right button of the confirm action row.
-    if (touch.x >= cx + 6 && touch.x <= cx + 90 && touch.y >= cy + 44 &&
-        touch.y <= cy + 70) {
+    if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
       confirmQuickAction(settings);
     }
     return;
   }
 
   if (_screen == Screen::Menu) {
-    if (touch.y < h / 3) {
+    if (y < h / 3) {
       handleEncoder(-MENU_ENCODER_DIVISOR, settings);
-    } else if (touch.y > (h * 2) / 3) {
+    } else if (y > (h * 2) / 3) {
       handleEncoder(MENU_ENCODER_DIVISOR, settings);
     } else {
       handleShortPress(nowMs, settings);
@@ -268,7 +310,7 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t cx = M5Dial.Display.width() / 2;
     const int16_t cy = h / 2;
     const int16_t backY = cy + 66;
-    if (touch.y >= backY && touch.y <= backY + 24) {
+    if (y >= backY && y <= backY + 24) {
       _screen = Screen::Menu;
       resetSettingsEncoderFilters();
       _dirty = true;
@@ -282,21 +324,21 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t cy = h / 2;
     const int16_t topY = cy + 34;   // Reset / Save row (height 24)
     const int16_t backY = cy + 66;  // Back row (height 24)
-    if (touch.y >= topY && touch.y < topY + 24) {
+    if (y >= topY && y < topY + 24) {
       if (!editHasReset(settings)) {
-        if (touch.x >= cx - 55 && touch.x <= cx + 55) {
+        if (x >= cx - 55 && x <= cx + 55) {
           requestEditConfirm(EditConfirmAction::Save);
         }
-      } else if (touch.x < cx) {
+      } else if (x < cx) {
         requestEditConfirm(EditConfirmAction::Reset);
       } else {
         requestEditConfirm(EditConfirmAction::Save);
       }
-    } else if (touch.y >= backY && touch.y <= backY + 24) {
+    } else if (y >= backY && y <= backY + 24) {
       cancelEdit(settings);
-    } else if (touch.y < topY) {
+    } else if (y < topY) {
       // Tap the upper area to nudge the value: left = down, right = up.
-      handleEncoder(touch.x < cx ? -EDIT_ENCODER_DIVISOR : EDIT_ENCODER_DIVISOR,
+      handleEncoder(x < cx ? -EDIT_ENCODER_DIVISOR : EDIT_ENCODER_DIVISOR,
                     settings);
     }
     return;
@@ -306,11 +348,9 @@ void DisplayUI::handleTouch(uint32_t nowMs, Settings &settings) {
     const int16_t cx = M5Dial.Display.width() / 2;
     const int16_t cy = h / 2;
     // Same action-row rects as QuickConfirm: Cancel (left) / confirm (right).
-    if (touch.x >= cx - 90 && touch.x <= cx - 6 && touch.y >= cy + 44 &&
-        touch.y <= cy + 70) {
+    if (x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70) {
       cancelEditConfirm();
-    } else if (touch.x >= cx + 6 && touch.x <= cx + 90 && touch.y >= cy + 44 &&
-               touch.y <= cy + 70) {
+    } else if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
       confirmEditAction(settings);
     }
     return;
@@ -758,9 +798,7 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
     _quickConfirmKind = QuickConfirmKind::Apply;
     _toast = _pendingGradualCrash ? "Crash: gradual" : "Crash: direct";
   } else if (_pendingQuickAction == QuickAction::Profile) {
-    cancelDiacetylRest(settings);
-    settings.activeProfile = _pendingProfile;
-    applyActiveProfileTarget(settings);  // recall this profile's preset
+    activateProfile(settings, _pendingProfile);
     _toast = String("Profile: ") + activeProfile(settings).name;
   } else {
     settings.mode = _pendingMode;
@@ -774,7 +812,7 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
 }
 
 void DisplayUI::applyCrashProfile(Settings &settings, bool gradual) {
-  cancelDiacetylRest(settings);
+  deactivateSupersededModes(settings);
   settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Crash);
   settings.gradualCrashEnabled = gradual;
   applyActiveProfileTarget(settings);  // direct recalls target, gradual preserves high target
@@ -827,16 +865,13 @@ void DisplayUI::saveEdit(Settings &settings) {
     return;
   }
 
-  // Selecting a profile or editing its target applies it to the live setpoint.
-  if (_editIndex == MENU_PROFILE || _editIndex == MENU_TARGET) {
-    cancelDiacetylRest(settings);
+  if (_editIndex == MENU_PROFILE) {
+    activateProfile(settings, activeProfileIndex(settings));
+    _toast = String("Profile: ") + activeProfile(settings).name;
+    _toastUntilMs = millis() + 1800;
+  } else if (_editIndex == MENU_TARGET) {
     applyActiveProfileTarget(settings);
-    if (_editIndex == MENU_TARGET &&
-        profileSlotEditable(activeProfileIndex(settings))) {
-      _toast = String("Saved: ") + activeProfile(settings).name;
-    } else {
-      _toast = String("Profile: ") + activeProfile(settings).name;
-    }
+    _toast = String("Saved: ") + activeProfile(settings).name;
     _toastUntilMs = millis() + 1800;
   } else if (_editIndex == MENU_DREST) {
     startDiacetylRest(settings);

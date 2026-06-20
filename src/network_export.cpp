@@ -23,6 +23,12 @@ namespace ferm {
 
 using namespace network_detail;
 
+void NetworkManager::clearLiveHistory() {
+  _historyCount = 0;
+  _historyHead = 0;
+  _lastSampleMs = 0;
+}
+
 void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC,
                                    const HydrometerReading &hydro) {
   if (!valid || isnan(tempC)) {
@@ -54,32 +60,33 @@ void NetworkManager::recordHistory(uint32_t nowMs, bool valid, float tempC,
 
 String NetworkManager::historyJson() const {
   // Oldest sample first so the client can plot left-to-right.
-  const uint8_t start =
+  const uint16_t start =
       _historyCount < HISTORY_LEN ? 0 : _historyHead;
-  String out =
-      "{\"intervalMs\":" + String(HISTORY_INTERVAL_MS) + ",\"tempsC\":[";
-  for (uint8_t i = 0; i < _historyCount; ++i) {
+  String out = "{\"intervalMs\":" + String(HISTORY_INTERVAL_MS) +
+               ",\"capacity\":" + String(HISTORY_LEN) + ",\"count\":" +
+               String(_historyCount) + ",\"tempsC\":[";
+  for (uint16_t i = 0; i < _historyCount; ++i) {
     if (i > 0) {
       out += ",";
     }
     out += String(_historyTempC[(start + i) % HISTORY_LEN] / 10.0f, 1);
   }
   out += "],\"gravity\":[";
-  for (uint8_t i = 0; i < _historyCount; ++i) {
+  for (uint16_t i = 0; i < _historyCount; ++i) {
     if (i > 0) {
       out += ",";
     }
-    const uint8_t idx = (start + i) % HISTORY_LEN;
+    const uint16_t idx = (start + i) % HISTORY_LEN;
     out += _historyGravityValid[idx]
                ? String(_historyGravity[idx] / 10000.0f, 4)
                : String("null");
   }
   out += "],\"hydroTempsC\":[";
-  for (uint8_t i = 0; i < _historyCount; ++i) {
+  for (uint16_t i = 0; i < _historyCount; ++i) {
     if (i > 0) {
       out += ",";
     }
-    const uint8_t idx = (start + i) % HISTORY_LEN;
+    const uint16_t idx = (start + i) % HISTORY_LEN;
     out += _historyHydroTempValid[idx]
                ? String(_historyHydroTempC[idx] / 10.0f, 1)
                : String("null");
@@ -345,9 +352,13 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   json += "\"gradualCrashStepHours\":" +
           String(_webStatus.gradualCrashStepIntervalHours) + ",";
   json += "\"historyLogging\":" +
+#if FERM_ENABLE_NETWORK
+          String("true") +
+#else
           String((_settings != nullptr && _settings->historyLoggingEnabled)
                      ? "true"
                      : "false") +
+#endif
           ",";
   json += "\"coolOn\":" + jsonFloat(coolOn) + ",";
   json += "\"heatOn\":" + jsonFloat(heatOn) + ",";

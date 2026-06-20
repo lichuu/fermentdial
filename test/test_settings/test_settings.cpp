@@ -138,7 +138,8 @@ void test_effective_step_exit_manual_wait_override() {
 
 void test_start_and_stop_program_state_transitions() {
   Settings settings;
-  settings.liveTargetC = 19.0f;
+  settings.liveTargetC = 21.0f;
+  settings.profiles[static_cast<uint8_t>(ProfileSlot::Custom1)].targetC = 19.0f;
   settings.programs[0].stepCount = 2;
   settings.programs[0].steps[0].targetC = 20.0f;
   settings.programs[1].stepCount = 0;
@@ -182,6 +183,30 @@ void test_clamp_helpers_edges() {
   TEST_ASSERT_EQUAL(100, clampBrightness(100));
 }
 
+void test_activate_profile_stops_program_and_d_rest() {
+  Settings settings;
+  settings.activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
+  settings.profiles[static_cast<uint8_t>(ProfileSlot::Lager)].targetC = 12.0f;
+  settings.programActive = true;
+  settings.programRunIndex = 0;
+  settings.programStepIndex = 1;
+  settings.programStepElapsedSeconds = 600;
+  settings.diacetylRestActive = true;
+  settings.diacetylRestRemainingSeconds = 3600;
+  settings.gradualCrashEnabled = true;
+
+  activateProfile(settings, static_cast<uint8_t>(ProfileSlot::Lager));
+
+  TEST_ASSERT_FALSE(settings.programActive);
+  TEST_ASSERT_EQUAL(0U, settings.programStepElapsedSeconds);
+  TEST_ASSERT_FALSE(settings.diacetylRestActive);
+  TEST_ASSERT_EQUAL(0U, settings.diacetylRestRemainingSeconds);
+  TEST_ASSERT_FALSE(settings.gradualCrashEnabled);
+  TEST_ASSERT_EQUAL(static_cast<uint8_t>(ProfileSlot::Lager),
+                    settings.activeProfile);
+  TEST_ASSERT_FLOAT_WITHIN(0.05f, 12.0f, settings.liveTargetC);
+}
+
 void setUp(void) {}
 
 void tearDown(void) {}
@@ -198,5 +223,6 @@ int main(int argc, char **argv) {
   RUN_TEST(test_start_and_stop_program_state_transitions);
   RUN_TEST(test_unit_conversions_and_display_grid);
   RUN_TEST(test_clamp_helpers_edges);
+  RUN_TEST(test_activate_profile_stops_program_and_d_rest);
   return UNITY_END();
 }

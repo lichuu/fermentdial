@@ -50,6 +50,18 @@ void prepareFactoryReset() {
   historyLog.clear();
 }
 
+void prepareFermentReset() {
+  const uint32_t nowMs = millis();
+#if FERM_DEMO_SENSOR
+  hydrometer.resetDemoFerment(nowMs);
+#endif
+  deactivateSupersededModes(settings);
+  resetHydrometerSession(settings);
+  historyLog.clear();
+  eventLog.clear();
+  network.clearLiveHistory();
+}
+
 void logStatus(uint32_t nowMs) {
   if (nowMs - lastSerialLogMs < 2000) {
     return;
@@ -120,8 +132,14 @@ void setup() {
   hydrometer.begin();
   network.setFirmwareUpdateSafetyCallback(prepareForFirmwareUpdate);
   network.setFactoryResetCallback(prepareFactoryReset);
+  network.setFermentResetCallback(prepareFermentReset);
   network.setBrightnessPreviewCallback(
       [](uint8_t brightness) { ui.previewBrightness(brightness); });
+  network.setScreenFrameProvider([]() -> ScreenFrame { return ui.canvasFrame(); });
+#if FERM_ENABLE_SCREEN_MIRROR
+  network.setScreenInputCallback(
+      [](const ScreenInputEvent &event) { ui.queueRemoteInput(event); });
+#endif
   network.begin(settings, hydrometer);
   network.setEventLog(&eventLog);
 }
@@ -148,10 +166,12 @@ void loop() {
     lastEventFlushMs = nowMs;
     eventLog.flush();
   }
-  if (settings.historyLoggingEnabled && historyLog.due(nowMs)) {
+#if FERM_ENABLE_NETWORK
+  if (historyLog.due(nowMs)) {
     historyLog.markSampled(nowMs);
     historyLog.append(buildHistoryRow(nowMs, selectedHydrometer));
   }
+#endif
 
   UiModel model;
   model.tempValid = temperatureSensor.isValid();
@@ -171,6 +191,7 @@ void loop() {
   model.network = network.snapshot();
 
   ui.update(nowMs, settings, model);
+  network.serviceWeb();
 
   bool checkpointDiacetylRest = false;
   if (settings.diacetylRestActive &&

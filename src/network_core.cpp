@@ -98,9 +98,29 @@ void NetworkManager::setFactoryResetCallback(FactoryResetCallback callback) {
   _factoryResetCallback = callback;
 }
 
+void NetworkManager::setFermentResetCallback(FermentResetCallback callback) {
+  _fermentResetCallback = callback;
+}
+
 void NetworkManager::setBrightnessPreviewCallback(
     BrightnessPreviewCallback callback) {
   _brightnessPreviewCallback = callback;
+}
+
+void NetworkManager::setScreenFrameProvider(ScreenFrameProvider provider) {
+  _screenFrameProvider = provider;
+}
+
+void NetworkManager::setScreenInputCallback(ScreenInputCallback callback) {
+  _screenInputCallback = callback;
+}
+
+void NetworkManager::serviceWeb() {
+#if FERM_ENABLE_NETWORK
+  if (_serverStarted) {
+    _server.handleClient();
+  }
+#endif
 }
 
 void NetworkManager::previewWebBrightness(int raw) {
@@ -131,9 +151,6 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
   if (nextHostname != _hostname) {
     _hostname = nextHostname;
     _snapshot.hostname = _hostname;
-  }
-  if (_serverStarted) {
-    _server.handleClient();
   }
   if (_apMode) {
     _dns.processNextRequest();
@@ -477,6 +494,30 @@ void NetworkManager::startWebServer() {
     streamHistoryFile(HISTORY_CSV_PATH);
     _server.sendContent("");
   });
+#if FERM_ENABLE_SCREEN_MIRROR
+  _server.on("/api/screen", HTTP_GET, [this]() {
+    if (_screenFrameProvider == nullptr) {
+      _server.send(503, "text/plain", "Screen mirror unavailable");
+      return;
+    }
+    const ScreenFrame frame = _screenFrameProvider();
+    if (frame.data == nullptr || frame.len == 0 || frame.width == 0 ||
+        frame.height == 0 || frame.stride == 0) {
+      _server.send(503, "text/plain", "No frame");
+      return;
+    }
+    _server.sendHeader("Cache-Control", "no-cache");
+    _server.sendHeader("X-Frame-Width", String(frame.width));
+    _server.sendHeader("X-Frame-Height", String(frame.height));
+    _server.sendHeader("X-Frame-Stride", String(frame.stride));
+    _server.send_P(200, "application/octet-stream",
+                   reinterpret_cast<PGM_P>(frame.data), frame.len);
+  });
+  _server.on("/screen", HTTP_GET, [this]() {
+    _server.send(200, "text/html; charset=utf-8", framebufferViewerHtml());
+  });
+  _server.on("/api/screen/input", HTTP_POST, [this]() { handleScreenInputPost(); });
+#endif
   _server.onNotFound([this]() {
     _server.sendHeader("Location", "/", true);
     _server.send(302, "text/plain", "");

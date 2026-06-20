@@ -163,7 +163,7 @@ bool SettingsStorage::load(Settings &settings) {
   settings.programStepElapsedSeconds = _prefs.getUInt("progElap", 0);
   settings.programStepStartTargetC =
       _prefs.getFloat("progStart", DEFAULT_TARGET_C);
-  settings.historyLoggingEnabled = _prefs.getBool("histLog", false);
+  settings.historyLoggingEnabled = _prefs.getBool("histLog", true);
   if (settings.diacetylRestActive &&
       settings.diacetylRestRemainingSeconds == 0) {
     settings.diacetylRestRemainingSeconds =

@@ -56,9 +56,7 @@ void NetworkManager::handleSettingsPost() {
                    "{\"ok\":false,\"error\":\"invalid profile\"}");
       return;
     }
-    cancelDiacetylRest(*_settings);
-    _settings->activeProfile = static_cast<uint8_t>(requestedProfile);
-    applyActiveProfileTarget(*_settings);  // recall the profile's preset
+    activateProfile(*_settings, static_cast<uint8_t>(requestedProfile));
     changed = true;
   }
 
@@ -192,8 +190,7 @@ void NetworkManager::handleSettingsPost() {
     }
   }
   if (_server.hasArg("historyLogging")) {
-    _settings->historyLoggingEnabled =
-        _server.arg("historyLogging").toInt() != 0;
+    _settings->historyLoggingEnabled = true;
     changed = true;
   }
   if ((_server.hasArg("hydrometerBleEnabled") ||
@@ -201,6 +198,12 @@ void NetworkManager::handleSettingsPost() {
       _settings->hydrometerBleEnabled &&
       _settings->hydrometerScanType != HydrometerScanType::Unknown) {
     _settings->historyLoggingEnabled = true;
+    changed = true;
+  }
+  if (_server.hasArg("fermentReset") && _server.arg("fermentReset").toInt() != 0) {
+    if (_fermentResetCallback != nullptr) {
+      _fermentResetCallback();
+    }
     changed = true;
   }
   if (_server.hasArg("programAction")) {
@@ -433,6 +436,45 @@ void NetworkManager::haResetAnnounced() {
     _haAnnounced[i] = "";
   }
   _haAnnouncedCount = 0;
+}
+
+void NetworkManager::handleScreenInputPost() {
+#if FERM_ENABLE_NETWORK && FERM_ENABLE_SCREEN_MIRROR
+  if (_screenInputCallback == nullptr) {
+    _server.send(503, "text/plain", "Screen input unavailable");
+    return;
+  }
+  if (!_server.hasArg("type")) {
+    _server.send(400, "text/plain", "Missing type");
+    return;
+  }
+
+  ScreenInputEvent event{};
+  const String type = _server.arg("type");
+  if (type == "tap") {
+    event.kind = ScreenInputKind::Tap;
+    event.x = static_cast<int16_t>(constrain(_server.arg("x").toInt(), 0, 239));
+    event.y = static_cast<int16_t>(constrain(_server.arg("y").toInt(), 0, 239));
+  } else if (type == "swipe") {
+    event.kind = ScreenInputKind::Swipe;
+    event.dx =
+        static_cast<int16_t>(constrain(_server.arg("dx").toInt(), -240, 240));
+    event.dy =
+        static_cast<int16_t>(constrain(_server.arg("dy").toInt(), -240, 240));
+  } else if (type == "hold") {
+    event.kind = ScreenInputKind::Hold;
+  } else if (type == "scroll") {
+    event.kind = ScreenInputKind::Scroll;
+    event.delta =
+        static_cast<int16_t>(constrain(_server.arg("delta").toInt(), -64, 64));
+  } else {
+    _server.send(400, "text/plain", "Unknown type");
+    return;
+  }
+
+  _screenInputCallback(event);
+  _server.send(204, "text/plain", "");
+#endif
 }
 
 } // namespace ferm

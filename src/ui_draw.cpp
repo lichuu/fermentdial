@@ -240,7 +240,14 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     stateCol = accent;
   }
   _canvas.setTextColor(stateCol, bg);
-  _canvas.drawString(stateLine, cx, cy + 34, &fonts::FreeSansBold12pt7b);
+  // Anchor rows: temperature centre (cy - 6), hydrometer line (cy + 46).
+  // The large temperature glyphs extend below their anchor, so use the visual
+  // bottom of that block when centring the state line above the SG row.
+  constexpr int16_t kTempRowY = -6;
+  constexpr int16_t kHydroRowY = 46;
+  constexpr int16_t kTempVisualBottomY = 12;
+  const int16_t stateY = cy + (kTempVisualBottomY + kHydroRowY) / 2;
+  _canvas.drawString(stateLine, cx, stateY, &fonts::FreeSansBold12pt7b);
 
   String hydroLine = "";
   if (model.hydrometer.selected && model.hydrometer.valid) {
