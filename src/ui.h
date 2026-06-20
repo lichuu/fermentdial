@@ -36,6 +36,19 @@ class DisplayUI {
   bool consumeWifiSetupRequested();
   void notifyOutputTestRejected();
   void previewBrightness(uint8_t brightness);
+  void queueRemoteInput(const ScreenInputEvent &event);
+
+  ScreenFrame canvasFrame() const {
+    ScreenFrame frame{};
+    frame.width = _canvas.width();
+    frame.height = _canvas.height();
+    frame.len = _canvas.bufferLength();
+    if (frame.height > 0) {
+      frame.stride = static_cast<uint16_t>(frame.len / frame.height / 2);
+    }
+    frame.data = static_cast<const uint8_t *>(_canvas.getBuffer());
+    return frame;
+  }
 
  private:
   enum class Screen : uint8_t {
@@ -71,7 +84,9 @@ class DisplayUI {
   };
 
   void processInput(uint32_t nowMs, Settings &settings);
+  void applyPendingRemoteInput(uint32_t nowMs, Settings &settings);
   void handleTouch(uint32_t nowMs, Settings &settings);
+  void handleTouchClick(int16_t x, int16_t y, uint32_t nowMs, Settings &settings);
   void handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx, int16_t dy);
   void scrollMenuByTouch(int16_t deltaY);
   void scrollQuickByTouch(int16_t deltaY, const Settings &settings);
@@ -200,6 +215,8 @@ class DisplayUI {
   uint32_t _pressStartedMs = 0;
   bool _longPressHandled = false;
   bool _touchPressActive = false;
+  bool _hasPendingRemoteInput = false;
+  ScreenInputEvent _pendingRemoteInput{};
   int16_t _pressX = -1;
   int16_t _pressY = -1;
   bool _dimmed = false;

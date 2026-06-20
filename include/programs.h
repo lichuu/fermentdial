@@ -91,19 +91,28 @@ inline void stopProgram(Settings &settings) {
   settings.programManualAdvance = false;
 }
 
+inline void deactivateSupersededModes(Settings &settings) {
+  stopProgram(settings);
+  cancelDiacetylRest(settings);
+}
+
 inline bool startProgram(Settings &settings, uint8_t programIndex) {
   if (programIndex >= PROGRAM_SLOT_COUNT ||
       settings.programs[programIndex].stepCount == 0) {
     return false;
   }
+  deactivateSupersededModes(settings);
   settings.programActive = true;
   settings.programRunIndex = programIndex;
   settings.programStepIndex = 0;
   settings.programStepElapsedSeconds = 0;
-  settings.programStepStartTargetC = settings.liveTargetC;
   settings.programManualAdvance = false;
   settings.activeProfile = profileSlotForProgramIndex(programIndex);
-  settings.diacetylRestActive = false;
+  if (settings.activeProfile != static_cast<uint8_t>(ProfileSlot::Crash)) {
+    settings.gradualCrashEnabled = false;
+  }
+  applyActiveProfileTarget(settings);
+  settings.programStepStartTargetC = settings.liveTargetC;
   return true;
 }
 

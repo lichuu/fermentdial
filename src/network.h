@@ -111,14 +111,47 @@ struct BrewfatherConfig {
 
 using FirmwareUpdateSafetyCallback = void (*)();
 using FactoryResetCallback = void (*)();
+using FermentResetCallback = void (*)();
 using BrightnessPreviewCallback = void (*)(uint8_t brightness);
+struct ScreenFrame {
+  const uint8_t *data = nullptr;
+  size_t len = 0;
+  uint16_t width = 0;
+  uint16_t height = 0;
+  uint16_t stride = 0;
+};
+
+using ScreenFrameProvider = ScreenFrame (*)();
+
+enum class ScreenInputKind : uint8_t {
+  Tap,
+  Swipe,
+  Hold,
+  Scroll,
+};
+
+struct ScreenInputEvent {
+  ScreenInputKind kind = ScreenInputKind::Tap;
+  int16_t x = 0;
+  int16_t y = 0;
+  int16_t dx = 0;
+  int16_t dy = 0;
+  int16_t delta = 0;
+};
+
+using ScreenInputCallback = void (*)(const ScreenInputEvent &event);
 
 class NetworkManager {
 public:
   void begin(const Settings &settings, const HydrometerManager &hydrometer);
   void setFirmwareUpdateSafetyCallback(FirmwareUpdateSafetyCallback callback);
   void setFactoryResetCallback(FactoryResetCallback callback);
+  void setFermentResetCallback(FermentResetCallback callback);
+  void clearLiveHistory();
   void setBrightnessPreviewCallback(BrightnessPreviewCallback callback);
+  void setScreenFrameProvider(ScreenFrameProvider provider);
+  void setScreenInputCallback(ScreenInputCallback callback);
+  void serviceWeb();
   void setEventLog(EventLog *log) { _eventLog = log; }
   void update(uint32_t nowMs, Settings &settings);
   void publishState(uint32_t nowMs, const Settings &settings,
@@ -133,7 +166,10 @@ private:
   NetworkSnapshot _snapshot;
   FirmwareUpdateSafetyCallback _firmwareUpdateSafetyCallback = nullptr;
   FactoryResetCallback _factoryResetCallback = nullptr;
+  FermentResetCallback _fermentResetCallback = nullptr;
   BrightnessPreviewCallback _brightnessPreviewCallback = nullptr;
+  ScreenFrameProvider _screenFrameProvider = nullptr;
+  ScreenInputCallback _screenInputCallback = nullptr;
   bool _firmwareUpdateInProgress = false;
   bool _firmwareUpdateHadError = false;
   bool _firmwareUpdateOk = false;
@@ -144,17 +180,18 @@ private:
   uint32_t _lastInfluxPublishMs = 0;
   uint32_t _lastBrewfatherPublishMs = 0;
   WebStatus _webStatus;
-  // Rolling dashboard history, sampled at a fixed cadence so points are evenly
-  // spaced. Temperatures are deci-degrees C; gravity is SG * 10000.
-  static constexpr uint8_t HISTORY_LEN = 120;
-  static constexpr uint32_t HISTORY_INTERVAL_MS = 30000;
+  // Rolling in-RAM dashboard sparkline (lost on reboot). The graph uses the
+  // always-on LittleFS CSV; oldest live samples drop when this ring is full.
+  // Temperatures are deci-degrees C; gravity is SG * 10000.
+  static constexpr uint16_t HISTORY_LEN = 720;
+  static constexpr uint32_t HISTORY_INTERVAL_MS = 60000;
   int16_t _historyTempC[HISTORY_LEN] = {0};
   int16_t _historyHydroTempC[HISTORY_LEN] = {0};
   uint16_t _historyGravity[HISTORY_LEN] = {0};
   bool _historyHydroTempValid[HISTORY_LEN] = {false};
   bool _historyGravityValid[HISTORY_LEN] = {false};
-  uint8_t _historyCount = 0;
-  uint8_t _historyHead = 0;
+  uint16_t _historyCount = 0;
+  uint16_t _historyHead = 0;
   uint32_t _lastSampleMs = 0;
   InfluxConfig _influx;
   int _lastInfluxStatusCode = 0;
@@ -207,6 +244,7 @@ private:
   String newSessionToken();
   void handleWifiScan();
   void handleSettingsPost();
+  void handleScreenInputPost();
   void handleDeviceSettingsPost();
   void previewWebBrightness(int raw);
   void applyWebBrightness(int raw);
@@ -255,6 +293,7 @@ private:
   String setupHtml() const;
   String settingsHtml() const;
   String firmwareHtml() const;
+  String framebufferViewerHtml() const;
 
 };
 

@@ -19,6 +19,7 @@
   let spark = $state([]);
   let graphSamples = $state([]);
   let graphSource = $state('live');
+  let graphSourceLabel = $state('Live');
 
   let profileSelectEl;
   let targetInputEl;
@@ -107,11 +108,20 @@
     return Number.isFinite(n) ? n : null;
   }
 
+  function liveWindowLabel(history) {
+    const intervalMs = history?.intervalMs || 60000;
+    const capacity = history?.capacity || 720;
+    const hours = (intervalMs * capacity) / 3600000;
+    if (hours >= 2) return `Live (last ${Math.round(hours)}h)`;
+    const minutes = (intervalMs * capacity) / 60000;
+    return `Live (last ${Math.round(minutes)}m)`;
+  }
+
   function liveSamples(history, clock) {
     const temps = history?.tempsC || [];
     const gravity = history?.gravity || [];
     const hydroTemps = history?.hydroTempsC || [];
-    const intervalMs = history?.intervalMs || 30000;
+    const intervalMs = history?.intervalMs || 60000;
     const count = Math.max(temps.length, gravity.length, hydroTemps.length);
     const wallClock = clock?.wallClock ?? true;
     const anchorMs = (clock?.seconds ?? Math.floor(Date.now() / 1000)) * 1000;
@@ -150,8 +160,10 @@
     return samples;
   }
 
-  function hasHydrometerSeries(samples) {
-    return samples.some((p) => p.gravity != null || p.hydroTempC != null);
+  function hasGraphSeries(samples) {
+    return samples.some(
+      (p) => p.tempC != null || p.gravity != null || p.hydroTempC != null,
+    );
   }
 
   async function tick() {
@@ -185,15 +197,17 @@
       spark = live.tempsC || [];
       graphSamples = liveSamples(live, s?.clock);
       graphSource = 'live';
+      graphSourceLabel = liveWindowLabel(live);
 
       try {
         const persisted = csvSamples(await getHistoryCsv());
-        if (persisted.length >= 2 && hasHydrometerSeries(persisted)) {
+        if (persisted.length >= 1 && hasGraphSeries(persisted)) {
           graphSamples = persisted;
           graphSource = 'csv';
+          graphSourceLabel = 'Fermentation history';
         }
       } catch (e) {
-        // live history remains available
+        // live history remains available until CSV has samples
       }
     } catch (e) {
       // ignore transient fetch failures
@@ -221,8 +235,6 @@
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
-  // Show when a hydrometer is selected (demo fallback or BLE); scanning need not be on.
-  const hydroGraphEnabled = $derived(!!hydro.valid);
   const prog = $derived(s?.program || {});
   const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
   const PROG_EXIT_TYPES = [
@@ -238,6 +250,12 @@
   }
   function progSkip() {
     post({ programAction: 'skip' });
+  }
+
+  async function resetFerment() {
+    await postSettings({ fermentReset: 1 });
+    await tick();
+    await loadHistory();
   }
   const dRestStatusText = $derived.by(() => {
     if (!s) return 'Ready';
@@ -428,12 +446,20 @@
       <div class="card"><div class="label">ABV</div><div class="value">{hydro.valid && hydro.abv != null ? hydro.abv.toFixed(1) + '%' : '--.-%'}</div></div>
     </section>
 
-    <section class="panel historyPanel" hidden={!hydroGraphEnabled}>
+    <section class="panel historyPanel">
       <div class="panelHead">
-        <h2>Hydrometer History</h2>
-        <span>{graphSource === 'csv' ? 'CSV' : 'Live'}</span>
+        <h2>Fermentation History</h2>
+        <span>{graphSourceLabel}</span>
+        {#if s?.demo}
+          <button type="button" class="btnCompact danger" onclick={resetFerment}>
+            Reset ferment
+          </button>
+        {/if}
       </div>
-      <HydrometerChart samples={graphSamples} unit={s?.unit || 'F'} source={graphSource} />
+      <HydrometerChart
+        samples={graphSamples}
+        unit={s?.unit || 'F'}
+      />
     </section>
 
     <EventLog clock={s?.clock} uptimeSeconds={s?.uptimeSeconds} />
@@ -449,15 +475,7 @@
           >{s ? s.fault : 'NONE'}</span>
         </div>
         <span class="dashFooterUptime">{s ? remainingText(s.uptimeSeconds) + ' uptime' : '-- uptime'}</span>
-        <label class="dashFooterCheck">
-          <input
-            type="checkbox"
-            checked={!!s?.historyLogging}
-            onchange={(e) => post({ historyLogging: e.target.checked ? 1 : 0 })}
-          />
-          <span>Log history</span>
-        </label>
-        <a class="dashFooterLink" href="/api/history.csv" download>Download CSV</a>
+        <a class="dashFooterLink" href="/api/history.csv" download>Download history CSV</a>
       </div>
     </section>
   </div>

@@ -47,6 +47,9 @@ class HydrometerManager {
   void begin();
   bool update(uint32_t nowMs, Settings &settings);
   void markStableCheckpoint(uint32_t nowMs);
+#if FERM_DEMO_SENSOR
+  void resetDemoFerment(uint32_t nowMs);
+#endif
   bool enabled(const Settings &settings) const;
   uint8_t deviceCount() const { return _deviceCount; }
   const HydrometerReading &device(uint8_t index) const;
@@ -87,6 +90,7 @@ class HydrometerManager {
 
 #if FERM_DEMO_SENSOR
   void updateDemoDevice(uint32_t nowMs, const Settings &settings);
+  uint32_t _demoFermentStartMs = 0;
 #endif
 
 #if FERM_ENABLE_HYDROMETER_BLE

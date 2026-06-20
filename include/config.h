@@ -336,7 +336,7 @@ struct Settings {
   uint32_t programStepElapsedSeconds = 0;
   float programStepStartTargetC = DEFAULT_TARGET_C;  // ramp baseline
   bool programManualAdvance = false;  // one-shot advance request from UI/API
-  bool historyLoggingEnabled = false;  // opt-in CSV history sampling to LittleFS
+  bool historyLoggingEnabled = true;  // mirrored in status JSON; CSV always sampled
 };
 
 inline float clampFloat(float value, float minimum, float maximum) {
@@ -507,19 +507,21 @@ inline void setCurrentTargetC(Settings &settings, float targetC) {
   settings.liveTargetC = clampFloat(targetC, MIN_TARGET_C, MAX_TARGET_C);
 }
 
-// Load the active profile's preset into the live setpoint (recall a preset).
-inline void applyActiveProfileTarget(Settings &settings) {
-  const float targetC = activeProfile(settings).targetC;
-  if (settings.gradualCrashEnabled && !isnan(settings.liveTargetC) &&
-      settings.liveTargetC > targetC) {
-    return;
-  }
-  settings.liveTargetC = targetC;
-}
-
 inline void cancelDiacetylRest(Settings &settings) {
   settings.diacetylRestActive = false;
   settings.diacetylRestRemainingSeconds = 0;
+}
+
+// Load the active profile's preset into the live setpoint (recall a preset).
+inline void applyActiveProfileTarget(Settings &settings) {
+  const float targetC = activeProfile(settings).targetC;
+  if (settings.gradualCrashEnabled &&
+      activeProfileIndex(settings) ==
+          static_cast<uint8_t>(ProfileSlot::Crash) &&
+      !isnan(settings.liveTargetC) && settings.liveTargetC > targetC) {
+    return;
+  }
+  settings.liveTargetC = targetC;
 }
 
 inline void startDiacetylRest(Settings &settings) {
@@ -528,20 +530,6 @@ inline void startDiacetylRest(Settings &settings) {
       settings.diacetylRestDurationSeconds;
   settings.diacetylRestTargetC =
       clampFloat(settings.diacetylRestTargetC, MIN_TARGET_C, MAX_TARGET_C);
-}
-
-inline void completeDiacetylRest(Settings &settings) {
-  const float previousTargetC = currentTargetC(settings);
-  const uint8_t returnProfile = diacetylRestReturnProfileIndex(settings);
-  settings.diacetylRestActive = false;
-  settings.diacetylRestRemainingSeconds = 0;
-  settings.activeProfile = returnProfile;
-  if (settings.gradualCrashEnabled &&
-      returnProfile == static_cast<uint8_t>(ProfileSlot::Crash) &&
-      previousTargetC > activeProfile(settings).targetC) {
-    settings.liveTargetC = previousTargetC;
-  }
-  applyActiveProfileTarget(settings);
 }
 
 inline bool gravityIsValid(float gravity) {
@@ -681,6 +669,33 @@ inline UserMode nextMode(UserMode mode) {
 
 #define FERM_PROGRAM_HELPERS_INCLUDED_FROM_CONFIG
 #include "programs.h"
+
+// Ends any running program and D-Rest before a new profile takes over.
+inline void activateProfile(Settings &settings, uint8_t profileIndex) {
+  if (profileIndex >= PROFILE_COUNT) {
+    profileIndex = static_cast<uint8_t>(ProfileSlot::Ale);
+  }
+  deactivateSupersededModes(settings);
+  settings.activeProfile = profileIndex;
+  if (profileIndex != static_cast<uint8_t>(ProfileSlot::Crash)) {
+    settings.gradualCrashEnabled = false;
+  }
+  applyActiveProfileTarget(settings);
+}
+
+inline void completeDiacetylRest(Settings &settings) {
+  const float previousTargetC = currentTargetC(settings);
+  const uint8_t returnProfile = diacetylRestReturnProfileIndex(settings);
+  deactivateSupersededModes(settings);
+  settings.activeProfile = returnProfile;
+  if (settings.gradualCrashEnabled &&
+      returnProfile == static_cast<uint8_t>(ProfileSlot::Crash) &&
+      previousTargetC > activeProfile(settings).targetC) {
+    settings.liveTargetC = previousTargetC;
+  } else {
+    applyActiveProfileTarget(settings);
+  }
+}
 
 inline void sanitizeSettings(Settings &settings) {
   settings.fermenterName.trim();

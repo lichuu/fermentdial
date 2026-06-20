@@ -1,5 +1,5 @@
 <script>
-  let { samples = [], unit = 'F', source = 'live' } = $props();
+  let { samples = [], unit = 'F' } = $props();
   let canvas;
   let chartWrap;
 
@@ -197,7 +197,7 @@
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.font = '13px "Trebuchet MS", "Avenir Next", Verdana, sans-serif';
-      g.fillText('Waiting for hydrometer history', w / 2, h / 2);
+      g.fillText('Waiting for fermentation history', w / 2, h / 2);
       return;
     }
 
@@ -281,8 +281,6 @@
       drawLabel(g, label, x, h - 8, 'rgba(208, 232, 240, 0.72)', align, 'bottom');
     });
 
-    const sourceLabel = source === 'csv' ? 'CSV history' : 'Live recent history';
-    drawLabel(g, sourceLabel, padL, padT + plotH + 14, 'rgba(208, 232, 240, 0.5)', 'left', 'top');
   }
 
   function indexAtX(x) {
@@ -330,7 +328,6 @@
   $effect(() => {
     samples;
     unit;
-    source;
     hoverIndex;
     seriesVisible;
     draw();

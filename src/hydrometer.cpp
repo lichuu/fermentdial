@@ -116,37 +116,36 @@ struct DemoFermentSample {
   float batteryV = NAN;
 };
 
-DemoFermentSample computeDemoFerment(uint32_t nowMs, float targetC) {
+DemoFermentSample computeDemoFerment(uint32_t nowMs, uint32_t startMs,
+                                    float targetC) {
   DemoFermentSample sample;
-  const float progress =
-      clampFloat(static_cast<float>(nowMs) /
-                     static_cast<float>(DEMO_FERMENT_DURATION_MS),
-                 0.0f, 1.0f);
-  const float attenuation = progress >= 1.0f ? 1.0f : demoAttenuation(progress);
-  const float activity = progress >= 1.0f ? 0.0f : demoActivity(progress);
+  const uint32_t cycleMs = (nowMs - startMs) % DEMO_FERMENT_DURATION_MS;
+  const float progress = static_cast<float>(cycleMs) /
+                         static_cast<float>(DEMO_FERMENT_DURATION_MS);
+  const float attenuation = demoAttenuation(progress);
+  const float activity = demoActivity(progress);
   const float rippleG =
       DEMO_FERMENT_GRAVITY_RIPPLE * sinf(static_cast<float>(nowMs) * 0.002f);
   const float rippleT =
       DEMO_FERMENT_TEMP_RIPPLE_C * sinf(static_cast<float>(nowMs) * 0.0015f);
 
   sample.originalGravity = DEMO_FERMENT_OG;
-  sample.gravity = progress >= 1.0f
-                       ? DEMO_FERMENT_FG
-                       : DEMO_FERMENT_OG -
-                             (DEMO_FERMENT_OG - DEMO_FERMENT_FG) * attenuation;
+  sample.gravity = DEMO_FERMENT_OG -
+                   (DEMO_FERMENT_OG - DEMO_FERMENT_FG) * attenuation;
   sample.gravity = clampFloat(sample.gravity + rippleG, DEMO_FERMENT_FG,
                               DEMO_FERMENT_OG);
   sample.temperatureC =
       targetC + DEMO_FERMENT_TEMP_BUMP_C * activity + rippleT;
   sample.abv = (sample.originalGravity - sample.gravity) * 131.25f;
-  if (progress >= 1.0f && nowMs > DEMO_FERMENT_DURATION_MS) {
+  constexpr float kTailFraction = 0.05f;
+  if (progress > 1.0f - kTailFraction) {
     sample.stableSeconds =
-        (nowMs - DEMO_FERMENT_DURATION_MS) / 1000UL;
+        (cycleMs - static_cast<uint32_t>((1.0f - kTailFraction) *
+                                         static_cast<float>(
+                                             DEMO_FERMENT_DURATION_MS))) /
+        1000UL;
   }
-  sample.batteryV =
-      3.3f - 0.3f * clampFloat(static_cast<float>(nowMs) /
-                                    static_cast<float>(DEMO_FERMENT_DURATION_MS),
-                                 0.0f, 1.0f);
+  sample.batteryV = 3.3f - 0.3f * progress;
   return sample;
 }
 #endif
@@ -163,6 +162,9 @@ void HydrometerManager::ScanCallbacks::onResult(
 #endif
 
 void HydrometerManager::begin() {
+#if FERM_DEMO_SENSOR
+  _demoFermentStartMs = millis();
+#endif
 #if FERM_ENABLE_HYDROMETER_BLE
   NimBLEDevice::init("");
   NimBLEScan *scan = NimBLEDevice::getScan();
@@ -389,6 +391,10 @@ bool HydrometerManager::readingIsStale(const HydrometerReading &reading,
 }
 
 #if FERM_DEMO_SENSOR
+void HydrometerManager::resetDemoFerment(uint32_t nowMs) {
+  _demoFermentStartMs = nowMs;
+}
+
 void HydrometerManager::updateDemoDevice(uint32_t nowMs,
                                          const Settings &settings) {
   HydrometerReading *slot =
@@ -397,8 +403,8 @@ void HydrometerManager::updateDemoDevice(uint32_t nowMs,
     return;
   }
 
-  const DemoFermentSample sample =
-      computeDemoFerment(nowMs, currentTargetC(settings));
+  const DemoFermentSample sample = computeDemoFerment(
+      nowMs, _demoFermentStartMs, currentTargetC(settings));
   slot->valid = true;
   slot->stale = false;
   slot->discovered = true;
