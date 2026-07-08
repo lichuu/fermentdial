@@ -68,8 +68,37 @@
     post({ profile: profileSelectEl.value });
   }
 
+  let offArmed = $state(false);
+  let offArmTimer = null;
+
+  function disarmOff() {
+    offArmed = false;
+    clearTimeout(offArmTimer);
+    offArmTimer = null;
+  }
+
   function setMode(mode) {
+    disarmOff();
     post({ mode });
+  }
+
+  // OFF is destructive, so require an explicit second tap within 3s
+  // (same idea as the dial's confirm step).
+  function setModeOff() {
+    if (s?.mode === 'OFF') {
+      disarmOff();
+      return;
+    }
+    if (!offArmed) {
+      offArmed = true;
+      clearTimeout(offArmTimer);
+      offArmTimer = setTimeout(() => {
+        offArmed = false;
+        offArmTimer = null;
+      }, 3000);
+      return;
+    }
+    setMode('OFF');
   }
 
   function startDrest() {
@@ -172,6 +201,11 @@
     document.body.dataset.state = next.state.toLowerCase();
     document.title = next.fermenterName + ' - FermentDial';
 
+    // Mode may go OFF from dial/API; drop a stale arm state.
+    if (next.mode === 'OFF' && offArmed) {
+      disarmOff();
+    }
+
     if (document.activeElement !== profileSelectEl) {
       profileSelectEl.value = String(next.activeProfile);
     }
@@ -229,6 +263,8 @@
       cancelled = true;
       clearInterval(tickTimer);
       clearInterval(historyTimer);
+      clearTimeout(offArmTimer);
+      offArmTimer = null;
     };
   });
 
@@ -337,7 +373,12 @@
       <div class="panel">
         <h2>Mode</h2>
         <div class="modes">
-          <button class="danger" class:active={s?.mode === 'OFF'} onclick={() => setMode('OFF')}>OFF</button>
+          <button
+            class="danger"
+            class:active={s?.mode === 'OFF'}
+            class:armed={offArmed}
+            onclick={setModeOff}
+          >{offArmed ? 'TAP TO CONFIRM' : 'OFF'}</button>
           <button class:active={s?.mode === 'AUTO'} onclick={() => setMode('AUTO')}>AUTO</button>
           <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
           <button class="cool" class:active={s?.mode === 'COOL_ONLY'} onclick={() => setMode('COOL_ONLY')}>COOL</button>
