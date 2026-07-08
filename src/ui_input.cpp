@@ -134,9 +134,9 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
     const int16_t cy = h / 2;
     if (_setpointEditing) {
       // While previewing a setpoint, taps only hit the confirm/cancel row.
-      if (setpointConfirmHit(x, y)) {
+      if (confirmRowRightHit(x, y)) {
         commitPendingSetpoint(nowMs, settings);
-      } else if (setpointCancelHit(x, y)) {
+      } else if (confirmRowLeftHit(x, y)) {
         cancelPendingSetpoint();
       }
       return;
@@ -190,24 +190,21 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
   }
 
   if (_screen == Screen::QuickConfirm) {
-    const int16_t cx = M5Dial.Display.width() / 2;
-    const int16_t cy = h / 2;
     if (_quickConfirmKind == QuickConfirmKind::CrashGradual) {
-      if (x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70) {
+      if (confirmRowLeftHit(x, y)) {
         _pendingGradualCrash = false;
         confirmQuickAction(settings);
-      } else if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
+      } else if (confirmRowRightHit(x, y)) {
         _pendingGradualCrash = true;
         confirmQuickAction(settings);
       }
       return;
     }
-    if (quickCancelHit(x, y)) {
+    if (confirmRowLeftHit(x, y)) {
       cancelQuickFlow();
       return;
     }
-    // Apply is the right button of the confirm action row.
-    if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
+    if (confirmRowRightHit(x, y)) {
       confirmQuickAction(settings);
     }
     return;
@@ -263,29 +260,23 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
   }
 
   if (_screen == Screen::ConfirmEdit) {
-    const int16_t cx = M5Dial.Display.width() / 2;
-    const int16_t cy = h / 2;
-    // Same action-row rects as QuickConfirm: Cancel (left) / confirm (right).
-    if (x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70) {
+    if (confirmRowLeftHit(x, y)) {
       cancelEditConfirm();
-    } else if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
+    } else if (confirmRowRightHit(x, y)) {
       confirmEditAction(settings);
     }
     return;
   }
 
   if (_screen == Screen::ConfirmTest) {
-    const int16_t cx = M5Dial.Display.width() / 2;
-    const int16_t cy = h / 2;
     // This screen energizes an output, so only the Start button may fire it —
-    // a stray tap elsewhere must never start the test (rects match
-    // drawConfirmTest's action row).
-    if (x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70) {
+    // a stray tap elsewhere must never start the test.
+    if (confirmRowLeftHit(x, y)) {
       _screen = Screen::Menu;
       resetSettingsEncoderFilters();
       _dirty = true;
-    } else if (x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70) {
-      handleShortPress(nowMs, settings);  // arms the pending output test
+    } else if (confirmRowRightHit(x, y)) {
+      confirmOutputTest();
     }
     return;
   }
@@ -562,11 +553,8 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   } else if (_screen == Screen::ConfirmEdit) {
     confirmEditAction(settings);
   } else if (_screen == Screen::ConfirmTest) {
-    _pendingOutputTest =
-        _menuIndex == MENU_HEATER_TEST ? OutputTestKind::Heater
-                                       : OutputTestKind::Pump;
-    _screen = Screen::Main;
-    resetSettingsEncoderFilters();
+    confirmOutputTest();
+    return;
   } else if (_screen == Screen::About) {
     _screen = Screen::Menu;
     resetSettingsEncoderFilters();
@@ -639,13 +627,13 @@ void DisplayUI::cancelPendingSetpoint() {
   _dirty = true;
 }
 
-bool DisplayUI::setpointCancelHit(int16_t x, int16_t y) const {
+bool DisplayUI::confirmRowLeftHit(int16_t x, int16_t y) const {
   const int16_t cx = M5Dial.Display.width() / 2;
   const int16_t cy = M5Dial.Display.height() / 2;
   return x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70;
 }
 
-bool DisplayUI::setpointConfirmHit(int16_t x, int16_t y) const {
+bool DisplayUI::confirmRowRightHit(int16_t x, int16_t y) const {
   const int16_t cx = M5Dial.Display.width() / 2;
   const int16_t cy = M5Dial.Display.height() / 2;
   return x >= cx + 6 && x <= cx + 90 && y >= cy + 44 && y <= cy + 70;
@@ -836,6 +824,15 @@ void DisplayUI::confirmEditAction(Settings &settings) {
     _screen = Screen::Edit;
   }
   _pendingEditConfirm = EditConfirmAction::None;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::confirmOutputTest() {
+  // Arms heater/pump test for the main loop to consume; does not energize here.
+  _pendingOutputTest = _menuIndex == MENU_HEATER_TEST ? OutputTestKind::Heater
+                                                      : OutputTestKind::Pump;
+  _screen = Screen::Main;
   resetSettingsEncoderFilters();
   _dirty = true;
 }

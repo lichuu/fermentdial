@@ -205,7 +205,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     drawHelpIcon(cx - 84, cy, COLOR_TEXT_MUTED, COLOR_PANEL);
   } else {
     // Confirm/cancel row for the previewed setpoint (rects match
-    // setpointCancelHit / setpointConfirmHit). Press = Set, swipe/timeout = no.
+    // confirmRowLeftHit / confirmRowRightHit). Press = Set, swipe/timeout = no.
     const bool cancelPressed = pressInRect(cx - 90, cy + 44, 84, 26);
     drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel",
                     cancelPressed ? TFT_WHITE : COLOR_TEXT_MUTED,
@@ -999,12 +999,11 @@ void DisplayUI::drawSolidButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
 }
 
 bool DisplayUI::quickCancelHit(int16_t x, int16_t y) const {
+  if (_screen == Screen::QuickConfirm) {
+    return confirmRowLeftHit(x, y);
+  }
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
-  if (_screen == Screen::QuickConfirm) {
-    // Cancel is the left button of the confirm action row.
-    return x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70;
-  }
   return x >= cx - 32 && x <= cx + 32 && y >= cy + 44 && y <= cy + 64;
 }
 

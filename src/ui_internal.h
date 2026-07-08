@@ -1,10 +1,10 @@
 #pragma once
 
 // Shared constants for the DisplayUI implementation, which is split across
-// ui.cpp, ui_draw.cpp, and ui_input.cpp. Everything here has internal linkage
-// (constexpr), so each translation unit gets its own copy exactly as the old
-// per-file anonymous-namespace blocks did. Not part of the public UI API;
-// only the ui*.cpp files should include this header.
+// ui.cpp, ui_draw.cpp, and ui_input.cpp. Constexpr values keep internal linkage
+// so each TU gets its own copy, matching the old per-file anonymous-namespace
+// blocks. MenuIndex is a shared implementation-detail enum for the ui*.cpp
+// split, not a public UI API type. Only the ui*.cpp files should include this.
 
 #include <stdint.h>
 
