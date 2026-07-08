@@ -95,9 +95,10 @@ class DisplayUI {
   void handleLongPress(Settings &settings);
   void commitPendingSetpoint(uint32_t nowMs, Settings &settings);
   void cancelPendingSetpoint();
-  // Hit rects for the main-screen setpoint confirm/cancel buttons.
-  bool setpointConfirmHit(int16_t x, int16_t y) const;
-  bool setpointCancelHit(int16_t x, int16_t y) const;
+  // Shared Cancel (left) / confirm (right) action-row hit rects used by
+  // setpoint confirm, ConfirmEdit, ConfirmTest, and QuickConfirm.
+  bool confirmRowLeftHit(int16_t x, int16_t y) const;
+  bool confirmRowRightHit(int16_t x, int16_t y) const;
   void openQuickMenu(const Settings &settings);
   void moveQuickMenu(int32_t delta);
   void selectQuickAction(const Settings &settings);
@@ -113,6 +114,7 @@ class DisplayUI {
   void requestEditConfirm(EditConfirmAction action);
   void confirmEditAction(Settings &settings);
   void cancelEditConfirm();
+  void confirmOutputTest();
   void editCurrentValue(int32_t delta, Settings &settings);
   void resetCurrentValue(Settings &settings);
   int32_t filteredSettingsDelta(int32_t delta, int32_t &accumulator, int32_t divisor);
@@ -136,8 +138,6 @@ class DisplayUI {
   void drawConfirmTest();
   void drawAbout();
   void drawHelp();
-  void drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
-                const String &text, uint16_t textColor, uint8_t textSize = 1);
   void drawGhostButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
                        const String &text, uint16_t outline,
                        const lgfx::IFont *font);
