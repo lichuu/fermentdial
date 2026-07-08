@@ -182,16 +182,16 @@ menu_scroll_up() {
   done
 }
 
-# Scroll the current list (group list or item list) to its first entry.
-menu_anchor() {
-  # Max group size is 7 (System); groups are 3. Overscroll wraps safely.
-  menu_scroll_up 12
-}
-
-# Absolute jump within the *current* list (group list or open group).
+# Absolute jump within the *current* list, counting down from entry 0.
+#
+# The list wraps, so scrolling "up a lot" is NOT a reliable anchor (12 mod 5 = 3,
+# not 0). Call only when the firmware has just focused the first entry:
+#   - open_menu / openSettingsMenu → group list on Daily (0)
+#   - enter_group / enterMenuGroup → first item in that group (0)
+#   - known mid-flow position still at 0 (e.g. after save, still on Cool above)
+# To re-anchor mid-flow, leave and re-enter the group (hold → enter_group).
 menu_goto() {
-  local index="${1:?list index}"
-  menu_anchor
+  local index="${1:?list index from 0}"
   menu_scroll_down "$index"
 }
 
