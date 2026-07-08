@@ -12,7 +12,12 @@ void TemperatureSensor::begin(uint32_t nowMs) {
   _rawTemperatureC = _temperatureC;
   _lastRequestMs = nowMs;
 #else
-  // DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
+  // PORT.A has no 3.3V pin; energize the sensor from GPIO15 (not 5V) so the
+  // pull-up on DATA stays within GPIO13's 3.3V limit. GPIO15 is not an S3
+  // strapping pin (those are 0, 3, 45, 46).
+  pinMode(PIN_DS18B20_PWR, OUTPUT);
+  digitalWrite(PIN_DS18B20_PWR, HIGH);
+  delay(10);
   _sensors.begin();
   _sensors.setResolution(12);
   _sensors.setWaitForConversion(false);

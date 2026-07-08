@@ -142,6 +142,13 @@ void setup() {
 #endif
   network.begin(settings, hydrometer);
   network.setEventLog(&eventLog);
+#if FERM_DEMO_SENSOR
+  // LittleFS survives USB/OTA flashes; drop any prior demo CSV so the web
+  // chart does not replay stacked cycles from earlier runs.
+  historyLog.clear();
+  eventLog.clear();
+  network.clearLiveHistory();
+#endif
 }
 
 void loop() {
@@ -150,6 +157,11 @@ void loop() {
 
   temperatureSensor.update(nowMs, settings);
   const bool hydrometerChanged = hydrometer.update(nowMs, settings);
+#if FERM_DEMO_SENSOR
+  if (hydrometer.consumeDemoCycleComplete()) {
+    prepareFermentReset();
+  }
+#endif
   const HydrometerReading selectedHydrometer =
       hydrometer.selectedReading(settings, nowMs);
   network.update(nowMs, settings);
