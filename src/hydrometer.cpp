@@ -119,7 +119,9 @@ struct DemoFermentSample {
 DemoFermentSample computeDemoFerment(uint32_t nowMs, uint32_t startMs,
                                     float targetC) {
   DemoFermentSample sample;
-  const uint32_t cycleMs = (nowMs - startMs) % DEMO_FERMENT_DURATION_MS;
+  const uint32_t elapsedMs = nowMs - startMs;
+  const uint32_t cycleMs =
+      elapsedMs < DEMO_FERMENT_DURATION_MS ? elapsedMs : DEMO_FERMENT_DURATION_MS;
   const float progress = static_cast<float>(cycleMs) /
                          static_cast<float>(DEMO_FERMENT_DURATION_MS);
   const float attenuation = demoAttenuation(progress);
@@ -393,10 +395,22 @@ bool HydrometerManager::readingIsStale(const HydrometerReading &reading,
 #if FERM_DEMO_SENSOR
 void HydrometerManager::resetDemoFerment(uint32_t nowMs) {
   _demoFermentStartMs = nowMs;
+  _demoCycleComplete = false;
+}
+
+bool HydrometerManager::consumeDemoCycleComplete() {
+  if (!_demoCycleComplete) {
+    return false;
+  }
+  _demoCycleComplete = false;
+  return true;
 }
 
 void HydrometerManager::updateDemoDevice(uint32_t nowMs,
                                          const Settings &settings) {
+  if (nowMs - _demoFermentStartMs >= DEMO_FERMENT_DURATION_MS) {
+    _demoCycleComplete = true;
+  }
   HydrometerReading *slot =
       findOrCreate(DEMO_HYDROMETER_KEY, HydrometerType::Tilt);
   if (slot == nullptr) {

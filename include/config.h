@@ -49,8 +49,12 @@ constexpr const char *FIRMWARE_NAME = "FermentDial";
 constexpr const char *FIRMWARE_VERSION = "0.1.0";
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
 
-// DS18B20 VCC must be 3.3V because its pull-up resistor connects DATA to VCC.
+// DS18B20 DATA on PORT.A Yellow. VCC must be ~3.3V (not 5V): the adapter
+// pull-up ties DATA to VCC, and GPIO13 is a 3.3V-max input — 5V would over-volt
+// the pin even though the DS18B20 itself tolerates 5V.
 constexpr uint8_t PIN_DS18B20_DATA = 13;
+// PORT.A White; driven HIGH in TemperatureSensor::begin() as a software 3.3V rail.
+constexpr uint8_t PIN_DS18B20_PWR = 15;
 
 // MOSFET triggers are active HIGH.
 constexpr uint8_t PIN_HEATER_TRIGGER = 2;
@@ -184,7 +188,7 @@ constexpr const char *DEMO_HYDROMETER_KEY = "demo:test";
 constexpr const char *DEMO_HYDROMETER_LABEL = "Test Hydrometer";
 constexpr float DEMO_FERMENT_OG = 1.060f;
 constexpr float DEMO_FERMENT_FG = 1.012f;
-constexpr uint32_t DEMO_FERMENT_DURATION_MS = 5UL * 60UL * 1000UL;
+constexpr uint32_t DEMO_FERMENT_DURATION_MS = 20UL * 60UL * 1000UL;
 constexpr float DEMO_FERMENT_TEMP_BUMP_C = deltaFToC(2.0f);
 constexpr float DEMO_FERMENT_LOGISTIC_STEEPNESS = 12.0f;
 constexpr float DEMO_FERMENT_LOGISTIC_MIDPOINT = 0.35f;
