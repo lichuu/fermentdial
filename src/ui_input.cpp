@@ -30,9 +30,7 @@ void DisplayUI::applyPendingRemoteInput(uint32_t nowMs, Settings &settings) {
       if (_setpointEditing) {
         cancelPendingSetpoint();
       }
-      _screen = Screen::Menu;
-      resetSettingsEncoderFilters();
-      _dirty = true;
+      openSettingsMenu();
       markActivity(nowMs);
     } else {
       handleLongPress(settings);
@@ -355,8 +353,7 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
       if (dx > 0) {
         handleShortPress(nowMs, settings);
       } else {
-        _screen = Screen::Main;
-        resetSettingsEncoderFilters();
+        leaveMenuToParent();
       }
     }
     _dirty = true;
@@ -398,13 +395,7 @@ void DisplayUI::scrollMenuByTouch(int16_t deltaY) {
     return;
   }
   _touchMenuScrollAccumulator -= steps * TOUCH_MENU_ITEM_PX;
-
-  int32_t next = static_cast<int32_t>(_menuIndex) + steps;
-  while (next < 0) {
-    next += MENU_COUNT;
-  }
-  _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
-  _dirty = true;
+  moveMenuSelection(steps);
 }
 
 void DisplayUI::scrollQuickByTouch(int16_t deltaY, const Settings &settings) {
@@ -444,7 +435,16 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     _setpointFocusUntilMs = millis() + SETPOINT_EDIT_TIMEOUT_MS;
     _dirty = true;
     return;
-  } else if (_screen == Screen::QuickMenu) {
+  }
+
+  // Hydrometer page: encoder intentionally does nothing. The product expects a
+  // single selected hydrometer; device pick/scan lives in Settings (dial or
+  // web). Ignore rotation so a stray turn doesn't force a redraw.
+  if (_screen == Screen::Hydrometer) {
+    return;
+  }
+
+  if (_screen == Screen::QuickMenu) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
     if (filteredDelta == 0) {
@@ -472,11 +472,7 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     if (filteredDelta == 0) {
       return;
     }
-    int32_t next = static_cast<int32_t>(_menuIndex) + filteredDelta;
-    while (next < 0) {
-      next += MENU_COUNT;
-    }
-    _menuIndex = static_cast<uint8_t>(next % MENU_COUNT);
+    moveMenuSelection(filteredDelta);
   } else if (_screen == Screen::Edit) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _editEncoderAccumulator, EDIT_ENCODER_DIVISOR);
@@ -494,9 +490,7 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       commitPendingSetpoint(nowMs, settings);  // press confirms the new setpoint
       return;
     }
-    _screen = Screen::Menu;
-    resetSettingsEncoderFilters();
-    _dirty = true;
+    openSettingsMenu();
     return;
   } else if (_screen == Screen::QuickMenu) {
     selectQuickAction(settings);
@@ -505,6 +499,10 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
   } else if (_screen == Screen::QuickConfirm) {
     confirmQuickAction(settings);
   } else if (_screen == Screen::Menu) {
+    if (!_menuInGroup) {
+      enterMenuGroup();
+      return;
+    }
     if (_menuIndex == MENU_DREST) {
       if (settings.diacetylRestActive) {
         completeDiacetylRest(settings);
@@ -519,8 +517,6 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       }
       _dirty = true;
       return;
-    } else if (_menuIndex <= MENU_OFFSET) {
-      beginEdit(_menuIndex, settings);
     } else if (_menuIndex == MENU_UNITS) {
       settings.unitsFahrenheit = !settings.unitsFahrenheit;
       _toast = String("Units: ") + temperatureUnit(settings.unitsFahrenheit);
@@ -529,8 +525,6 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       resetSettingsEncoderFilters();
       _dirty = true;
       return;
-    } else if (_menuIndex == MENU_HYDROMETER) {
-      beginEdit(_menuIndex, settings);
     } else if (_menuIndex == MENU_WIFI) {
       _wifiSetupRequested = true;
       _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
@@ -544,6 +538,9 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     } else if (_menuIndex == MENU_ABOUT) {
       _screen = Screen::About;
       resetSettingsEncoderFilters();
+    } else {
+      // Profile, Target, Mode, control bands, hydrometer, brightness, …
+      beginEdit(_menuIndex, settings);
     }
   } else if (_screen == Screen::EditInfo) {
     _screen = Screen::Menu;
@@ -571,18 +568,18 @@ void DisplayUI::handleLongPress(Settings &settings) {
       cancelPendingSetpoint();  // long-press discards the previewed setpoint
       return;
     }
-    _screen = Screen::Menu;
-    resetSettingsEncoderFilters();
-    _dirty = true;
+    openSettingsMenu();
     return;
   } else if (_screen == Screen::QuickMenu) {
-    _screen = Screen::Menu;
+    openSettingsMenu();
+    return;
   } else if (_screen == Screen::QuickProfile ||
              _screen == Screen::QuickMode ||
              _screen == Screen::QuickConfirm) {
-    _screen = Screen::Menu;
-    resetSettingsEncoderFilters();
-    _dirty = true;
+    openSettingsMenu();
+    return;
+  } else if (_screen == Screen::Menu) {
+    leaveMenuToParent();
     return;
   } else if (_screen == Screen::EditInfo) {
     _screen = Screen::Menu;
@@ -600,6 +597,62 @@ void DisplayUI::handleLongPress(Settings &settings) {
   }
   resetSettingsEncoderFilters();
   _dirty = true;
+}
+
+void DisplayUI::openSettingsMenu() {
+  _screen = Screen::Menu;
+  _menuInGroup = false;
+  _menuGroup = GROUP_DAILY;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::leaveMenuToParent() {
+  if (_menuInGroup) {
+    _menuInGroup = false;
+    resetSettingsEncoderFilters();
+    _dirty = true;
+    return;
+  }
+  _screen = Screen::Main;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::enterMenuGroup() {
+  _menuInGroup = true;
+  _menuIndex = groupItems(_menuGroup)[0];
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::moveMenuSelection(int32_t steps) {
+  if (steps == 0) {
+    return;
+  }
+  if (!_menuInGroup) {
+    int32_t next = static_cast<int32_t>(_menuGroup) + steps;
+    while (next < 0) {
+      next += GROUP_COUNT;
+    }
+    _menuGroup = static_cast<uint8_t>(next % GROUP_COUNT);
+  } else {
+    const uint8_t count = groupItemCount(_menuGroup);
+    int32_t pos = static_cast<int32_t>(groupItemPos(_menuGroup, _menuIndex)) + steps;
+    while (pos < 0) {
+      pos += count;
+    }
+    _menuIndex = groupItems(_menuGroup)[static_cast<uint8_t>(pos % count)];
+  }
+  _dirty = true;
+}
+
+void DisplayUI::applyLiveBrightness(uint8_t brightness) {
+  brightness = clampBrightness(brightness);
+  M5Dial.Display.setBrightness(brightness);
+  _appliedBrightness = brightness;
+  _dimmed = false;
+  _brightnessPreviewUntilMs = 0;
 }
 
 void DisplayUI::commitPendingSetpoint(uint32_t nowMs, Settings &settings) {
@@ -657,14 +710,20 @@ void DisplayUI::moveQuickMenu(int32_t delta) {
 }
 
 void DisplayUI::selectQuickAction(const Settings &settings) {
-  if (_quickIndex == 0) {
+  const QuickAction action = static_cast<QuickAction>(_quickIndex % QUICK_ACTION_COUNT);
+  if (action == QuickAction::Profile) {
     _pendingQuickAction = QuickAction::Profile;
     _pendingProfile = activeProfileIndex(settings);
     _screen = Screen::QuickProfile;
-  } else {
+  } else if (action == QuickAction::Mode) {
     _pendingQuickAction = QuickAction::Mode;
     _pendingMode = settings.mode;
     _screen = Screen::QuickMode;
+  } else {
+    // D-Rest: skip a picker — confirm start/finish with the configured duration.
+    _pendingQuickAction = QuickAction::DRest;
+    _quickConfirmKind = QuickConfirmKind::Apply;
+    _screen = Screen::QuickConfirm;
   }
   resetSettingsEncoderFilters();
   _dirty = true;
@@ -722,9 +781,17 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
   } else if (_pendingQuickAction == QuickAction::Profile) {
     activateProfile(settings, _pendingProfile);
     _toast = String("Profile: ") + activeProfile(settings).name;
-  } else {
+  } else if (_pendingQuickAction == QuickAction::Mode) {
     settings.mode = _pendingMode;
     _toast = String("Mode: ") + modeText(settings.mode);
+  } else if (_pendingQuickAction == QuickAction::DRest) {
+    if (settings.diacetylRestActive) {
+      completeDiacetylRest(settings);
+      _toast = String("D-rest -> ") + activeProfile(settings).name;
+    } else {
+      startDiacetylRest(settings);
+      _toast = "D-rest started";
+    }
   }
   _toastUntilMs = millis() + 1500;
   requestSave();
@@ -766,10 +833,14 @@ void DisplayUI::beginEdit(uint8_t index, const Settings &settings) {
 }
 
 void DisplayUI::cancelEdit(Settings &settings) {
+  const bool wasBrightness = _editIndex == MENU_BRIGHTNESS;
   if (_editSnapshotValid) {
     settings = _editSnapshot;
   }
   _editSnapshotValid = false;
+  if (wasBrightness) {
+    applyLiveBrightness(settings.brightness);
+  }
   _screen = Screen::Menu;
   resetSettingsEncoderFilters();
   _dirty = true;
@@ -799,6 +870,11 @@ void DisplayUI::saveEdit(Settings &settings) {
     startDiacetylRest(settings);
     _toast = "D-rest started";
     _toastUntilMs = millis() + 1800;
+  } else if (_editIndex == MENU_BRIGHTNESS) {
+    applyLiveBrightness(settings.brightness);
+    _toast = String("Brightness ") +
+             String((settings.brightness * 100) / 255) + "%";
+    _toastUntilMs = millis() + 1500;
   }
   _editSnapshotValid = false;
   _screen = Screen::Menu;
@@ -929,6 +1005,13 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
             (delta * (displayStepC(settings.unitsFahrenheit))),
         MIN_OFFSET_C, MAX_OFFSET_C);
     break;
+  case MENU_BRIGHTNESS: {
+    const int next =
+        static_cast<int>(settings.brightness) + (delta > 0 ? 5 : -5);
+    settings.brightness = clampBrightness(next);
+    applyLiveBrightness(settings.brightness);
+    break;
+  }
   case MENU_UNITS:
     settings.unitsFahrenheit = !settings.unitsFahrenheit;
     break;
@@ -1001,6 +1084,10 @@ void DisplayUI::resetCurrentValue(Settings &settings) {
     break;
   case MENU_OFFSET:
     settings.tempOffsetC = DEFAULT_TEMP_OFFSET_C;
+    break;
+  case MENU_BRIGHTNESS:
+    settings.brightness = DEFAULT_BRIGHTNESS;
+    applyLiveBrightness(settings.brightness);
     break;
   default:
     break;

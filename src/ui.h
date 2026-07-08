@@ -76,6 +76,7 @@ class DisplayUI {
   enum class QuickAction : uint8_t {
     Profile,
     Mode,
+    DRest,
   };
 
   enum class QuickConfirmKind : uint8_t {
@@ -93,6 +94,11 @@ class DisplayUI {
   void handleEncoder(int32_t delta, Settings &settings);
   void handleShortPress(uint32_t nowMs, Settings &settings);
   void handleLongPress(Settings &settings);
+  void openSettingsMenu();
+  void leaveMenuToParent();
+  void enterMenuGroup();
+  void moveMenuSelection(int32_t steps);
+  void applyLiveBrightness(uint8_t brightness);
   void commitPendingSetpoint(uint32_t nowMs, Settings &settings);
   void cancelPendingSetpoint();
   // Shared Cancel (left) / confirm (right) action-row hit rects used by
@@ -191,6 +197,10 @@ class DisplayUI {
   M5Canvas _canvas;
   Screen _screen = Screen::Main;
   int32_t _lastEncoder = 0;
+  // Settings navigation: group list first, then items within the group.
+  // When _menuInGroup, _menuIndex is a MenuIndex value for the focused item.
+  bool _menuInGroup = false;
+  uint8_t _menuGroup = 0;
   uint8_t _menuIndex = 0;
   uint8_t _editIndex = 0;
   Settings _editSnapshot;
