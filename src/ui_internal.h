@@ -25,13 +25,25 @@ enum MenuIndex : uint8_t {
   MENU_WIFI = 11,
   MENU_MQTT = 12,
   MENU_HYDROMETER = 13,
-  MENU_HEATER_TEST = 14,
-  MENU_PUMP_TEST = 15,
-  MENU_ABOUT = 16,
+  MENU_BRIGHTNESS = 14,
+  MENU_HEATER_TEST = 15,
+  MENU_PUMP_TEST = 16,
+  MENU_ABOUT = 17,
 };
 
 constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
-constexpr uint8_t QUICK_ACTION_COUNT = 2;
+
+// Settings is two-level: pick a group, then an item within it.
+enum MenuGroup : uint8_t {
+  GROUP_DAILY = 0,
+  GROUP_CONTROL = 1,
+  GROUP_SYSTEM = 2,
+};
+
+constexpr uint8_t GROUP_COUNT = 3;
+
+// Quick menu: Profile / Mode / D-Rest.
+constexpr uint8_t QUICK_ACTION_COUNT = 3;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
@@ -86,11 +98,66 @@ constexpr float GA_SWEEP = 270.0f;      // clockwise to lower-right (hot)
 // Output indicators: true = snowflake / heat-steam glyphs, false = "H"/"P".
 constexpr bool USE_OUTPUT_ICONS = true;
 
+// Friendlier labels for the round display (short enough for the card).
 constexpr const char *MENU_LABELS[MENU_COUNT] = {
-    "Profile",   "Target",    "D-Rest",      "Mode",        "Cool on",
-    "Heat on",   "Hold band", "Cooling off", "Cooling run", "Offset",
-    "Units",     "Wi-Fi",     "MQTT",        "Hydrometer",  "Heater test",
-    "Pump test", "About",
+    "Profile",      "Target",       "D-Rest",       "Mode",
+    "Cool above",   "Heat below",   "In range",     "Pump rest",
+    "Pump min run", "Sensor offset","Units",        "Wi-Fi",
+    "MQTT",         "Hydrometer",   "Brightness",   "Heater test",
+    "Pump test",    "About",
 };
+
+constexpr const char *GROUP_LABELS[GROUP_COUNT] = {
+    "Daily",
+    "Control",
+    "System",
+};
+
+// Daily: brew-side actions. Control: regulation bands. System: device/setup.
+constexpr MenuIndex DAILY_ITEMS[] = {
+    MENU_PROFILE, MENU_TARGET, MENU_MODE, MENU_DREST, MENU_UNITS,
+};
+constexpr MenuIndex CONTROL_ITEMS[] = {
+    MENU_COOL_ON,     MENU_HEAT_ON,      MENU_HOLD_BAND,
+    MENU_COOLING_OFF, MENU_COOLING_RUN,  MENU_OFFSET,
+};
+constexpr MenuIndex SYSTEM_ITEMS[] = {
+    MENU_WIFI,        MENU_MQTT,       MENU_HYDROMETER, MENU_BRIGHTNESS,
+    MENU_HEATER_TEST, MENU_PUMP_TEST,  MENU_ABOUT,
+};
+
+inline const MenuIndex *groupItems(uint8_t group) {
+  switch (group) {
+  case GROUP_CONTROL:
+    return CONTROL_ITEMS;
+  case GROUP_SYSTEM:
+    return SYSTEM_ITEMS;
+  default:
+    return DAILY_ITEMS;
+  }
+}
+
+inline uint8_t groupItemCount(uint8_t group) {
+  switch (group) {
+  case GROUP_CONTROL:
+    return static_cast<uint8_t>(sizeof(CONTROL_ITEMS) / sizeof(CONTROL_ITEMS[0]));
+  case GROUP_SYSTEM:
+    return static_cast<uint8_t>(sizeof(SYSTEM_ITEMS) / sizeof(SYSTEM_ITEMS[0]));
+  default:
+    return static_cast<uint8_t>(sizeof(DAILY_ITEMS) / sizeof(DAILY_ITEMS[0]));
+  }
+}
+
+// Position of `item` within its group list, or 0 if not found.
+inline uint8_t groupItemPos(uint8_t group, uint8_t item) {
+  const MenuIndex *items = groupItems(group);
+  const uint8_t count = groupItemCount(group);
+  for (uint8_t i = 0; i < count; i++) {
+    if (items[i] == item) {
+      return i;
+    }
+  }
+  return 0;
+}
 
 }  // namespace ferm
