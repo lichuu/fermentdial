@@ -109,9 +109,9 @@ void DisplayUI::begin() {
   const int16_t cy = _canvas.height() / 2;
 
   _canvas.fillScreen(COLOR_BG);
-  drawArcSeg(104, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 6);
-  drawArcSeg(104, GA_START, GA_START + 60.0f, COLOR_COOL, 6);
-  drawArcSeg(104, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
+  drawArcSeg(GAUGE_R, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 6);
+  drawArcSeg(GAUGE_R, GA_START, GA_START + 60.0f, COLOR_COOL, 6);
+  drawArcSeg(GAUGE_R, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
              COLOR_HEAT, 6);
   _canvas.fillSmoothCircle(cx, cy - 54, 5, COLOR_GOLD);
 
