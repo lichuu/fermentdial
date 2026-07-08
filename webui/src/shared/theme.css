@@ -111,6 +111,11 @@ button.primary:hover, .formSubmit:hover:not(:disabled), .btnCompact.primary:hove
 }
 .danger { background: transparent; border-color: #5a2a2a; color: var(--fault); }
 .danger:hover { background: #2a1416; }
+.danger.armed {
+  background: var(--fault) !important;
+  border-color: var(--fault) !important;
+  color: #081317 !important;
+}
 .active {
   background: var(--accent) !important;
   border-color: var(--accent) !important;

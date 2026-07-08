@@ -68,8 +68,28 @@
     post({ profile: profileSelectEl.value });
   }
 
+  let offArmed = $state(false);
+  let offArmTimer = null;
+
   function setMode(mode) {
+    offArmed = false;
+    clearTimeout(offArmTimer);
     post({ mode });
+  }
+
+  // OFF kills temperature control, so require a second tap within 3s —
+  // mirrors the dial UI, where every state change goes through a confirm.
+  function setModeOff() {
+    if (s?.mode === 'OFF') return;
+    if (!offArmed) {
+      offArmed = true;
+      clearTimeout(offArmTimer);
+      offArmTimer = setTimeout(() => {
+        offArmed = false;
+      }, 3000);
+      return;
+    }
+    setMode('OFF');
   }
 
   function startDrest() {
@@ -337,7 +357,12 @@
       <div class="panel">
         <h2>Mode</h2>
         <div class="modes">
-          <button class="danger" class:active={s?.mode === 'OFF'} onclick={() => setMode('OFF')}>OFF</button>
+          <button
+            class="danger"
+            class:active={s?.mode === 'OFF'}
+            class:armed={offArmed}
+            onclick={setModeOff}
+          >{offArmed ? 'TAP TO CONFIRM' : 'OFF'}</button>
           <button class:active={s?.mode === 'AUTO'} onclick={() => setMode('AUTO')}>AUTO</button>
           <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
           <button class="cool" class:active={s?.mode === 'COOL_ONLY'} onclick={() => setMode('COOL_ONLY')}>COOL</button>
