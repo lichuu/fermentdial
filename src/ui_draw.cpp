@@ -93,9 +93,9 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
              COLOR_TICK, 2);
   }
 
-  // 2. hold band around the target
-  drawArcSeg(GAUGE_R, gaugeAngle(targetC - 0.4f), gaugeAngle(targetC + 0.4f),
-             COLOR_OK, GAUGE_W);
+  // 2. hold band around the target (matches the configured in-range band)
+  drawArcSeg(GAUGE_R, gaugeAngle(targetC - settings.holdDeltaC),
+             gaugeAngle(targetC + settings.holdDeltaC), COLOR_OK, GAUGE_W);
 
   // 3. lit thermometer fill from the cold end up to the current temperature
   if (model.tempValid && !fault) {
@@ -321,31 +321,33 @@ void DisplayUI::drawHydrometer(uint32_t nowMs, const Settings &settings,
 void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
-  const QuickAction action =
-      _quickIndex == 0 ? QuickAction::Profile : QuickAction::Mode;
-  const QuickAction other =
-      _quickIndex == 0 ? QuickAction::Mode : QuickAction::Profile;
+  const uint8_t idx = _quickIndex % QUICK_ACTION_COUNT;
+  const QuickAction action = static_cast<QuickAction>(idx);
+  const QuickAction prev = static_cast<QuickAction>(
+      (idx + QUICK_ACTION_COUNT - 1) % QUICK_ACTION_COUNT);
+  const QuickAction next =
+      static_cast<QuickAction>((idx + 1) % QUICK_ACTION_COUNT);
 
   drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
-  _canvas.fillSmoothRoundRect(cx - 98, cy - 84, 196, 152, 15, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 98, cy - 84, 196, 152, 15, COLOR_BLUE);
+  _canvas.fillSmoothRoundRect(cx - 100, cy - 84, 200, 152, 15, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 100, cy - 84, 200, 152, 15, COLOR_BLUE);
   _canvas.setTextColor(COLOR_BLUE, COLOR_PANEL);
   _canvas.drawString("QUICK", cx, cy - 64, &fonts::DejaVu18);
 
-  // Only one neighbour to show (two quick actions), so keep it directly below
-  // the focused card and pull the card up under the title to close the gap.
-  _canvas.fillSmoothRoundRect(cx - 90, cy - 38, 180, 48, 14, COLOR_BG);
-  _canvas.drawRoundRect(cx - 90, cy - 38, 180, 48, 14, COLOR_GOLD);
+  // Prev / focused / next — same carousel pattern as profile and mode pickers.
+  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
+  _canvas.drawString(quickActionLabel(prev), cx, cy - 36, &fonts::DejaVu12);
+  _canvas.drawString(quickActionLabel(next), cx, cy + 36, &fonts::DejaVu12);
+
+  _canvas.fillSmoothRoundRect(cx - 90, cy - 22, 180, 48, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 90, cy - 22, 180, 48, 14, COLOR_GOLD);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
-  _canvas.drawString(quickActionLabel(action), cx, cy - 22,
+  _canvas.drawString(quickActionLabel(action), cx, cy - 6,
                      &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString(quickActionValue(action, settings), cx, cy - 3,
+  _canvas.drawString(quickActionValue(action, settings), cx, cy + 13,
                      &fonts::DejaVu18);
-
-  _canvas.setTextColor(rgb565(86, 106, 118), COLOR_PANEL);
-  _canvas.drawString(quickActionLabel(other), cx, cy + 32, &fonts::DejaVu12);
 
   drawGhostButton(cx, cy + 54, 64, 20, "Cancel", COLOR_TEXT_MUTED, &fonts::DejaVu12);
 }
@@ -424,10 +426,11 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
   _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
   _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_GOLD);
   _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
-  _canvas.drawString(_quickConfirmKind == QuickConfirmKind::CrashGradual
-                         ? "COLD CRASH"
-                         : "CONFIRM",
-                     cx, cy - 64, &fonts::DejaVu18);
+  const char *confirmTitle =
+      _quickConfirmKind == QuickConfirmKind::CrashGradual ? "COLD CRASH"
+      : _pendingQuickAction == QuickAction::DRest         ? "D-REST"
+                                                          : "CONFIRM";
+  _canvas.drawString(confirmTitle, cx, cy - 64, &fonts::DejaVu18);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
   _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_GOLD);
@@ -716,41 +719,76 @@ void DisplayUI::drawMenu(const Settings &settings,
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
 
-  // position dots around the arc — where this item sits in the list
-  for (int i = 0; i < MENU_COUNT; i++) {
+  const uint8_t listCount =
+      _menuInGroup ? groupItemCount(_menuGroup) : GROUP_COUNT;
+  const uint8_t listPos =
+      _menuInGroup ? groupItemPos(_menuGroup, _menuIndex) : _menuGroup;
+  const uint8_t prevPos = listPos == 0 ? listCount - 1 : listPos - 1;
+  const uint8_t nextPos = static_cast<uint8_t>((listPos + 1) % listCount);
+
+  // Position dots around the arc for the current list (groups or items).
+  for (uint8_t i = 0; i < listCount; i++) {
     const float a =
-        GA_START + (MENU_COUNT > 1 ? static_cast<float>(i) / (MENU_COUNT - 1)
-                                   : 0.0f) *
-                       GA_SWEEP;
+        GA_START +
+        (listCount > 1 ? static_cast<float>(i) / (listCount - 1) : 0.0f) *
+            GA_SWEEP;
     int16_t x, y;
     polar(104, a, x, y);
-    const bool cur = i == _menuIndex;
+    const bool cur = i == listPos;
     _canvas.fillSmoothCircle(x, y, cur ? 4 : 2, cur ? COLOR_GOLD : COLOR_TRACK);
   }
 
-  const int prev = _menuIndex == 0 ? MENU_COUNT - 1 : _menuIndex - 1;
-  const int next = (_menuIndex + 1) % MENU_COUNT;
+  String focusLabel;
+  String focusValue;
+  String prevLabel;
+  String nextLabel;
+  if (!_menuInGroup) {
+    focusLabel = GROUP_LABELS[_menuGroup];
+    prevLabel = GROUP_LABELS[prevPos];
+    nextLabel = GROUP_LABELS[nextPos];
+    switch (_menuGroup) {
+    case GROUP_CONTROL:
+      focusValue = "Bands & pump";
+      break;
+    case GROUP_SYSTEM:
+      focusValue = network.wifiEnabled ? network.status : "Device";
+      break;
+    default:
+      focusValue = activeProfile(settings).name;
+      break;
+    }
+  } else {
+    const MenuIndex *items = groupItems(_menuGroup);
+    focusLabel = MENU_LABELS[_menuIndex];
+    focusValue = menuValue(_menuIndex, settings, network);
+    prevLabel = MENU_LABELS[items[prevPos]];
+    nextLabel = MENU_LABELS[items[nextPos]];
+  }
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(COLOR_BLUE, COLOR_BG);
-  _canvas.drawString("SETTINGS", cx, cy - 74, &fonts::DejaVu18);
+  if (_menuInGroup) {
+    _canvas.drawString(GROUP_LABELS[_menuGroup], cx, cy - 74, &fonts::DejaVu18);
+  } else {
+    _canvas.drawString("SETTINGS", cx, cy - 74, &fonts::DejaVu18);
+  }
 
   _canvas.setTextColor(rgb565(86, 106, 118), COLOR_BG);  // dim neighbours
-  _canvas.drawString(MENU_LABELS[prev], cx, cy - 44, &fonts::DejaVu12);
-  _canvas.drawString(MENU_LABELS[next], cx, cy + 48, &fonts::DejaVu12);
+  _canvas.drawString(prevLabel, cx, cy - 44, &fonts::DejaVu12);
+  _canvas.drawString(nextLabel, cx, cy + 48, &fonts::DejaVu12);
 
   // focused item card
   _canvas.fillSmoothRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_PANEL);
   _canvas.drawRoundRect(cx - 94, cy - 26, 188, 52, 14, COLOR_BLUE);
   _canvas.setTextColor(TFT_WHITE, COLOR_PANEL);
-  _canvas.drawString(MENU_LABELS[_menuIndex], cx, cy - 9,
-                     &fonts::FreeSansBold12pt7b);
+  _canvas.drawString(focusLabel, cx, cy - 9, &fonts::FreeSansBold12pt7b);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(menuValue(_menuIndex, settings, network), cx, cy + 13,
-                     &fonts::DejaVu18);
+  _canvas.drawString(focusValue, cx, cy + 13, &fonts::DejaVu18);
 
   String hint = "swipe up/down";
-  if (_menuIndex == MENU_DREST) {
+  if (!_menuInGroup) {
+    hint = "tap to open";
+  } else if (_menuIndex == MENU_DREST) {
     hint = settings.diacetylRestActive ? "tap to finish" : "tap to start";
   } else if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
@@ -768,6 +806,8 @@ void DisplayUI::drawMenu(const Settings &settings,
     } else {
       hint = network.mqttConnected ? "broker connected" : "connecting...";
     }
+  } else if (_menuIndex == MENU_BRIGHTNESS) {
+    hint = "tap to adjust";
   }
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(hint, cx, cy + 78, &fonts::DejaVu12);
@@ -944,10 +984,11 @@ void DisplayUI::drawHelp() {
   const char *gestures[][2] = {
       {"Turn dial", "Set temp"},
       {"Tap screen", "Quick menu"},
-      {"Swipe left/right", "Pages"},
+      {"Swipe L/R", "Pages"},
       {"Press knob", "Settings"},
+      {"Long press", "Back"},
   };
-  int16_t y = cy - 32;
+  int16_t y = cy - 40;
   for (auto &g : gestures) {
     _canvas.setTextDatum(middle_left);
     _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
@@ -955,11 +996,11 @@ void DisplayUI::drawHelp() {
     _canvas.setTextDatum(middle_right);
     _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
     _canvas.drawString(g[1], cx + 86, y, &fonts::DejaVu12);
-    y += 26;
+    y += 22;
   }
 
   _canvas.setTextDatum(middle_center);
-  drawGhostButton(cx, cy + 64, 84, 24, "Close", COLOR_TEXT_MUTED,
+  drawGhostButton(cx, cy + 68, 84, 24, "Close", COLOR_TEXT_MUTED,
                   &fonts::DejaVu12);
 }
 
@@ -1042,7 +1083,14 @@ String DisplayUI::diacetylRestRemainingText(const Settings &settings) const {
 }
 
 const char *DisplayUI::quickActionLabel(QuickAction action) const {
-  return action == QuickAction::Profile ? "Profile" : "Mode";
+  switch (action) {
+  case QuickAction::Mode:
+    return "Mode";
+  case QuickAction::DRest:
+    return "D-Rest";
+  default:
+    return "Profile";
+  }
 }
 
 String DisplayUI::quickActionValue(QuickAction action,
@@ -1050,7 +1098,13 @@ String DisplayUI::quickActionValue(QuickAction action,
   if (action == QuickAction::Profile) {
     return activeProfile(settings).name;
   }
-  return modeText(settings.mode);
+  if (action == QuickAction::Mode) {
+    return modeText(settings.mode);
+  }
+  // D-Rest: show remaining time when active, otherwise the configured duration.
+  return settings.diacetylRestActive
+             ? diacetylRestRemainingText(settings)
+             : String("Start ") + diacetylRestRemainingText(settings);
 }
 
 String DisplayUI::quickPendingValue(const Settings &settings) const {
@@ -1060,7 +1114,13 @@ String DisplayUI::quickPendingValue(const Settings &settings) const {
                              settings.unitsFahrenheit) +
            ")";
   }
-  return String("Use ") + modeText(_pendingMode) + " mode";
+  if (_pendingQuickAction == QuickAction::Mode) {
+    return String("Use ") + modeText(_pendingMode) + " mode";
+  }
+  if (settings.diacetylRestActive) {
+    return String("Finish -> ") + activeProfile(settings).name;
+  }
+  return String("Start for ") + diacetylRestRemainingText(settings);
 }
 
 String DisplayUI::menuValue(uint8_t index, const Settings &settings,
@@ -1113,6 +1173,8 @@ String DisplayUI::menuValue(uint8_t index, const Settings &settings,
     return network.mqttConnected ? "Connected" : "Connecting";
   case MENU_HYDROMETER:
     return hydrometerValueText(settings);
+  case MENU_BRIGHTNESS:
+    return String((settings.brightness * 100) / 255) + "%";
   case MENU_HEATER_TEST:
   case MENU_PUMP_TEST:
     return "5s";
@@ -1160,6 +1222,8 @@ String DisplayUI::defaultMenuValue(uint8_t index,
                toDisplayDelta(DEFAULT_TEMP_OFFSET_C, settings.unitsFahrenheit),
                1) +
            temperatureUnit(settings.unitsFahrenheit);
+  case MENU_BRIGHTNESS:
+    return String((DEFAULT_BRIGHTNESS * 100) / 255) + "%";
   default:
     return "";
   }
@@ -1218,7 +1282,7 @@ bool DisplayUI::editHasReset(const Settings &settings) const {
       !profileSlotEditable(activeProfileIndex(settings))) {
     return false;
   }
-  return true;
+  return true;  // includes Brightness (reset to full)
 }
 
 bool DisplayUI::editCommitsProfile() const {
@@ -1246,6 +1310,25 @@ String DisplayUI::editDefaultLine(const Settings &settings) const {
       profileSlotEditable(activeProfileIndex(settings))) {
     return String("Live ") +
            formatTemperature(currentTargetC(settings), settings.unitsFahrenheit);
+  }
+  // Short meaning lines for regulation fields (round display has little room).
+  if (_editIndex == MENU_COOL_ON) {
+    return "Cool this far above target";
+  }
+  if (_editIndex == MENU_HEAT_ON) {
+    return "Heat this far below target";
+  }
+  if (_editIndex == MENU_HOLD_BAND) {
+    return "In-range band around target";
+  }
+  if (_editIndex == MENU_COOLING_OFF) {
+    return "Min time pump stays off";
+  }
+  if (_editIndex == MENU_COOLING_RUN) {
+    return "Min time pump stays on";
+  }
+  if (_editIndex == MENU_OFFSET) {
+    return "Added to sensor reading";
   }
   if (!editHasReset(settings)) {
     return "";  // no Reset button, so no "Default ..." reset hint
