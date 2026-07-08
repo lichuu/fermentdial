@@ -136,8 +136,6 @@ class DisplayUI {
   void drawConfirmTest();
   void drawAbout();
   void drawHelp();
-  void drawPill(int16_t x, int16_t y, int16_t w, int16_t h, uint16_t fill, uint16_t outline,
-                const String &text, uint16_t textColor, uint8_t textSize = 1);
   void drawGhostButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
                        const String &text, uint16_t outline,
                        const lgfx::IFont *font);
