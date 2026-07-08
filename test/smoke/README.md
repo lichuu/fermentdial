@@ -52,14 +52,14 @@ each gesture had a visible effect.
 | # | Item | Harness steps | Expected screen |
 |---|------|---------------|-----------------|
 | 1 | Main + setpoint confirm/cancel | `cap`; `scroll`; confirm tap; `scroll`; cancel tap | Gauge ring; gold setpoint preview; Set/Cancel row |
-| 2 | Menu scroll / value nudge | `hold` → menu; anchor + scroll; **Cool on** edit nudge | Menu carousel; editable delta screen |
+| 2 | Menu scroll / value nudge | `hold` → group list → Control → **Cool above** edit nudge | Group list; Control carousel; editable delta |
 | 3 | Page swipes | `swipe -90 0` / `swipe 90 0` | Hydrometer page, then Main |
-| 4 | Quick menu | main tap → quick; mode flow; QuickProfile → Crash → gradual prompt | Quick menu, mode picker, crash gradual prompt |
-| 5 | Settings edit/save/cancel | `hold` → menu → **Cool on** / **Heat on** edit; save/cancel | Edit, confirm-save, menu |
-| 6 | About / Help fonts | help badge tap; menu → About | Help and About screens, legible fonts |
-| 7 | Output test + reject toast | menu → Mode edit → save OFF; heater test confirm | Confirm-test prompt; “Test blocked” toast |
-| 8 | Wi-Fi item toast | menu → Wi-Fi item tap | Setup-AP or network toast (build-dependent) |
-| 9 | Brightness / idle | baseline `cap` only | Main at configured brightness; **idle dim is manual** |
+| 4 | Quick menu | main tap → quick; mode flow; QuickProfile → Crash → gradual prompt | Quick (Profile/Mode/D-Rest); crash gradual prompt |
+| 5 | Settings edit/save/cancel | Control → **Cool above** / **Heat below** edit; save/cancel | Edit, confirm-save, group item list |
+| 6 | About / Help fonts | help badge tap; System → About | Help and About screens, legible fonts |
+| 7 | Output test + reject toast | Daily → Mode OFF; System → heater test confirm | Confirm-test prompt; “Test blocked” toast |
+| 8 | Wi-Fi item toast | System → Wi-Fi item tap | Setup-AP or network toast (build-dependent) |
+| 9 | Brightness / idle | baseline `cap` only | Main at configured brightness; **idle dim is manual** (on-dial edit: System → Brightness) |
 
 ## Primitives (`drive.sh`)
 
@@ -71,15 +71,18 @@ each gesture had a visible effect.
 | `scroll n` | `type=scroll&delta=n` (encoder counts; drives setpoint preview on Main) |
 | `cap name` | `GET /api/screen` → `decode_screen.py` → `NN_name.png` |
 | `settle` | Poll until framebuffer MD5 changes |
-| `menu_goto N` | Scroll up to Profile (anchor), then down *N* items |
-| `open_menu_at N` | `hold` from Main, then `menu_goto N` |
+| `menu_goto N` | Anchor to first entry of the *current* list, then down *N* |
+| `enter_group` | Centre-tap to open the focused settings group |
+| `open_menu_at G I` | `hold` → group list → group *G* → item *I* (group-relative) |
 
 `decode_screen.py` converts RGB565 big-endian raw frames to PNG (stdlib only).
 
-**Navigation notes:** `_menuIndex` persists across menu sessions — always
-`menu_anchor` before an absolute item index. Do not `hold` while already on
-Menu (remote hold escapes to Main). Preset **Target** is read-only for built-in
-profiles (Ale/Lager/…); edit steps use **Cool on** / **Mode** instead. Never park on **D-Rest** during scroll demos — a centre tap starts the rest.
+**Navigation notes:** Settings are two-level (**Daily / Control / System**).
+`hold` steps item-list → group-list → Main (not always straight to Main).
+`menu_goto` is relative to the list you are already on — use `open_menu_at G I`
+from Main. Preset **Target** is read-only for built-in profiles; edit steps use
+**Cool above** / **Mode** instead. Never park on Daily **D-Rest** during scroll
+demos — a centre tap starts the rest.
 Recalling/applying a profile ends any running program and D-Rest in firmware (`activateProfile`).
 The harness still runs `restore_device_state` as a belt-and-suspenders cleanup
 (`dRestAction=end`, `profile=0`, `mode=AUTO` if needed).
