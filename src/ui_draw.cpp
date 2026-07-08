@@ -974,9 +974,9 @@ void DisplayUI::drawAbout() {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
 
-  drawArcSeg(104, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 5);
-  drawArcSeg(104, GA_START, GA_START + 60.0f, COLOR_COOL, 5);
-  drawArcSeg(104, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
+  drawArcSeg(GAUGE_R, GA_START, GA_START + GA_SWEEP, COLOR_TRACK, 5);
+  drawArcSeg(GAUGE_R, GA_START, GA_START + 60.0f, COLOR_COOL, 5);
+  drawArcSeg(GAUGE_R, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
              COLOR_HEAT, 5);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 50, 184, 100, 14, COLOR_PANEL);
