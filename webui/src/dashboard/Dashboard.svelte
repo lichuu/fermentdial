@@ -71,21 +71,30 @@
   let offArmed = $state(false);
   let offArmTimer = null;
 
-  function setMode(mode) {
+  function disarmOff() {
     offArmed = false;
     clearTimeout(offArmTimer);
+    offArmTimer = null;
+  }
+
+  function setMode(mode) {
+    disarmOff();
     post({ mode });
   }
 
-  // OFF kills temperature control, so require a second tap within 3s —
-  // mirrors the dial UI, where every state change goes through a confirm.
+  // OFF is destructive, so require an explicit second tap within 3s
+  // (same idea as the dial's confirm step).
   function setModeOff() {
-    if (s?.mode === 'OFF') return;
+    if (s?.mode === 'OFF') {
+      disarmOff();
+      return;
+    }
     if (!offArmed) {
       offArmed = true;
       clearTimeout(offArmTimer);
       offArmTimer = setTimeout(() => {
         offArmed = false;
+        offArmTimer = null;
       }, 3000);
       return;
     }
@@ -192,6 +201,11 @@
     document.body.dataset.state = next.state.toLowerCase();
     document.title = next.fermenterName + ' - FermentDial';
 
+    // Mode may go OFF from dial/API; drop a stale arm state.
+    if (next.mode === 'OFF' && offArmed) {
+      disarmOff();
+    }
+
     if (document.activeElement !== profileSelectEl) {
       profileSelectEl.value = String(next.activeProfile);
     }
@@ -249,6 +263,8 @@
       cancelled = true;
       clearInterval(tickTimer);
       clearInterval(historyTimer);
+      clearTimeout(offArmTimer);
+      offArmTimer = null;
     };
   });
 
