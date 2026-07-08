@@ -3,94 +3,10 @@
 #include "fonts/dejavu_sans_bold_44_vlw.h"
 #include "fonts/help_glyph.h"
 
+#include "ui_internal.h"
+
 namespace ferm {
 
-namespace {
-
-enum MenuIndex : uint8_t {
-  MENU_PROFILE = 0,
-  MENU_TARGET = 1,
-  MENU_DREST = 2,
-  MENU_MODE = 3,
-  MENU_COOL_ON = 4,
-  MENU_HEAT_ON = 5,
-  MENU_HOLD_BAND = 6,
-  MENU_COOLING_OFF = 7,
-  MENU_COOLING_RUN = 8,
-  MENU_OFFSET = 9,
-  MENU_UNITS = 10,
-  MENU_WIFI = 11,
-  MENU_MQTT = 12,
-  MENU_HYDROMETER = 13,
-  MENU_HEATER_TEST = 14,
-  MENU_PUMP_TEST = 15,
-  MENU_ABOUT = 16,
-};
-
-constexpr uint8_t MENU_COUNT = MENU_ABOUT + 1;
-constexpr uint8_t QUICK_ACTION_COUNT = 2;
-
-constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
-  return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
-}
-
-// Scale an RGB565 colour toward black, for pressed-button feedback.
-constexpr uint16_t dim565(uint16_t c, uint8_t num = 9, uint8_t den = 16) {
-  return static_cast<uint16_t>(
-      (((((c >> 11) & 0x1F) * num / den) & 0x1F) << 11) |
-      (((((c >> 5) & 0x3F) * num / den) & 0x3F) << 5) |
-      ((((c & 0x1F) * num / den) & 0x1F)));
-}
-
-// Alpha-blend foreground over background (a = 0..255), for AA glyph blitting.
-constexpr uint16_t blend565(uint16_t fg, uint16_t bg, uint8_t a) {
-  return static_cast<uint16_t>(
-      (((((fg >> 11) & 0x1F) * a + ((bg >> 11) & 0x1F) * (255 - a)) / 255)
-       << 11) |
-      (((((fg >> 5) & 0x3F) * a + ((bg >> 5) & 0x3F) * (255 - a)) / 255) << 5) |
-      ((((fg & 0x1F) * a + (bg & 0x1F) * (255 - a)) / 255)));
-}
-
-// Appliance-style palette adapted for the round M5Stack Dial.
-constexpr uint16_t COLOR_BG = rgb565(13, 27, 30);
-constexpr uint16_t COLOR_PANEL = rgb565(19, 36, 40);
-constexpr uint16_t COLOR_PANEL_DARK = rgb565(9, 20, 24);
-constexpr uint16_t COLOR_TEXT = rgb565(208, 232, 240);
-constexpr uint16_t COLOR_TEXT_MUTED = rgb565(106, 154, 170);
-constexpr uint16_t COLOR_ACCENT = rgb565(176, 216, 248);
-constexpr uint16_t COLOR_BLUE = rgb565(53, 111, 137);
-constexpr uint16_t COLOR_HEAT = rgb565(227, 96, 24);     // warm amber
-constexpr uint16_t COLOR_COOL = rgb565(176, 216, 248);   // pale blue
-constexpr uint16_t COLOR_CRASH = rgb565(176, 216, 248);
-constexpr uint16_t COLOR_OK = rgb565(54, 200, 122);
-constexpr uint16_t COLOR_WARN = rgb565(255, 196, 64);
-constexpr uint16_t COLOR_FAULT = rgb565(228, 72, 64);
-constexpr int32_t MENU_ENCODER_DIVISOR = 2;
-constexpr int32_t EDIT_ENCODER_DIVISOR = 2;
-
-// Radial-gauge palette + geometry (main screen).
-constexpr uint16_t COLOR_TRACK = rgb565(30, 56, 64);     // unlit ring
-constexpr uint16_t COLOR_TICK = rgb565(53, 111, 137);    // 5 C scale ticks
-constexpr uint16_t COLOR_GOLD = rgb565(255, 209, 120);   // setpoint tick
-constexpr uint16_t COLOR_WIFI_OFF = rgb565(96, 122, 130);
-constexpr int32_t TOUCH_MENU_ITEM_PX = 28;
-
-constexpr int16_t GAUGE_R = 108;        // gauge radius (hugs the bezel)
-constexpr int16_t GAUGE_W = 7;          // ring thickness
-constexpr float GA_START = 135.0f;      // lower-left  (cold)
-constexpr float GA_SWEEP = 270.0f;      // clockwise to lower-right (hot)
-
-// Output indicators: true = snowflake / heat-steam glyphs, false = "H"/"P".
-constexpr bool USE_OUTPUT_ICONS = true;
-
-constexpr const char *MENU_LABELS[MENU_COUNT] = {
-    "Profile",   "Target",    "D-Rest",      "Mode",        "Cool on",
-    "Heat on",   "Hold band", "Cooling off", "Cooling run", "Offset",
-    "Units",     "Wi-Fi",     "MQTT",        "Hydrometer",  "Heater test",
-    "Pump test", "About",
-};
-
-} // namespace
 void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
                      const UiModel &model) {
   if (_screen != Screen::Main) {
@@ -289,7 +205,7 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     drawHelpIcon(cx - 84, cy, COLOR_TEXT_MUTED, COLOR_PANEL);
   } else {
     // Confirm/cancel row for the previewed setpoint (rects match
-    // setpointCancelHit / setpointConfirmHit). Press = Set, swipe/timeout = no.
+    // confirmRowLeftHit / confirmRowRightHit). Press = Set, swipe/timeout = no.
     const bool cancelPressed = pressInRect(cx - 90, cy + 44, 84, 26);
     drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel",
                     cancelPressed ? TFT_WHITE : COLOR_TEXT_MUTED,
@@ -839,7 +755,11 @@ void DisplayUI::drawMenu(const Settings &settings,
   } else if (_menuIndex == MENU_UNITS) {
     hint = "tap to toggle";
   } else if (_menuIndex == MENU_WIFI) {
-    hint = network.status == "Setup AP" ? "AP is active" : "tap to start AP";
+    if (!network.wifiEnabled) {
+      hint = "network disabled";
+    } else {
+      hint = network.status == "Setup AP" ? "AP is active" : "tap to start AP";
+    }
   } else if (_menuIndex == MENU_MQTT) {
     if (!network.wifiEnabled) {
       hint = "network disabled";
@@ -955,19 +875,33 @@ void DisplayUI::drawConfirmEdit(const Settings &settings) {
 }
 
 void DisplayUI::drawConfirmTest() {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  // Mirror QuickConfirm/ConfirmEdit's layout so every confirm screen reads
+  // identically; Start only fires from its button (see handleTouchClick).
   _canvas.setTextDatum(middle_center);
-  _canvas.setTextSize(2);
-  _canvas.setTextColor(COLOR_WARN, COLOR_BG);
-  _canvas.drawString("Confirm test", _canvas.width() / 2, 61);
-  _canvas.setTextSize(1);
+  _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_WARN);
+  _canvas.setTextColor(COLOR_WARN, COLOR_PANEL);
+  _canvas.drawString("Confirm test", cx, cy - 64, &fonts::DejaVu18);
+
+  _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_WARN);
   _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString(MENU_LABELS[_menuIndex], cx, cy - 20,
+                     &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
   _canvas.drawString(_menuIndex == MENU_HEATER_TEST ? "Heater ON for 5 sec"
                                                     : "Pump ON for 5 sec",
-                     _canvas.width() / 2, 108);
-  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
-  _canvas.drawString("Mode cannot be OFF", _canvas.width() / 2, 134);
-  drawPill(58, 160, 124, 28, COLOR_WARN, COLOR_WARN, "Press to start",
-           TFT_BLACK, 1);
+                     cx, cy + 2, &fonts::DejaVu12);
+  _canvas.drawString("Mode cannot be OFF", cx, cy + 18, &fonts::DejaVu12);
+
+  // Action row: Cancel (left, ghost) and Start (right, filled warn).
+  drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
+                  &fonts::DejaVu12);
+  drawSolidButton(cx + 48, cy + 57, 84, 26, "Start", COLOR_WARN, TFT_BLACK,
+                  &fonts::DejaVu12);
 }
 
 void DisplayUI::drawAbout() {
@@ -1029,17 +963,6 @@ void DisplayUI::drawHelp() {
                   &fonts::DejaVu12);
 }
 
-void DisplayUI::drawPill(int16_t x, int16_t y, int16_t w, int16_t h,
-                         uint16_t fill, uint16_t outline, const String &text,
-                         uint16_t textColor, uint8_t textSize) {
-  _canvas.fillRoundRect(x, y, w, h, h / 2, fill);
-  _canvas.drawRoundRect(x, y, w, h, h / 2, outline);
-  _canvas.setTextDatum(middle_center);
-  _canvas.setTextSize(textSize);
-  _canvas.setTextColor(textColor, fill);
-  _canvas.drawString(text, x + w / 2, y + h / 2);
-}
-
 bool DisplayUI::pressInRect(int16_t x, int16_t y, int16_t w, int16_t h) const {
   return _pressX >= x && _pressX < x + w && _pressY >= y && _pressY < y + h;
 }
@@ -1076,12 +999,11 @@ void DisplayUI::drawSolidButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
 }
 
 bool DisplayUI::quickCancelHit(int16_t x, int16_t y) const {
+  if (_screen == Screen::QuickConfirm) {
+    return confirmRowLeftHit(x, y);
+  }
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
-  if (_screen == Screen::QuickConfirm) {
-    // Cancel is the left button of the confirm action row.
-    return x >= cx - 90 && x <= cx - 6 && y >= cy + 44 && y <= cy + 70;
-  }
   return x >= cx - 32 && x <= cx + 32 && y >= cy + 44 && y <= cy + 64;
 }
 
