@@ -71,7 +71,7 @@ each gesture had a visible effect.
 | `scroll n` | `type=scroll&delta=n` (encoder counts; drives setpoint preview on Main) |
 | `cap name` | `GET /api/screen` → `decode_screen.py` → `NN_name.png` |
 | `settle` | Poll until framebuffer MD5 changes |
-| `menu_goto N` | Anchor to first entry of the *current* list, then down *N* |
+| `menu_goto N` | Scroll down *N* from list entry 0 (no wrap-scroll anchor) |
 | `enter_group` | Centre-tap to open the focused settings group |
 | `open_menu_at G I` | `hold` → group list → group *G* → item *I* (group-relative) |
 
@@ -79,10 +79,13 @@ each gesture had a visible effect.
 
 **Navigation notes:** Settings are two-level (**Daily / Control / System**).
 `hold` steps item-list → group-list → Main (not always straight to Main).
-`menu_goto` is relative to the list you are already on — use `open_menu_at G I`
-from Main. Preset **Target** is read-only for built-in profiles; edit steps use
-**Cool above** / **Mode** instead. Never park on Daily **D-Rest** during scroll
-demos — a centre tap starts the rest.
+`menu_goto N` assumes the list is currently on entry 0 — true right after
+`open_menu` / `enter_group` (firmware resets focus). Do **not** “anchor” by
+scrolling up a fixed count; wrapping lists make that land on the wrong item
+when the count is not a multiple of the list length. Re-enter the group to
+re-anchor mid-flow. Use `open_menu_at G I` from Main. Preset **Target** is
+read-only for built-in profiles; edit steps use **Cool above** / **Mode**.
+Never park on Daily **D-Rest** during scroll demos — a centre tap starts the rest.
 Recalling/applying a profile ends any running program and D-Rest in firmware (`activateProfile`).
 The harness still runs `restore_device_state` as a belt-and-suspenders cleanup
 (`dRestAction=end`, `profile=0`, `mode=AUTO` if needed).
