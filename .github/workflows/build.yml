@@ -1,0 +1,57 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Native unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-native-${{ runner.os }}-
+      - run: uv run --frozen platformio test -e native -e native_demo
+
+  firmware:
+    name: Firmware (all envs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-esp32-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: |
+            pio-esp32-${{ runner.os }}-
+      - run: >
+          uv run --frozen platformio run
+          -e m5stack_dial -e m5stack_dial_demo -e m5stack_dial_wifi
+      - name: Collect firmware artifacts
+        run: |
+          mkdir -p out
+          for env in m5stack_dial m5stack_dial_demo m5stack_dial_wifi; do
+            cp ".pio/build/${env}/firmware.bin" "out/${env}.bin"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: out/*.bin
+          if-no-files-found: error

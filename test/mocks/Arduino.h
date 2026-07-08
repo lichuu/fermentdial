@@ -45,6 +45,10 @@ inline void digitalWrite(uint8_t pin, uint8_t level) {
   }
 }
 
+// Tests drive time explicitly through nowMs parameters, so sleeping is
+// pointless — a no-op keeps native builds of hardware code paths compiling.
+inline void delay(uint32_t) {}
+
 class String {
 public:
   String() = default;
