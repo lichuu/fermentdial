@@ -1006,8 +1006,9 @@ void DisplayUI::editCurrentValue(int32_t delta, Settings &settings) {
         MIN_OFFSET_C, MAX_OFFSET_C);
     break;
   case MENU_BRIGHTNESS: {
+    // ±10 raw (~4% per detent) so a full sweep is a few turns, not dozens.
     const int next =
-        static_cast<int>(settings.brightness) + (delta > 0 ? 5 : -5);
+        static_cast<int>(settings.brightness) + (delta > 0 ? 10 : -10);
     settings.brightness = clampBrightness(next);
     applyLiveBrightness(settings.brightness);
     break;
