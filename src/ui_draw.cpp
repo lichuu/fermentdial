@@ -1118,7 +1118,10 @@ String DisplayUI::quickPendingValue(const Settings &settings) const {
     return String("Use ") + modeText(_pendingMode) + " mode";
   }
   if (settings.diacetylRestActive) {
-    return String("Finish -> ") + activeProfile(settings).name;
+    // completeDiacetylRest activates the configured return profile, not the
+    // currently active one (dashboard "After rest" may differ).
+    return String("Finish -> ") +
+           settings.profiles[diacetylRestReturnProfileIndex(settings)].name;
   }
   return String("Start for ") + diacetylRestRemainingText(settings);
 }
