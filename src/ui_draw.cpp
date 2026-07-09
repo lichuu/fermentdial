@@ -522,9 +522,13 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
     _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
     _canvas.drawString(quickPendingValue(settings), cx, cy + 6,
                        &fonts::DejaVu12);
+    if (_pendingQuickAction == QuickAction::DRest &&
+        !settings.diacetylRestActive) {
+      // Discoverability: duration is adjustable on this confirm only.
+      _canvas.drawString("turn dial: hours", cx, cy + 26, &fonts::DejaVu12);
+    }
 
     // Action row: Cancel (left, ghost) and Apply (right, filled gold).
-    // D-Rest start: rotate to change hours before Apply.
     drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
                     &fonts::DejaVu12);
     drawSolidButton(cx + 48, cy + 57, 84, 26, "Apply", COLOR_GOLD, TFT_BLACK,
@@ -1056,7 +1060,7 @@ void DisplayUI::drawAbout(const NetworkSnapshot &network) {
   _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
   _canvas.drawString(FIRMWARE_NAME, cx, cy - 46, &fonts::DejaVu18);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(String("v") + FIRMWARE_VERSION + " · " + FIRMWARE_GIT_SHA,
+  _canvas.drawString(String("v") + FIRMWARE_VERSION + " - " + FIRMWARE_GIT_SHA,
                      cx, cy - 24, &fonts::DejaVu12);
   _canvas.setTextColor(COLOR_TEXT, COLOR_PANEL);
   if (network.hostname.length() > 0) {
