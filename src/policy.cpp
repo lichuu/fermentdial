@@ -293,6 +293,12 @@ void evaluateAlerts(uint32_t nowMs, const HydrometerReading &hydro) {
   }
 }
 
+bool alertNotReachingActive() { return notReachingAlerted; }
+
+bool alertLongRuntimeActive() {
+  return heaterLongAlerted || pumpLongAlerted;
+}
+
 String buildHistoryRow(uint32_t nowMs, const HydrometerReading &hydro) {
   const Timestamp ts = nowEpochOrUptime(nowMs);
   String row;
