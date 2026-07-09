@@ -192,6 +192,53 @@ h1 a:hover { text-decoration: none; }
   font-weight: 500;
 }
 .demo { border-color: #5c4118; color: var(--gold); background: #1c160b; }
+.pill.attention {
+  border-color: #5a4020;
+  color: var(--gold);
+  background: #2a2418;
+  text-transform: none;
+}
+
+.offlineBanner {
+  margin: 0 0 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  border: 1px solid #5a2a2a;
+  background: #2a1416;
+  color: var(--fault);
+  font-size: 13px;
+  font-weight: 600;
+}
+.offlineBanner-info {
+  border-color: #3f819d;
+  background: #152a35;
+  color: var(--accent);
+}
+
+.historyToggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  background: var(--face);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
+}
+.historyToggle button {
+  margin: 0;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: calc(var(--radius) - 5px);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.historyToggle button:hover { color: var(--text); background: transparent; }
+.historyToggle button.active {
+  background: var(--primary) !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
 
 /* ---- Dashboard hero (signature: the live temperature readout) ---- */
 .hero {
