@@ -73,23 +73,25 @@
     calStatus = 'Calibrating...';
     const wanted = parseFloat(calRef);
     try {
-      await postSettings({ calibrateRef: calRef });
+      // Response is fresh status JSON (prop may lag until after refresh).
+      const next = await postSettings({ calibrateRef: calRef });
       await refresh();
-      const live = status.tempValid ? status.temperature : NaN;
+      const live = next.tempValid ? next.temperature : NaN;
+      const unit = next.unit || status.unit;
       if (Number.isFinite(live) && Number.isFinite(wanted) && Math.abs(live - wanted) > 0.15) {
         calStatus =
           'Offset applied (clamped). Live is ' +
           live.toFixed(1) +
           deg +
-          status.unit +
+          unit +
           ', not ' +
           wanted.toFixed(1) +
           deg +
-          status.unit +
+          unit +
           '.';
       } else {
         calStatus =
-          'Offset set so reading matches ' + calRef + deg + status.unit + '.';
+          'Offset set so reading matches ' + calRef + deg + unit + '.';
       }
     } catch (e) {
       calStatus = 'Calibration failed.';
