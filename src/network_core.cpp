@@ -209,6 +209,7 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   _hydrometer = &hydrometer;
   _webStatus.tempValid = sensor.isValid();
   _webStatus.tempC = sensor.temperatureC();
+  _webStatus.rawTempC = sensor.rawTemperatureC();
   recordHistory(nowMs, _webStatus.tempValid, _webStatus.tempC,
                 hydrometer.selectedReading(settings, nowMs));
   _webStatus.fermenterName = settings.fermenterName;
