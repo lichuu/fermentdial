@@ -42,8 +42,9 @@ enum MenuGroup : uint8_t {
 
 constexpr uint8_t GROUP_COUNT = 3;
 
-// Quick menu: Profile / Mode / D-Rest.
-constexpr uint8_t QUICK_ACTION_COUNT = 3;
+// Quick menu base: Profile / Mode / D-Rest. Program is appended while active.
+constexpr uint8_t QUICK_ACTION_BASE = 3;
+constexpr uint8_t QUICK_ACTION_MAX = 4;
 
 constexpr uint16_t rgb565(uint8_t r, uint8_t g, uint8_t b) {
   return static_cast<uint16_t>(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));

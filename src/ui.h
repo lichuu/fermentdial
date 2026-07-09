@@ -66,6 +66,7 @@ class DisplayUI {
     EditInfo,
     ConfirmEdit,
     ConfirmTest,
+    ConfirmWifi,
     About,
     Help,
   };
@@ -80,11 +81,13 @@ class DisplayUI {
     Profile,
     Mode,
     DRest,
+    Program,  // only offered while a program is running
   };
 
   enum class QuickConfirmKind : uint8_t {
     Apply,
     CrashGradual,
+    ProgramControl,  // Skip / Stop dual buttons
   };
 
   void processInput(uint32_t nowMs, Settings &settings);
@@ -109,7 +112,7 @@ class DisplayUI {
   bool confirmRowLeftHit(int16_t x, int16_t y) const;
   bool confirmRowRightHit(int16_t x, int16_t y) const;
   void openQuickMenu(const Settings &settings);
-  void moveQuickMenu(int32_t delta);
+  void moveQuickMenu(int32_t delta, const Settings &settings);
   void selectQuickAction(const Settings &settings);
   void moveQuickSelection(int32_t delta, const Settings &settings);
   void requestQuickConfirm(const Settings &settings);
@@ -145,8 +148,12 @@ class DisplayUI {
   void drawEditInfo(const Settings &settings);
   void drawConfirmEdit(const Settings &settings);
   void drawConfirmTest();
-  void drawAbout();
+  void drawConfirmWifi(const NetworkSnapshot &network);
+  void drawAbout(const NetworkSnapshot &network);
   void drawHelp();
+  uint8_t quickActionCount(const Settings &settings) const;
+  QuickAction quickActionAt(uint8_t index, const Settings &settings) const;
+  void confirmWifiSetup();
   void drawGhostButton(int16_t cx, int16_t cy, int16_t w, int16_t h,
                        const String &text, uint16_t outline,
                        const lgfx::IFont *font);
@@ -223,6 +230,11 @@ class DisplayUI {
   QuickAction _pendingQuickAction = QuickAction::Profile;
   QuickConfirmKind _quickConfirmKind = QuickConfirmKind::Apply;
   bool _pendingGradualCrash = false;
+  // ProgramControl confirm: true = Skip step, false = Stop program.
+  bool _pendingProgramSkip = true;
+  // D-Rest start confirm: duration preview before apply (seconds).
+  uint32_t _pendingDrestDurationSeconds = 0;
+  NetworkSnapshot _lastNetwork{};
   uint32_t _lastDrawMs = 0;
   uint32_t _lastActivityMs = 0;
   uint32_t _pressStartedMs = 0;
