@@ -64,10 +64,15 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   if (_screen != Screen::Main && nowMs - _lastActivityMs > UI_TIMEOUT_MS) {
     if ((_screen == Screen::Edit || _screen == Screen::ConfirmEdit) &&
         _editSnapshotValid) {
+      const bool wasBrightness = _editIndex == MENU_BRIGHTNESS;
       settings = _editSnapshot;
       _editSnapshotValid = false;
+      if (wasBrightness) {
+        applyLiveBrightness(settings.brightness);
+      }
     }
     _quickConfirmKind = QuickConfirmKind::Apply;
+    _menuInGroup = false;
     _screen = Screen::Main;
     resetSettingsEncoderFilters();
     _dirty = true;

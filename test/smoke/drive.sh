@@ -33,16 +33,21 @@ readonly SETPOINT_ROW_Y=177
 # Help badge hit zone (ui_input.cpp setpoint carve-out): x∈[22,50], y∈[106,134].
 readonly HELP_X=36
 readonly HELP_Y=120
-# Menu indices (ui_input.cpp MenuIndex) — use menu_goto, not relative scroll from drift.
-readonly MENU_PROFILE=0
-readonly MENU_TARGET=1
-readonly MENU_DREST=2
-readonly MENU_MODE=3
-readonly MENU_COOL_ON=4
-readonly MENU_HEAT_ON=5
-readonly MENU_WIFI=11
-readonly MENU_HEATER_TEST=14
-readonly MENU_ABOUT=16
+# Two-level settings (ui_internal.h): group list, then items within the group.
+# Positions are group-relative — do not use raw MenuIndex as a scroll distance.
+readonly GROUP_DAILY=0
+readonly GROUP_CONTROL=1
+readonly GROUP_SYSTEM=2
+# Daily: Profile, Target, Mode, D-Rest, Units
+readonly DAILY_PROFILE=0
+readonly DAILY_MODE=2
+# Control: Cool above, Heat below, In range, Pump rest, Pump min run, Sensor offset
+readonly CONTROL_COOL_ON=0
+readonly CONTROL_HEAT_ON=1
+# System: Wi-Fi, MQTT, Hydrometer, Brightness, Heater test, Pump test, About
+readonly SYSTEM_WIFI=0
+readonly SYSTEM_HEATER_TEST=4
+readonly SYSTEM_ABOUT=6
 readonly PROFILE_CRASH=4
 readonly PROFILE_ALE=0
 readonly PROFILE_COUNT=7
@@ -177,14 +182,16 @@ menu_scroll_up() {
   done
 }
 
-# _menuIndex persists across menu open/close — anchor to Profile (0) before absolute jumps.
-menu_anchor() {
-  menu_scroll_up 20
-}
-
+# Absolute jump within the *current* list, counting down from entry 0.
+#
+# The list wraps, so scrolling "up a lot" is NOT a reliable anchor (12 mod 5 = 3,
+# not 0). Call only when the firmware has just focused the first entry:
+#   - open_menu / openSettingsMenu → group list on Daily (0)
+#   - enter_group / enterMenuGroup → first item in that group (0)
+#   - known mid-flow position still at 0 (e.g. after save, still on Cool above)
+# To re-anchor mid-flow, leave and re-enter the group (hold → enter_group).
 menu_goto() {
-  local index="${1:?menu index}"
-  menu_anchor
+  local index="${1:?list index from 0}"
   menu_scroll_down "$index"
 }
 
@@ -198,7 +205,8 @@ quick_scroll_down() {
   done
 }
 
-# Enter Menu from Main/Hydrometer only — hold from Menu escapes to Main.
+# Enter group list from Main/Hydrometer. Hold on an item list steps to the
+# group list; hold on the group list returns to Main.
 open_menu() {
   local before
   before="$(frame_md5)"
@@ -206,9 +214,21 @@ open_menu() {
   settle "$before" || true
 }
 
+enter_group() {
+  local before
+  before="$(frame_md5)"
+  tap "$CX" "$CY"
+  settle "$before" || true
+}
+
+# From Main: open settings → group G → item I (group-relative index).
 open_menu_at() {
+  local group="${1:?group index}"
+  local item="${2:?item index within group}"
   open_menu
-  menu_goto "$1"
+  menu_goto "$group"
+  enter_group
+  menu_goto "$item"
 }
 
 status_field() {
@@ -256,13 +276,17 @@ restore_device_state() {
 go_main() {
   local i before
   # Never tap screen centre here — on Main that opens Quick menu (ui_input.cpp).
-  # Dismiss overlays, route through Menu (hold), then swipe left to Main (page 0).
-  for ((i = 0; i < 3; i++)); do
+  # Dismiss overlays; hold steps item-list → group-list → Main (may need two);
+  # swipe left also backs out of menu levels.
+  for ((i = 0; i < 4; i++)); do
     before="$(frame_md5)"
     tap "$QUICK_CANCEL_X" "$CONFIRM_ROW_Y"
     settle "$before" || true
     before="$(frame_md5)"
     tap "$CX" "$QUICK_MENU_CANCEL_Y"
+    settle "$before" || true
+    before="$(frame_md5)"
+    hold
     settle "$before" || true
     before="$(frame_md5)"
     hold
@@ -291,15 +315,18 @@ run_checklist() {
   step "setpoint_preview_again" scroll "$SCROLL_STEP"
   step "setpoint_cancel" tap "$SETPOINT_CANCEL_X" "$SETPOINT_ROW_Y"
 
-  # 2 — Menu scroll / value nudge (Cool on — editable; never stop on D-Rest — tap starts it)
+  # 2 — Group list → Control → Cool above (editable; never park on Daily D-Rest)
   step "menu_open" open_menu
-  menu_goto "$MENU_COOL_ON"
+  snap "menu_groups"
+  menu_goto "$GROUP_CONTROL"
+  step "menu_enter_control" enter_group
+  menu_goto "$CONTROL_COOL_ON"
   snap "menu_cool_on"
   menu_scroll_down 1
   snap "menu_scrolled_down"
   menu_scroll_up 1
   snap "menu_scrolled_up"
-  menu_goto "$MENU_COOL_ON"
+  menu_goto "$CONTROL_COOL_ON"
   step "edit_open" tap "$CX" "$CY"
   step "edit_nudge" tap "$EDIT_NUDGE_RIGHT_X" "$EDIT_VALUE_Y"
   step "edit_back" tap "$CX" "$EDIT_BACK_Y"
@@ -310,7 +337,7 @@ run_checklist() {
   step "hydrometer" swipe -90 0
   step "main_swipe_back" swipe 90 0
 
-  # 4 — Quick menu (profile/mode/crash)
+  # 4 — Quick menu (Profile / Mode / D-Rest carousel + crash gradual)
   step "quick_menu" tap "$CX" "$CY"
   step "quick_mode_action" tap "$CX" "$MENU_DOWN_Y"
   step "quick_mode_picker" tap "$CX" "$CY"
@@ -326,14 +353,14 @@ run_checklist() {
   go_main
   step "main_after_quick" true
 
-  # 5 — Settings open/edit/save/cancel (Cool on / Heat on — both editable deltas)
-  open_menu_at "$MENU_COOL_ON"
+  # 5 — Settings open/edit/save/cancel (Cool above / Heat below — both editable)
+  open_menu_at "$GROUP_CONTROL" "$CONTROL_COOL_ON"
   step "settings_edit" tap "$CX" "$CY"
   step "settings_nudge" tap "$EDIT_NUDGE_RIGHT_X" "$EDIT_VALUE_Y"
   step "settings_save_prompt" tap "$EDIT_SAVE_X" "$EDIT_ROW_Y"
   step "settings_save_confirm" tap "$SETPOINT_CONFIRM_X" "$CONFIRM_ROW_Y"
-  # saveEdit returns to Menu — do not hold here (hold from Menu escapes to Main).
-  menu_goto "$MENU_HEAT_ON"
+  # saveEdit returns to the same group item list — stay there; hold would leave the group.
+  menu_goto "$CONTROL_HEAT_ON"
   step "settings_edit_cancel" tap "$CX" "$CY"
   step "settings_cancel_back" tap "$CX" "$EDIT_BACK_Y"
   go_main
@@ -343,19 +370,23 @@ run_checklist() {
   go_main
   step "help" tap "$HELP_X" "$HELP_Y"
   step "help_back" tap "$CX" "$CY"
-  open_menu_at "$MENU_ABOUT"
+  open_menu_at "$GROUP_SYSTEM" "$SYSTEM_ABOUT"
   step "about_screen" tap "$CX" "$CY"
   step "about_back" tap "$CX" "$CY"
   go_main
   step "main_after_about" true
 
   # 7 — Output test prompts + reject toast (mode OFF blocks the test)
-  open_menu_at "$MENU_MODE"
+  open_menu_at "$GROUP_DAILY" "$DAILY_MODE"
   step "mode_edit" tap "$CX" "$CY"
   step "mode_off_nudge" scroll_settle "-${SCROLL_STEP}"
   step "mode_off_save_prompt" tap "$EDIT_SAVE_X" "$EDIT_ROW_Y"
   step "mode_off_save_confirm" tap "$SETPOINT_CONFIRM_X" "$CONFIRM_ROW_Y"
-  menu_goto "$MENU_HEATER_TEST"
+  # Mode is Daily; heater test is System — hold back to groups, then open System.
+  step "menu_leave_daily" hold
+  menu_goto "$GROUP_SYSTEM"
+  enter_group
+  menu_goto "$SYSTEM_HEATER_TEST"
   step "heater_confirm_prompt" tap "$CX" "$CY"
   step "heater_reject_toast" tap "$CX" "$CY"
 
@@ -367,13 +398,12 @@ run_checklist() {
   snap "main_after_mode_restore"
 
   # 8 — Wi-Fi item toast
-  open_menu
-  menu_goto "$MENU_WIFI"
+  open_menu_at "$GROUP_SYSTEM" "$SYSTEM_WIFI"
   step "wifi_toast" tap "$CX" "$CY"
   go_main
   step "main_after_wifi" true
 
-  # 9 — Brightness baseline (idle dim is timing-based; see README)
+  # 9 — Brightness baseline (idle dim is timing-based; on-dial edit is System → Brightness)
   step "brightness_baseline" true
 
   restore_device_state

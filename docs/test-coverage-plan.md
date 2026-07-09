@@ -202,18 +202,19 @@ Display rendering has no host-side test net (`ui_draw.cpp` writes to the TFT fra
 Compile+link catches linkage and guard mistakes; this checklist is the behavioral net for
 `ui.cpp` / `ui_input.cpp` / `ui_draw.cpp`. Flash a build to the M5Stack Dial and confirm:
 
-1. **Main screen** — gauge ring, live temperature, setpoint confirm/cancel buttons, output
-   chips, page dots.
+1. **Main screen** — gauge ring (hold band matches setting), live temperature, setpoint
+   confirm/cancel buttons, output chips, page dots.
 2. **Encoder** — short press (menu / confirm), long press (back / cancel), setpoint nudge on
-   main, menu scroll in settings.
+   main, scroll within group list and group items.
 3. **Touch** — swipes between main and hydrometer pages; menu item taps register.
-4. **Quick menu** — profile and mode shortcuts, crash gradual prompt, confirm/cancel flow.
-5. **Settings menu** — open each item, edit a value, save, cancel, and reset paths behave.
+4. **Quick menu** — Profile / Mode / D-Rest shortcuts, crash gradual prompt, confirm/cancel.
+5. **Settings menu** — Daily / Control / System groups; open an item, edit, save, cancel,
+   reset; long-press backs group → settings root → main.
 6. **About / Help** — screens render without garbled or missing fonts.
 7. **Output tests** — heater and pump test prompts appear; rejection toast when blocked.
-8. **Wi-Fi menu item** — correct toast for network-disabled vs setup-AP-available builds.
-9. **Brightness** — idle dimming works; web brightness preview updates the panel if network
-   is enabled.
+8. **Wi-Fi menu item** — System group; correct toast for network-disabled vs setup-AP builds.
+9. **Brightness** — idle dimming; System → Brightness live preview on-dial; web brightness
+   preview still updates the panel if network is enabled.
 
 All nine pass → UI change is verified for this plan. Any failure is a regression until fixed or
 the checklist is updated deliberately.
