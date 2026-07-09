@@ -148,17 +148,15 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
       _dirty = true;
       return;
     }
-    // Attention "!" badge (right of centre) — toast the first active reason.
-    if (_screen == Screen::Main && x >= cx + 70 && x <= cx + 98 &&
-        y >= cy - 14 && y <= cy + 14) {
-      if (_lastAttention != 0) {
-        _toast = attentionReasonText(_lastAttention);
-        if (_toast.length() == 0) {
-          _toast = "Check status";
-        }
-        _toastUntilMs = nowMs + 2500;
-        _dirty = true;
+    // Attention "!" badge — only capture taps when the badge is actually drawn.
+    if (_screen == Screen::Main && _lastAttention != 0 &&
+        x >= cx + 70 && x <= cx + 98 && y >= cy - 14 && y <= cy + 14) {
+      _toast = attentionReasonText(_lastAttention);
+      if (_toast.length() == 0) {
+        _toast = "Check status";
       }
+      _toastUntilMs = nowMs + 2500;
+      _dirty = true;
       return;
     }
     openQuickMenu(settings);
