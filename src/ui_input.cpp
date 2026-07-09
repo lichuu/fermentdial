@@ -148,14 +148,32 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
       _dirty = true;
       return;
     }
-    // Attention "!" badge — only capture taps when the badge is actually drawn.
+    // Attention "!" badge — only when drawn; toast up to two reasons (ASCII sep).
     if (_screen == Screen::Main && _lastAttention != 0 &&
         x >= cx + 70 && x <= cx + 98 && y >= cy - 14 && y <= cy + 14) {
-      _toast = attentionReasonText(_lastAttention);
-      if (_toast.length() == 0) {
-        _toast = "Check status";
+      String msg = attentionReasonText(_lastAttention);
+      uint8_t rest = _lastAttention;
+      if (rest & ATTN_FAULT) {
+        rest = static_cast<uint8_t>(rest & ~ATTN_FAULT);
+      } else if (rest & ATTN_NOT_REACHING) {
+        rest = static_cast<uint8_t>(rest & ~ATTN_NOT_REACHING);
+      } else if (rest & ATTN_LONG_OUTPUT) {
+        rest = static_cast<uint8_t>(rest & ~ATTN_LONG_OUTPUT);
+      } else if (rest & ATTN_HYDRO_STALE) {
+        rest = static_cast<uint8_t>(rest & ~ATTN_HYDRO_STALE);
       }
-      _toastUntilMs = nowMs + 2500;
+      if (rest != 0) {
+        const char *second = attentionReasonText(rest);
+        if (second[0] != '\0') {
+          msg += " + ";
+          msg += second;
+        }
+      }
+      if (msg.length() == 0) {
+        msg = "Check status";
+      }
+      _toast = msg;
+      _toastUntilMs = nowMs + 2800;
       _dirty = true;
       return;
     }

@@ -1100,6 +1100,7 @@ void DisplayUI::drawHelp() {
       {"Swipe L/R", "Pages"},
       {"Press knob", "Settings"},
       {"Long press", "Back"},
+      {"Tap !", "Alerts"},
   };
   int16_t y = cy - 40;
   for (auto &g : gestures) {
