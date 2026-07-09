@@ -206,6 +206,31 @@ void NetworkManager::handleSettingsPost() {
     }
     changed = true;
   }
+  if (_server.hasArg("batchAction")) {
+    String action = _server.arg("batchAction");
+    action.trim();
+    action.toLowerCase();
+    if (action == "new") {
+      if (_server.hasArg("batchName")) {
+        _settings->batchName = _server.arg("batchName");
+      }
+      // Prefer wall clock when available; otherwise leave 0 (unknown).
+      const Timestamp ts = nowEpochOrUptime(millis());
+      _settings->batchStartedAt = ts.wallClock ? ts.seconds : 0;
+      if (_eventLog != nullptr) {
+        String msg = "Batch started";
+        if (_settings->batchName.length() > 0) {
+          msg += ": ";
+          msg += _settings->batchName;
+        }
+        _eventLog->add(EventType::Info, msg, ts);
+      }
+      changed = true;
+    } else if (action == "name" && _server.hasArg("batchName")) {
+      _settings->batchName = _server.arg("batchName");
+      changed = true;
+    }
+  }
   if (_server.hasArg("programAction")) {
     String action = _server.arg("programAction");
     action.trim();

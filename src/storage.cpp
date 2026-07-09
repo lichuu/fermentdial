@@ -107,6 +107,8 @@ bool SettingsStorage::load(Settings &settings) {
   // reinterpret the meaning or encoding of an existing key.
   settings.fermenterName =
       _prefs.getString("fermName", DEFAULT_FERMENTER_NAME);
+  settings.batchName = _prefs.getString("batchName", "");
+  settings.batchStartedAt = _prefs.getUInt("batchStart", 0);
   settings.activeProfile =
       _prefs.getUChar("profile", static_cast<uint8_t>(ProfileSlot::Ale));
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
@@ -195,6 +197,8 @@ void SettingsStorage::saveNow(const Settings &settings) {
   sanitizeSettings(copy);
 
   _prefs.putString("fermName", copy.fermenterName);
+  _prefs.putString("batchName", copy.batchName);
+  _prefs.putUInt("batchStart", copy.batchStartedAt);
   _prefs.putUChar("profile", copy.activeProfile);
   for (uint8_t i = 0; i < PROFILE_COUNT; ++i) {
     _prefs.putString(profileNameKey(i).c_str(), copy.profiles[i].name);
