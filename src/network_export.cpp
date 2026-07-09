@@ -2,6 +2,7 @@
 
 #include "history.h"
 #include "network_detail.h"
+#include "status_hint.h"
 #include "time_sync.h"
 
 #if FERM_ENABLE_NETWORK
@@ -392,6 +393,54 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   json += "\"fault\":\"" + String(faultText(_webStatus.faultCode)) + "\",";
   json += "\"heater\":" + String(_webStatus.heaterOn ? "true" : "false") + ",";
   json += "\"pump\":" + String(_webStatus.pumpOn ? "true" : "false") + ",";
+  {
+    ControlHintInput hintIn;
+    hintIn.settings = _settings;
+    hintIn.runtimeState = _webStatus.runtimeState;
+    hintIn.faultCode = _webStatus.faultCode;
+    hintIn.tempValid = _webStatus.tempValid;
+    hintIn.tempC = _webStatus.tempC;
+    hintIn.pumpOn = _webStatus.pumpOn;
+    hintIn.pumpOffElapsedMs = _webStatus.pumpOffElapsedMs;
+    hintIn.hydroSelected =
+        selected.selected;
+    hintIn.hydroStale = selected.selected && selected.stale;
+    hintIn.notReaching = _webStatus.notReaching;
+    hintIn.longOutput = _webStatus.longOutput;
+    const ControlHint hint = buildControlHint(hintIn);
+    json += "\"hint\":" + jsonString(String(hint.primary)) + ",";
+    json += "\"hintDetail\":" + jsonString(String(hint.detail)) + ",";
+    json += "\"attention\":[";
+    bool firstAttn = true;
+    if (hint.attention & ATTN_FAULT) {
+      json += jsonString(String("fault"));
+      firstAttn = false;
+    }
+    if (hint.attention & ATTN_HYDRO_STALE) {
+      if (!firstAttn) {
+        json += ",";
+      }
+      json += jsonString(String("hydro-stale"));
+      firstAttn = false;
+    }
+    if (hint.attention & ATTN_NOT_REACHING) {
+      if (!firstAttn) {
+        json += ",";
+      }
+      json += jsonString(String("not-reaching-target"));
+      firstAttn = false;
+    }
+    if (hint.attention & ATTN_LONG_OUTPUT) {
+      if (!firstAttn) {
+        json += ",";
+      }
+      json += jsonString(String("long-runtime"));
+    }
+    json += "],";
+    // Human-readable first reason (matches dial attentionReasonText).
+    json += "\"attentionText\":" +
+            jsonString(String(attentionReasonText(hint.attention))) + ",";
+  }
   json += "\"hydrometer\":{";
   json += "\"enabled\":" +
           String((_hydrometer != nullptr && _settings != nullptr &&

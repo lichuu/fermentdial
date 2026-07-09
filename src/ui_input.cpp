@@ -2,6 +2,7 @@
 
 #include "fonts/dejavu_sans_bold_44_vlw.h"
 #include "fonts/help_glyph.h"
+#include "status_hint.h"
 
 #include "ui_internal.h"
 
@@ -144,6 +145,17 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
     if (_screen == Screen::Main && x >= cx - 98 && x <= cx - 70 &&
         y >= cy - 14 && y <= cy + 14) {
       _screen = Screen::Help;
+      _dirty = true;
+      return;
+    }
+    // Attention "!" badge — only capture taps when the badge is actually drawn.
+    if (_screen == Screen::Main && _lastAttention != 0 &&
+        x >= cx + 70 && x <= cx + 98 && y >= cy - 14 && y <= cy + 14) {
+      _toast = attentionReasonText(_lastAttention);
+      if (_toast.length() == 0) {
+        _toast = "Check status";
+      }
+      _toastUntilMs = nowMs + 2500;
       _dirty = true;
       return;
     }

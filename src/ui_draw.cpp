@@ -2,6 +2,7 @@
 
 #include "fonts/dejavu_sans_bold_44_vlw.h"
 #include "fonts/help_glyph.h"
+#include "status_hint.h"
 
 #include "ui_internal.h"
 
@@ -135,58 +136,77 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   drawTemperatureUnit(cx + numHalf + 6, cy - 16, unitsF, COLOR_TEXT_MUTED, bg);
   _canvas.setTextDatum(middle_center);
 
-  // 6. state line
+  // 6. state line (+ optional why-detail when the controller is held off)
+  ControlHintInput hintIn;
+  hintIn.settings = &settings;
+  hintIn.runtimeState = model.runtimeState;
+  hintIn.faultCode = model.faultCode;
+  hintIn.tempValid = model.tempValid;
+  hintIn.tempC = model.tempC;
+  hintIn.pumpOn = model.pumpOn;
+  hintIn.pumpOffElapsedMs = model.pumpOffElapsedMs;
+  hintIn.outputTestActive = model.outputTestActive;
+  hintIn.outputTestKind = model.outputTestKind;
+  hintIn.hydroSelected = model.hydrometer.selected;
+  hintIn.hydroStale = model.hydrometer.selected && model.hydrometer.stale;
+  hintIn.notReaching = model.notReaching;
+  hintIn.longOutput = model.longOutput;
+  const ControlHint hint = buildControlHint(hintIn);
+  _lastAttention = hint.attention;
+
   String stateLine;
   uint16_t stateCol;
   if (editing) {
     stateLine = "SET TARGET";
     stateCol = COLOR_GOLD;
   } else if (fault) {
-    stateLine = faultText(model.faultCode);
+    stateLine = hint.primary;
     stateCol = COLOR_FAULT;
   } else if (model.outputTestActive) {
-    stateLine = model.outputTestKind == OutputTestKind::Heater ? "TEST HEATER"
-                                                               : "TEST PUMP";
+    stateLine = hint.primary;
     stateCol = COLOR_WARN;
   } else if (model.runtimeState == RuntimeState::Idle) {
-    stateLine = "IN RANGE";  // friendlier than the canonical "IDLE"
+    stateLine = "IN RANGE";
     stateCol = accent;
   } else {
-    stateLine = profileRuntimeText(settings, model.runtimeState);
+    stateLine = hint.primary;
     stateCol = accent;
   }
   _canvas.setTextColor(stateCol, bg);
   // Anchor rows: temperature centre (cy - 6), hydrometer line (cy + 46).
-  // The large temperature glyphs extend below their anchor, so use the visual
-  // bottom of that block when centring the state line above the SG row.
-  constexpr int16_t kTempRowY = -6;
   constexpr int16_t kHydroRowY = 46;
   constexpr int16_t kTempVisualBottomY = 12;
   const int16_t stateY = cy + (kTempVisualBottomY + kHydroRowY) / 2;
   _canvas.drawString(stateLine, cx, stateY, &fonts::FreeSansBold12pt7b);
 
-  String hydroLine = "";
-  if (model.hydrometer.selected && model.hydrometer.valid) {
-    hydroLine = "SG " + String(model.hydrometer.gravity, 3);
-    hydroLine += " | ";
+  // Prefer why-detail over the SG line when it explains idle holdoff; otherwise
+  // show hydrometer status as before.
+  String subLine = "";
+  if (!editing && hint.detail[0] != '\0' &&
+      (model.runtimeState == RuntimeState::Idle ||
+       settings.programActive || settings.gradualCrashEnabled)) {
+    subLine = hint.detail;
+  } else if (model.hydrometer.selected && model.hydrometer.valid) {
+    subLine = "SG " + String(model.hydrometer.gravity, 3);
+    subLine += " | ";
     if (model.hydrometer.stale) {
-      hydroLine += "stale";
+      subLine += "stale";
     } else {
       const uint32_t ageS = model.hydrometer.lastSeenMs == 0
                                 ? 0
                                 : (nowMs - model.hydrometer.lastSeenMs) / 1000UL;
       if (ageS < 60) {
-        hydroLine += String(ageS) + "s";
+        subLine += String(ageS) + "s";
       } else {
-        hydroLine += String(ageS / 60UL) + "m";
+        subLine += String(ageS / 60UL) + "m";
       }
     }
   } else if (model.hydrometer.selected) {
-    hydroLine = "Hydrometer waiting";
+    subLine = "Hydrometer waiting";
   }
-  if (hydroLine.length() > 0 && !editing) {
+  if (subLine.length() > 0 && !editing) {
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString(hydroLine, cx, cy + 46, &fonts::DejaVu12);
+    _canvas.drawString(subLine, cx, cy + 46, &fonts::DejaVu12);
   }
 
   // 7. fermenter name + output chips in the bottom gap (hidden while the
@@ -197,12 +217,21 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     drawOutputChips(model);
   }
 
-  // Tappable help badge (left of centre, clear of the centred text stack).
-  // DejaVu Sans Bold "?" blitted from a pre-rendered alpha mask.
+  // Help badge (left) and attention badge (right) — clear of the text stack.
   if (!editing) {
     _canvas.fillSmoothCircle(cx - 84, cy, 13, COLOR_PANEL);
     _canvas.drawCircle(cx - 84, cy, 13, COLOR_TEXT_MUTED);
     drawHelpIcon(cx - 84, cy, COLOR_TEXT_MUTED, COLOR_PANEL);
+
+    if (hint.attention != 0) {
+      const uint16_t attnCol =
+          (hint.attention & ATTN_FAULT) ? COLOR_FAULT : COLOR_WARN;
+      _canvas.fillSmoothCircle(cx + 84, cy, 13, COLOR_PANEL);
+      _canvas.drawCircle(cx + 84, cy, 13, attnCol);
+      _canvas.setTextDatum(middle_center);
+      _canvas.setTextColor(attnCol, COLOR_PANEL);
+      _canvas.drawString("!", cx + 84, cy, &fonts::FreeSansBold12pt7b);
+    }
   } else {
     // Confirm/cancel row for the previewed setpoint (rects match
     // confirmRowLeftHit / confirmRowRightHit). Press = Set, swipe/timeout = no.
@@ -704,13 +733,18 @@ void DisplayUI::drawOutputChips(const UiModel &model) {
     } else {
       drawSnowflake(x, y, 8, glyph);
     }
+    // Letter under the chip (icons alone are ambiguous for first-time guests).
+    _canvas.setTextDatum(middle_center);
+    _canvas.setTextColor(on[i] ? col[i] : COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString(i == 0 ? "H" : "C", x, y + 18, &fonts::DejaVu12);
   }
   if (model.demoSensor) {
-    // Right-of-centre badge (mirrors the help icon) so it clears the lowered
-    // chips and the bottom page dots instead of stacking under the chips.
+    // Above the right-side attention column (cx+84, mid height) so "!" can share
+    // the same radial slot when attention is active.
     _canvas.setTextDatum(middle_center);
     _canvas.setTextColor(COLOR_GOLD, COLOR_BG);
-    _canvas.drawString("DEMO", cx + 84, _canvas.height() / 2, &fonts::DejaVu12);
+    _canvas.drawString("DEMO", cx + 84, _canvas.height() / 2 - 28,
+                       &fonts::DejaVu12);
   }
 }
 
