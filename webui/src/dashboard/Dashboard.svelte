@@ -14,18 +14,44 @@
   } from '../validation.js';
 
   const deg = String.fromCharCode(176);
+  const HISTORY_PREF_KEY = 'fermentdial.historySource';
 
   let s = $state(null);
   let spark = $state([]);
   let graphSamples = $state([]);
   let graphSource = $state('live');
   let graphSourceLabel = $state('Live');
+  /** User preference: 'auto' | 'live' | 'csv'. auto = Full when CSV has data. */
+  let historyPref = $state(
+    typeof localStorage !== 'undefined'
+      ? localStorage.getItem(HISTORY_PREF_KEY) || 'auto'
+      : 'auto',
+  );
+  let liveGraphSamples = $state([]);
+  let csvGraphSamples = $state([]);
+  let liveWindowText = $state('Live');
+
+  let offline = $state(false);
+  let failStreak = $state(0);
+  let banner = $state('');
+  let bannerTimer = null;
 
   let profileSelectEl;
   let targetInputEl;
   let dRestTargetInputEl;
   let dRestHoursInputEl;
   let dRestReturnSelectEl;
+
+  function showBanner(msg, ms = 3500) {
+    banner = msg;
+    clearTimeout(bannerTimer);
+    if (ms > 0) {
+      bannerTimer = setTimeout(() => {
+        banner = '';
+        bannerTimer = null;
+      }, ms);
+    }
+  }
 
   function remainingText(sec) {
     sec = Math.max(0, sec || 0);
@@ -35,8 +61,17 @@
   }
 
   async function post(fields) {
-    await postSettings(fields);
-    await tick();
+    if (offline) {
+      showBanner("Can't reach controller");
+      return;
+    }
+    try {
+      await postSettings(fields);
+      await tick();
+    } catch (e) {
+      showBanner('Save failed — check connection');
+      throw e;
+    }
   }
 
   function tempLimits() {
@@ -196,55 +231,88 @@
   }
 
   async function tick() {
-    const next = await getStatus();
-    s = next;
-    document.body.dataset.state = next.state.toLowerCase();
-    document.title = next.fermenterName + ' - FermentDial';
+    try {
+      const next = await getStatus();
+      s = next;
+      failStreak = 0;
+      offline = false;
+      document.body.dataset.state = next.state.toLowerCase();
+      document.title = next.fermenterName + ' - FermentDial';
 
-    // Mode may go OFF from dial/API; drop a stale arm state.
-    if (next.mode === 'OFF' && offArmed) {
-      disarmOff();
-    }
+      // Mode may go OFF from dial/API; drop a stale arm state.
+      if (next.mode === 'OFF' && offArmed) {
+        disarmOff();
+      }
 
-    if (document.activeElement !== profileSelectEl) {
-      profileSelectEl.value = String(next.activeProfile);
-    }
-    if (document.activeElement !== targetInputEl) {
-      targetInputEl.value = next.target.toFixed(1);
-    }
+      if (profileSelectEl && document.activeElement !== profileSelectEl) {
+        profileSelectEl.value = String(next.activeProfile);
+      }
+      if (targetInputEl && document.activeElement !== targetInputEl) {
+        targetInputEl.value = next.target.toFixed(1);
+      }
 
-    const r = next.diacetylRest || {};
-    if (document.activeElement !== dRestTargetInputEl) {
-      dRestTargetInputEl.value = (r.target || 70).toFixed(1);
+      const r = next.diacetylRest || {};
+      if (dRestTargetInputEl && document.activeElement !== dRestTargetInputEl) {
+        dRestTargetInputEl.value = (r.target || 70).toFixed(1);
+      }
+      if (dRestHoursInputEl && document.activeElement !== dRestHoursInputEl) {
+        dRestHoursInputEl.value = String(Math.round(r.durationHours || 48));
+      }
+      if (dRestReturnSelectEl && document.activeElement !== dRestReturnSelectEl) {
+        dRestReturnSelectEl.value = String(r.returnProfile || 0);
+      }
+    } catch (e) {
+      failStreak += 1;
+      if (failStreak >= 2) {
+        offline = true;
+      }
     }
-    if (document.activeElement !== dRestHoursInputEl) {
-      dRestHoursInputEl.value = String(Math.round(r.durationHours || 48));
+  }
+
+  function applyHistoryPreference() {
+    const hasCsv =
+      csvGraphSamples.length >= 1 && hasGraphSeries(csvGraphSamples);
+    let use = historyPref;
+    if (use === 'auto') {
+      use = hasCsv ? 'csv' : 'live';
     }
-    if (document.activeElement !== dRestReturnSelectEl) {
-      dRestReturnSelectEl.value = String(r.returnProfile || 0);
+    if (use === 'csv' && hasCsv) {
+      graphSamples = csvGraphSamples;
+      graphSource = 'csv';
+      graphSourceLabel = 'Fermentation history';
+    } else {
+      graphSamples = liveGraphSamples;
+      graphSource = 'live';
+      graphSourceLabel = liveWindowText;
     }
+  }
+
+  function setHistoryPref(pref) {
+    historyPref = pref;
+    try {
+      localStorage.setItem(HISTORY_PREF_KEY, pref);
+    } catch (e) {
+      /* private mode */
+    }
+    applyHistoryPreference();
   }
 
   async function loadHistory() {
     try {
       const live = await getHistory();
       spark = live.tempsC || [];
-      graphSamples = liveSamples(live, s?.clock);
-      graphSource = 'live';
-      graphSourceLabel = liveWindowLabel(live);
+      liveGraphSamples = liveSamples(live, s?.clock);
+      liveWindowText = liveWindowLabel(live);
 
       try {
         const persisted = csvSamples(await getHistoryCsv());
-        if (persisted.length >= 1 && hasGraphSeries(persisted)) {
-          graphSamples = persisted;
-          graphSource = 'csv';
-          graphSourceLabel = 'Fermentation history';
-        }
+        csvGraphSamples = persisted;
       } catch (e) {
-        // live history remains available until CSV has samples
+        csvGraphSamples = [];
       }
+      applyHistoryPreference();
     } catch (e) {
-      // ignore transient fetch failures
+      // keep last chart on transient failure
     }
   }
 
@@ -264,6 +332,7 @@
       clearInterval(tickTimer);
       clearInterval(historyTimer);
       clearTimeout(offArmTimer);
+      clearTimeout(bannerTimer);
       offArmTimer = null;
     };
   });
@@ -272,6 +341,16 @@
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
   const prog = $derived(s?.program || {});
+  const heroSub = $derived.by(() => {
+    if (!s) return 'Waiting for controller status';
+    if (s.hintDetail) return s.hintDetail;
+    if (!s.tempValid) return 'Sensor fault - outputs forced off';
+    if (rest.active) return 'D-rest ' + remainingText(rest.remainingSeconds) + ' remaining';
+    if (s.attention?.length) {
+      return s.attention.join(' · ');
+    }
+    return formatMode(s.mode) + ' mode';
+  });
   const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
   const PROG_EXIT_TYPES = [
     'time',
@@ -316,6 +395,12 @@
 
 <main>
   <div class="shell">
+    {#if offline}
+      <div class="offlineBanner" role="alert">Can't reach controller — controls paused</div>
+    {:else if banner}
+      <div class="offlineBanner offlineBanner-info" role="status">{banner}</div>
+    {/if}
+
     <div class="top">
       <div>
         <div class="brand">Ferment<span>Dial</span></div>
@@ -323,6 +408,9 @@
       </div>
       <div class="statusbar">
         <span class="pill">{s ? (s.wifiConnected ? s.ip : s.wifiStatus) : 'Wi-Fi'}</span>
+        {#if s?.attention?.length}
+          <span class="pill attention">{s.attention[0]}</span>
+        {/if}
         <span class="pill demo" hidden={!s?.demo}>DEMO SENSOR</span>
         <Menu page="dashboard" />
       </div>
@@ -342,18 +430,8 @@
             <span class="temp">{s && s.tempValid ? s.temperature.toFixed(1) : '--.-'}</span>
             <span class="unit">{unit || 'F'}</span>
           </div>
-          <div class="state">{s ? s.state : 'Loading'}</div>
-          <div class="sub">
-            {#if !s}
-              Waiting for controller status
-            {:else if !s.tempValid}
-              Sensor fault - outputs forced off
-            {:else if rest.active}
-              D-rest {remainingText(rest.remainingSeconds)} remaining
-            {:else}
-              {formatMode(s.mode)} mode
-            {/if}
-          </div>
+          <div class="state">{s ? s.hint || s.state : 'Loading'}</div>
+          <div class="sub">{heroSub}</div>
         </div>
         <div class="outputs">
           <div class="out heat" class:on={s?.heater}>{s?.heater ? 'HEATER ON' : 'HEATER OFF'}</div>
@@ -363,10 +441,10 @@
     </section>
 
     <section class="grid">
-      <div class="card"><div class="label">Fermenter</div><div class="value">{s ? s.fermenterName : 'Fermenter'}</div></div>
       <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ale'}</div></div>
-      <div class="card"><div class="label">Setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
+      <div class="card"><div class="label">Live setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
       <div class="card"><div class="label">Mode</div><div class="value">{formatMode(s?.mode)}</div></div>
+      <div class="card"><div class="label">Why</div><div class="value" style="font-size:15px">{s?.hintDetail || s?.hint || '—'}</div></div>
     </section>
 
     <section class="controls">
@@ -377,36 +455,39 @@
             class="danger"
             class:active={s?.mode === 'OFF'}
             class:armed={offArmed}
+            disabled={offline}
             onclick={setModeOff}
           >{offArmed ? 'TAP TO CONFIRM' : 'OFF'}</button>
-          <button class:active={s?.mode === 'AUTO'} onclick={() => setMode('AUTO')}>AUTO</button>
-          <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
-          <button class="cool" class:active={s?.mode === 'COOL_ONLY'} onclick={() => setMode('COOL_ONLY')}>COOL</button>
+          <button class:active={s?.mode === 'AUTO'} disabled={offline} onclick={() => setMode('AUTO')}>AUTO</button>
+          <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} disabled={offline} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
+          <button class="cool" class:active={s?.mode === 'COOL_ONLY'} disabled={offline} onclick={() => setMode('COOL_ONLY')}>COOL</button>
         </div>
       </div>
       <div class="panel">
         <h2>Profile</h2>
-        <select bind:this={profileSelectEl} onchange={selectProfile}>
+        <select bind:this={profileSelectEl} onchange={selectProfile} disabled={offline}>
           {#each s?.profiles || [] as p}
             <option value={p.index}>{p.name}</option>
           {/each}
         </select>
-        <div class="fieldLabel" style="margin-top:12px">Setpoint</div>
+        <div class="fieldLabel" style="margin-top:12px">Live setpoint (this batch)</div>
         <div class="targetCtl" style="margin-top:6px">
-          <button onclick={() => nudge(-0.1)}>-</button>
+          <button disabled={offline} onclick={() => nudge(-0.1)}>-</button>
           <input
             bind:this={targetInputEl}
             inputmode="decimal"
             step="0.1"
+            disabled={offline}
             oninput={onTargetInput}
             onchange={applyTarget}
             onblur={applyTarget}
           />
-          <button onclick={() => nudge(0.1)}>+</button>
+          <button disabled={offline} onclick={() => nudge(0.1)}>+</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">
-          Pick a profile to recall its preset, or nudge the live setpoint. Edit presets in
-          <a href="/settings#profiles">Settings</a>.
+          Profile recall loads a preset into the live setpoint. Built-in profile names/targets
+          are fixed; rename Custom slots in
+          <a href="/settings#profiles">Settings → Profiles</a>.
         </p>
       </div>
       <div class="panel">
@@ -480,9 +561,9 @@
       </div>
     </section>
 
-    <section class="grid" hidden={!hydro.valid}>
+    <section class="grid" hidden={!hydro.selected}>
       <div class="card"><div class="label">Hydrometer</div><div class="value">{hydro.label || 'Hydrometer'}</div></div>
-      <div class="card"><div class="label">Gravity</div><div class="value">{hydro.valid ? 'SG ' + hydro.gravity.toFixed(3) : '--.--'}</div></div>
+      <div class="card"><div class="label">Gravity</div><div class="value">{hydro.valid ? 'SG ' + hydro.gravity.toFixed(3) : hydro.stale ? 'stale' : 'waiting'}</div></div>
       <div class="card"><div class="label">Temp</div><div class="value">{hydro.valid ? hydro.temperature.toFixed(1) + (unit || '') : '--.-'}</div></div>
       <div class="card"><div class="label">ABV</div><div class="value">{hydro.valid && hydro.abv != null ? hydro.abv.toFixed(1) + '%' : '--.-%'}</div></div>
     </section>
@@ -490,6 +571,19 @@
     <section class="panel historyPanel">
       <div class="panelHead">
         <h2>Fermentation History</h2>
+        <div class="historyToggle" role="group" aria-label="History source">
+          <button
+            type="button"
+            class:active={graphSource === 'live'}
+            onclick={() => setHistoryPref('live')}
+          >Live</button>
+          <button
+            type="button"
+            class:active={graphSource === 'csv'}
+            disabled={!(csvGraphSamples.length >= 1 && hasGraphSeries(csvGraphSamples))}
+            onclick={() => setHistoryPref('csv')}
+          >Full</button>
+        </div>
         <span>{graphSourceLabel}</span>
         {#if s?.demo}
           <button type="button" class="btnCompact danger" onclick={resetFerment}>

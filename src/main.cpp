@@ -192,9 +192,12 @@ void loop() {
   model.faultCode = controller.faultCode();
   model.heaterOn = controller.heaterOn();
   model.pumpOn = controller.pumpOn();
+  model.pumpOffElapsedMs = controller.pumpOffElapsedMs(nowMs);
   model.outputTestActive = controller.outputTestActive();
   model.outputTestKind = controller.outputTestKind();
   model.demoSensor = temperatureSensor.demoMode();
+  model.notReaching = alertNotReachingActive();
+  model.longOutput = alertLongRuntimeActive();
   model.hydrometer = selectedHydrometer;
   model.hydrometerDeviceCount = hydrometer.deviceCount();
   for (uint8_t i = 0; i < model.hydrometerDeviceCount; i++) {
