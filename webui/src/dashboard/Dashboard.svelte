@@ -391,10 +391,14 @@
       return;
     }
     try {
-      await postSettings({
-        batchAction: 'new',
-        batchName: batchNameInput || '',
-      });
+      // Omit batchName when the field is empty so the previous name is kept
+      // (input only shows it as placeholder — empty must not clear).
+      const fields = { batchAction: 'new' };
+      const name = (batchNameInput || '').trim();
+      if (name) {
+        fields.batchName = name;
+      }
+      await postSettings(fields);
       await tick();
       showBanner('Batch started');
     } catch (e) {

@@ -242,6 +242,8 @@ String NetworkManager::selfCheckJson(uint32_t nowMs) const {
   return json;
 }
 
+// Public unauthenticated dashboard payload — also nested under /api/export.json.
+// Keep free of secrets (no Wi-Fi password, MQTT token, Brewfather id, etc.).
 String NetworkManager::statusJson(uint32_t nowMs) const {
   const bool f = _webStatus.unitsFahrenheit;
   const float temperature = toDisplayTemp(_webStatus.tempC, f);
@@ -522,8 +524,7 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
 }
 
 String NetworkManager::exportJson(uint32_t nowMs) const {
-  // Reuse live status and strip nothing extra for now; status already omits
-  // Wi-Fi passwords and integration secrets.
+  // Wraps statusJson (must stay secret-free — see comment on statusJson).
   String json = "{";
   json += "\"export\":\"fermentdial-status\",";
   json += "\"firmwareName\":" + jsonString(String(FIRMWARE_NAME)) + ",";

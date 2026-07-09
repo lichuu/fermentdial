@@ -212,7 +212,12 @@ void NetworkManager::handleSettingsPost() {
     action.toLowerCase();
     if (action == "new") {
       if (_server.hasArg("batchName")) {
-        _settings->batchName = _server.arg("batchName");
+        String name = _server.arg("batchName");
+        name.trim();
+        if (name.length() > MAX_FERMENTER_NAME_LENGTH) {
+          name = name.substring(0, MAX_FERMENTER_NAME_LENGTH);
+        }
+        _settings->batchName = name;
       }
       // Prefer wall clock when available; otherwise leave 0 (unknown).
       const Timestamp ts = nowEpochOrUptime(millis());
@@ -227,7 +232,12 @@ void NetworkManager::handleSettingsPost() {
       }
       changed = true;
     } else if (action == "name" && _server.hasArg("batchName")) {
-      _settings->batchName = _server.arg("batchName");
+      String name = _server.arg("batchName");
+      name.trim();
+      if (name.length() > MAX_FERMENTER_NAME_LENGTH) {
+        name = name.substring(0, MAX_FERMENTER_NAME_LENGTH);
+      }
+      _settings->batchName = name;
       changed = true;
     }
   }
