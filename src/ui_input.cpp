@@ -373,6 +373,15 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
         _pendingGradualCrash = dy < 0;
         _dirty = true;
       }
+    } else if (_quickConfirmKind == QuickConfirmKind::ProgramControl) {
+      // Mirror CrashGradual: swipe picks the action, then commits.
+      if (horizontal) {
+        _pendingProgramSkip = dx < 0;  // left = Skip, right = Stop
+        confirmQuickAction(settings);
+      } else {
+        _pendingProgramSkip = dy < 0;
+        _dirty = true;
+      }
     } else if (dx > 0) {
       confirmQuickAction(settings);
     } else {
