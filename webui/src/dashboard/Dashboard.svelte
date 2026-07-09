@@ -69,9 +69,19 @@
       await postSettings(fields);
       await tick();
     } catch (e) {
+      // Banner is the user-facing signal; do not rethrow (avoids unhandled rejection).
       showBanner('Save failed — check connection');
-      throw e;
     }
+  }
+
+  const ATTN_LABELS = {
+    fault: 'Sensor or interlock fault',
+    'hydro-stale': 'Hydrometer stale',
+    'not-reaching-target': 'Temp off target too long',
+    'long-runtime': 'Heater/pump on over 4h',
+  };
+  function attentionLabel(slug) {
+    return ATTN_LABELS[slug] || slug;
   }
 
   function tempLimits() {
@@ -346,8 +356,9 @@
     if (s.hintDetail) return s.hintDetail;
     if (!s.tempValid) return 'Sensor fault - outputs forced off';
     if (rest.active) return 'D-rest ' + remainingText(rest.remainingSeconds) + ' remaining';
+    if (s.attentionText) return s.attentionText;
     if (s.attention?.length) {
-      return s.attention.join(' · ');
+      return s.attention.map(attentionLabel).join(' · ');
     }
     return formatMode(s.mode) + ' mode';
   });
@@ -409,7 +420,7 @@
       <div class="statusbar">
         <span class="pill">{s ? (s.wifiConnected ? s.ip : s.wifiStatus) : 'Wi-Fi'}</span>
         {#if s?.attention?.length}
-          <span class="pill attention">{s.attention[0]}</span>
+          <span class="pill attention">{s.attentionText || attentionLabel(s.attention[0])}</span>
         {/if}
         <span class="pill demo" hidden={!s?.demo}>DEMO SENSOR</span>
         <Menu page="dashboard" />

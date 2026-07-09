@@ -400,7 +400,6 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
     hintIn.faultCode = _webStatus.faultCode;
     hintIn.tempValid = _webStatus.tempValid;
     hintIn.tempC = _webStatus.tempC;
-    hintIn.heaterOn = _webStatus.heaterOn;
     hintIn.pumpOn = _webStatus.pumpOn;
     hintIn.pumpOffElapsedMs = _webStatus.pumpOffElapsedMs;
     hintIn.hydroSelected =
@@ -438,6 +437,9 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
       json += jsonString(String("long-runtime"));
     }
     json += "],";
+    // Human-readable first reason (matches dial attentionReasonText).
+    json += "\"attentionText\":" +
+            jsonString(String(attentionReasonText(hint.attention))) + ",";
   }
   json += "\"hydrometer\":{";
   json += "\"enabled\":" +

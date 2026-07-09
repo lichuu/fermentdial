@@ -22,7 +22,6 @@ struct ControlHintInput {
   FaultCode faultCode = FaultCode::None;
   bool tempValid = false;
   float tempC = NAN;
-  bool heaterOn = false;
   bool pumpOn = false;
   uint32_t pumpOffElapsedMs = 0;
   bool outputTestActive = false;
