@@ -7,7 +7,7 @@
     filterDecimalInput,
     showDecimalInvalid,
     offsetLimits,
-    targetLimits,
+    calibrationRefLimits,
   } from '../../validation.js';
 
   let { status, refresh } = $props();
@@ -36,7 +36,7 @@
 
   const bandLimits = $derived(deltaLimits(status.unit));
   const sensorOffsetLimits = $derived(offsetLimits(status.unit));
-  const refLimits = $derived(targetLimits(status.unit));
+  const refLimits = $derived(calibrationRefLimits(status.unit));
   const deg = String.fromCharCode(176);
 
   async function saveControl() {
@@ -71,10 +71,26 @@
       return;
     }
     calStatus = 'Calibrating...';
+    const wanted = parseFloat(calRef);
     try {
       await postSettings({ calibrateRef: calRef });
       await refresh();
-      calStatus = 'Offset set so reading matches ' + calRef + deg + status.unit + '.';
+      const live = status.tempValid ? status.temperature : NaN;
+      if (Number.isFinite(live) && Number.isFinite(wanted) && Math.abs(live - wanted) > 0.15) {
+        calStatus =
+          'Offset applied (clamped). Live is ' +
+          live.toFixed(1) +
+          deg +
+          status.unit +
+          ', not ' +
+          wanted.toFixed(1) +
+          deg +
+          status.unit +
+          '.';
+      } else {
+        calStatus =
+          'Offset set so reading matches ' + calRef + deg + status.unit + '.';
+      }
     } catch (e) {
       calStatus = 'Calibration failed.';
     }
