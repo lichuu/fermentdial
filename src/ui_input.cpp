@@ -210,12 +210,33 @@ void DisplayUI::handleTouchClick(int16_t x, int16_t y, uint32_t nowMs,
       }
       return;
     }
+    if (_quickConfirmKind == QuickConfirmKind::ProgramControl) {
+      if (confirmRowLeftHit(x, y)) {
+        _pendingProgramSkip = true;
+        confirmQuickAction(settings);
+      } else if (confirmRowRightHit(x, y)) {
+        _pendingProgramSkip = false;
+        confirmQuickAction(settings);
+      }
+      return;
+    }
     if (confirmRowLeftHit(x, y)) {
       cancelQuickFlow();
       return;
     }
     if (confirmRowRightHit(x, y)) {
       confirmQuickAction(settings);
+    }
+    return;
+  }
+
+  if (_screen == Screen::ConfirmWifi) {
+    if (confirmRowLeftHit(x, y)) {
+      _screen = Screen::Menu;
+      resetSettingsEncoderFilters();
+      _dirty = true;
+    } else if (confirmRowRightHit(x, y)) {
+      confirmWifiSetup();
     }
     return;
   }
@@ -318,7 +339,7 @@ void DisplayUI::handleSwipe(uint32_t nowMs, Settings &settings, int16_t dx,
 
   if (_screen == Screen::QuickMenu) {
     if (horizontal) {
-      moveQuickMenu(dx > 0 ? 1 : -1);
+      moveQuickMenu(dx > 0 ? 1 : -1, settings);
     }
     _dirty = true;
     return;
@@ -419,7 +440,7 @@ void DisplayUI::scrollQuickByTouch(int16_t deltaY, const Settings &settings) {
   _touchMenuScrollAccumulator -= steps * TOUCH_MENU_ITEM_PX;
 
   if (_screen == Screen::QuickMenu) {
-    moveQuickMenu(steps);
+    moveQuickMenu(steps, settings);
   } else {
     moveQuickSelection(steps, settings);
   }
@@ -462,7 +483,7 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
     if (filteredDelta == 0) {
       return;
     }
-    moveQuickMenu(filteredDelta);
+    moveQuickMenu(filteredDelta, settings);
   } else if (_screen == Screen::QuickProfile || _screen == Screen::QuickMode) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
@@ -478,6 +499,29 @@ void DisplayUI::handleEncoder(int32_t delta, Settings &settings) {
       return;
     }
     _pendingGradualCrash = filteredDelta > 0;
+  } else if (_screen == Screen::QuickConfirm &&
+             _quickConfirmKind == QuickConfirmKind::ProgramControl) {
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _quickEncoderAccumulator, MENU_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    _pendingProgramSkip = filteredDelta < 0;
+  } else if (_screen == Screen::QuickConfirm &&
+             _pendingQuickAction == QuickAction::DRest &&
+             !settings.diacetylRestActive) {
+    int32_t filteredDelta = filteredSettingsDelta(
+        delta, _quickEncoderAccumulator, EDIT_ENCODER_DIVISOR);
+    if (filteredDelta == 0) {
+      return;
+    }
+    const int32_t steps = filteredDelta > 0 ? 1 : -1;
+    const int32_t next =
+        static_cast<int32_t>(_pendingDrestDurationSeconds) +
+        steps * static_cast<int32_t>(DIACETYL_REST_DURATION_STEP_SECONDS);
+    _pendingDrestDurationSeconds = clampU32(
+        static_cast<uint32_t>(next < 0 ? 0 : next),
+        MIN_DIACETYL_REST_DURATION_SECONDS, MAX_DIACETYL_REST_DURATION_SECONDS);
   } else if (_screen == Screen::Menu) {
     int32_t filteredDelta = filteredSettingsDelta(
         delta, _menuEncoderAccumulator, MENU_ENCODER_DIVISOR);
@@ -538,9 +582,22 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
       _dirty = true;
       return;
     } else if (_menuIndex == MENU_WIFI) {
-      _wifiSetupRequested = true;
-      _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
+#if FERM_ENABLE_NETWORK
+      // Already on setup AP, or no saved network: start/reassert without confirm.
+      if (!_lastNetwork.wifiEnabled) {
+        _toast = "Wi-Fi disabled";
+        _toastUntilMs = nowMs + 2500;
+      } else if (_lastNetwork.status == "Setup AP" ||
+                 !_lastNetwork.wifiConfigured) {
+        confirmWifiSetup();
+      } else {
+        _screen = Screen::ConfirmWifi;
+        resetSettingsEncoderFilters();
+      }
+#else
+      _toast = "Wi-Fi disabled";
       _toastUntilMs = nowMs + 3500;
+#endif
     } else if (_menuIndex == MENU_MQTT) {
       _toast = FERM_ENABLE_NETWORK ? "Set up MQTT in web UI" : "Network disabled";
       _toastUntilMs = nowMs + 2500;
@@ -563,6 +620,9 @@ void DisplayUI::handleShortPress(uint32_t nowMs, Settings &settings) {
     confirmEditAction(settings);
   } else if (_screen == Screen::ConfirmTest) {
     confirmOutputTest();
+    return;
+  } else if (_screen == Screen::ConfirmWifi) {
+    confirmWifiSetup();
     return;
   } else if (_screen == Screen::About) {
     _screen = Screen::Menu;
@@ -707,22 +767,28 @@ bool DisplayUI::confirmRowRightHit(int16_t x, int16_t y) const {
 void DisplayUI::openQuickMenu(const Settings &settings) {
   _pendingProfile = activeProfileIndex(settings);
   _pendingMode = settings.mode;
+  _quickIndex = 0;
   _screen = Screen::QuickMenu;
   resetSettingsEncoderFilters();
   _dirty = true;
 }
 
-void DisplayUI::moveQuickMenu(int32_t delta) {
+void DisplayUI::moveQuickMenu(int32_t delta, const Settings &settings) {
+  const uint8_t count = quickActionCount(settings);
   int32_t next = static_cast<int32_t>(_quickIndex) + delta;
   while (next < 0) {
-    next += QUICK_ACTION_COUNT;
+    next += count;
   }
-  _quickIndex = static_cast<uint8_t>(next % QUICK_ACTION_COUNT);
+  _quickIndex = static_cast<uint8_t>(next % count);
   _dirty = true;
 }
 
 void DisplayUI::selectQuickAction(const Settings &settings) {
-  const QuickAction action = static_cast<QuickAction>(_quickIndex % QUICK_ACTION_COUNT);
+  const uint8_t count = quickActionCount(settings);
+  if (_quickIndex >= count) {
+    _quickIndex = 0;
+  }
+  const QuickAction action = quickActionAt(_quickIndex, settings);
   if (action == QuickAction::Profile) {
     _pendingQuickAction = QuickAction::Profile;
     _pendingProfile = activeProfileIndex(settings);
@@ -731,9 +797,15 @@ void DisplayUI::selectQuickAction(const Settings &settings) {
     _pendingQuickAction = QuickAction::Mode;
     _pendingMode = settings.mode;
     _screen = Screen::QuickMode;
+  } else if (action == QuickAction::Program) {
+    _pendingQuickAction = QuickAction::Program;
+    _pendingProgramSkip = true;
+    _quickConfirmKind = QuickConfirmKind::ProgramControl;
+    _screen = Screen::QuickConfirm;
   } else {
-    // D-Rest: skip a picker — confirm start/finish with the configured duration.
+    // D-Rest: confirm start/finish; start path allows duration nudge on confirm.
     _pendingQuickAction = QuickAction::DRest;
+    _pendingDrestDurationSeconds = settings.diacetylRestDurationSeconds;
     _quickConfirmKind = QuickConfirmKind::Apply;
     _screen = Screen::QuickConfirm;
   }
@@ -790,6 +862,15 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
     applyCrashProfile(settings, _pendingGradualCrash);
     _quickConfirmKind = QuickConfirmKind::Apply;
     _toast = _pendingGradualCrash ? "Crash: gradual" : "Crash: direct";
+  } else if (_quickConfirmKind == QuickConfirmKind::ProgramControl) {
+    _quickConfirmKind = QuickConfirmKind::Apply;
+    if (_pendingProgramSkip) {
+      settings.programManualAdvance = true;
+      _toast = "Skip step";
+    } else {
+      stopProgram(settings);
+      _toast = "Program stopped";
+    }
   } else if (_pendingQuickAction == QuickAction::Profile) {
     activateProfile(settings, _pendingProfile);
     _toast = String("Profile: ") + activeProfile(settings).name;
@@ -799,8 +880,10 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
   } else if (_pendingQuickAction == QuickAction::DRest) {
     if (settings.diacetylRestActive) {
       completeDiacetylRest(settings);
-      _toast = String("D-rest -> ") + activeProfile(settings).name;
+      _toast = String("D-rest -> ") +
+               settings.profiles[diacetylRestReturnProfileIndex(settings)].name;
     } else {
+      settings.diacetylRestDurationSeconds = _pendingDrestDurationSeconds;
       startDiacetylRest(settings);
       _toast = "D-rest started";
     }
@@ -808,6 +891,15 @@ void DisplayUI::confirmQuickAction(Settings &settings) {
   _toastUntilMs = millis() + 1500;
   requestSave();
   _screen = Screen::Main;
+  resetSettingsEncoderFilters();
+  _dirty = true;
+}
+
+void DisplayUI::confirmWifiSetup() {
+  _wifiSetupRequested = true;
+  _toast = FERM_ENABLE_NETWORK ? "Setup AP active" : "Wi-Fi disabled";
+  _toastUntilMs = millis() + 3500;
+  _screen = Screen::Menu;
   resetSettingsEncoderFilters();
   _dirty = true;
 }

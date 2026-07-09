@@ -36,10 +36,12 @@ void DisplayUI::draw(uint32_t nowMs, const Settings &settings,
     drawConfirmEdit(settings);
   } else if (_screen == Screen::ConfirmTest) {
     drawConfirmTest();
+  } else if (_screen == Screen::ConfirmWifi) {
+    drawConfirmWifi(model.network);
   } else if (_screen == Screen::Help) {
     drawHelp();
   } else {
-    drawAbout();
+    drawAbout(model.network);
   }
 
   if (_toast.length() > 0 && nowMs < _toastUntilMs) {
@@ -117,9 +119,19 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(editing ? COLOR_GOLD : COLOR_TEXT_MUTED, bg);
-  _canvas.drawString(settings.diacetylRestActive ? "D-Rest"
-                                                 : activeProfile(settings).name,
-                     cx, cy - 52, &fonts::DejaVu18);
+  String profileLine;
+  if (settings.diacetylRestActive) {
+    profileLine = "D-Rest";
+  } else if (settings.programActive) {
+    const uint8_t ri =
+        settings.programRunIndex < PROGRAM_SLOT_COUNT ? settings.programRunIndex
+                                                      : 0;
+    profileLine = String("Step ") + String(settings.programStepIndex + 1) +
+                  "/" + String(settings.programs[ri].stepCount);
+  } else {
+    profileLine = activeProfile(settings).name;
+  }
+  _canvas.drawString(profileLine, cx, cy - 52, &fonts::DejaVu18);
 
   const float bigC = editing ? targetC : model.tempC;
   const String big =
@@ -350,12 +362,13 @@ void DisplayUI::drawHydrometer(uint32_t nowMs, const Settings &settings,
 void DisplayUI::drawQuickMenu(const Settings &settings, const UiModel &model) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
-  const uint8_t idx = _quickIndex % QUICK_ACTION_COUNT;
-  const QuickAction action = static_cast<QuickAction>(idx);
-  const QuickAction prev = static_cast<QuickAction>(
-      (idx + QUICK_ACTION_COUNT - 1) % QUICK_ACTION_COUNT);
+  const uint8_t count = quickActionCount(settings);
+  const uint8_t idx = _quickIndex % count;
+  const QuickAction action = quickActionAt(idx, settings);
+  const QuickAction prev =
+      quickActionAt(static_cast<uint8_t>((idx + count - 1) % count), settings);
   const QuickAction next =
-      static_cast<QuickAction>((idx + 1) % QUICK_ACTION_COUNT);
+      quickActionAt(static_cast<uint8_t>((idx + 1) % count), settings);
 
   drawMain(_lastDrawMs, settings, model);
   _canvas.setTextDatum(middle_center);
@@ -456,9 +469,10 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
   _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_GOLD);
   _canvas.setTextColor(COLOR_GOLD, COLOR_PANEL);
   const char *confirmTitle =
-      _quickConfirmKind == QuickConfirmKind::CrashGradual ? "COLD CRASH"
-      : _pendingQuickAction == QuickAction::DRest         ? "D-REST"
-                                                          : "CONFIRM";
+      _quickConfirmKind == QuickConfirmKind::CrashGradual  ? "COLD CRASH"
+      : _quickConfirmKind == QuickConfirmKind::ProgramControl ? "PROGRAM"
+      : _pendingQuickAction == QuickAction::DRest          ? "D-REST"
+                                                           : "CONFIRM";
   _canvas.drawString(confirmTitle, cx, cy - 64, &fonts::DejaVu18);
 
   _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
@@ -482,6 +496,26 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
                     _pendingGradualCrash ? TFT_BLACK : COLOR_TEXT_MUTED,
                     &fonts::DejaVu12,
                     _pendingGradualCrash ? 0 : COLOR_TEXT_MUTED);
+  } else if (_quickConfirmKind == QuickConfirmKind::ProgramControl) {
+    const uint8_t ri =
+        settings.programRunIndex < PROGRAM_SLOT_COUNT ? settings.programRunIndex
+                                                      : 0;
+    _canvas.drawString(
+        String("Step ") + String(settings.programStepIndex + 1) + "/" +
+            String(settings.programs[ri].stepCount),
+        cx, cy - 16, &fonts::FreeSansBold12pt7b);
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+    _canvas.drawString("Skip step or stop", cx, cy + 6, &fonts::DejaVu12);
+    drawSolidButton(cx - 48, cy + 57, 84, 26, "Skip",
+                    _pendingProgramSkip ? COLOR_GOLD : COLOR_BG,
+                    _pendingProgramSkip ? TFT_BLACK : COLOR_TEXT_MUTED,
+                    &fonts::DejaVu12,
+                    _pendingProgramSkip ? 0 : COLOR_TEXT_MUTED);
+    drawSolidButton(cx + 48, cy + 57, 84, 26, "Stop",
+                    _pendingProgramSkip ? COLOR_BG : COLOR_GOLD,
+                    _pendingProgramSkip ? COLOR_TEXT_MUTED : TFT_BLACK,
+                    &fonts::DejaVu12,
+                    _pendingProgramSkip ? COLOR_TEXT_MUTED : 0);
   } else {
     _canvas.drawString(quickActionLabel(_pendingQuickAction), cx, cy - 16,
                        &fonts::FreeSansBold12pt7b);
@@ -490,6 +524,7 @@ void DisplayUI::drawQuickConfirm(const Settings &settings, const UiModel &model)
                        &fonts::DejaVu12);
 
     // Action row: Cancel (left, ghost) and Apply (right, filled gold).
+    // D-Rest start: rotate to change hours before Apply.
     drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
                     &fonts::DejaVu12);
     drawSolidButton(cx + 48, cy + 57, 84, 26, "Apply", COLOR_GOLD, TFT_BLACK,
@@ -978,7 +1013,34 @@ void DisplayUI::drawConfirmTest() {
                   &fonts::DejaVu12);
 }
 
-void DisplayUI::drawAbout() {
+void DisplayUI::drawConfirmWifi(const NetworkSnapshot &network) {
+  const int16_t cx = _canvas.width() / 2;
+  const int16_t cy = _canvas.height() / 2;
+
+  _canvas.setTextDatum(middle_center);
+  _canvas.fillSmoothRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 102, cy - 84, 204, 156, 15, COLOR_WARN);
+  _canvas.setTextColor(COLOR_WARN, COLOR_PANEL);
+  _canvas.drawString("Wi-Fi setup", cx, cy - 64, &fonts::DejaVu18);
+
+  _canvas.fillSmoothRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_BG);
+  _canvas.drawRoundRect(cx - 92, cy - 36, 184, 62, 14, COLOR_WARN);
+  _canvas.setTextColor(TFT_WHITE, COLOR_BG);
+  _canvas.drawString("Start setup AP?", cx, cy - 16, &fonts::FreeSansBold12pt7b);
+  _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_BG);
+  if (network.ipAddress.length() > 0) {
+    _canvas.drawString(network.ipAddress, cx, cy + 6, &fonts::DejaVu12);
+  } else {
+    _canvas.drawString("Drops home Wi-Fi", cx, cy + 6, &fonts::DejaVu12);
+  }
+
+  drawGhostButton(cx - 48, cy + 57, 84, 26, "Cancel", COLOR_TEXT_MUTED,
+                  &fonts::DejaVu12);
+  drawSolidButton(cx + 48, cy + 57, 84, 26, "Start", COLOR_WARN, TFT_BLACK,
+                  &fonts::DejaVu12);
+}
+
+void DisplayUI::drawAbout(const NetworkSnapshot &network) {
   const int16_t cx = _canvas.width() / 2;
   const int16_t cy = _canvas.height() / 2;
 
@@ -987,21 +1049,31 @@ void DisplayUI::drawAbout() {
   drawArcSeg(GAUGE_R, GA_START + GA_SWEEP - 60.0f, GA_START + GA_SWEEP,
              COLOR_HEAT, 5);
 
-  _canvas.fillSmoothRoundRect(cx - 92, cy - 50, 184, 100, 14, COLOR_PANEL);
-  _canvas.drawRoundRect(cx - 92, cy - 50, 184, 100, 14, COLOR_BLUE);
+  _canvas.fillSmoothRoundRect(cx - 100, cy - 62, 200, 124, 14, COLOR_PANEL);
+  _canvas.drawRoundRect(cx - 100, cy - 62, 200, 124, 14, COLOR_BLUE);
 
   _canvas.setTextDatum(middle_center);
   _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
-  _canvas.drawString(FIRMWARE_NAME, cx, cy - 32, &fonts::DejaVu18);
+  _canvas.drawString(FIRMWARE_NAME, cx, cy - 46, &fonts::DejaVu18);
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString(String("Version ") + FIRMWARE_VERSION, cx, cy - 8,
-                     &fonts::DejaVu12);
+  _canvas.drawString(String("v") + FIRMWARE_VERSION + " · " + FIRMWARE_GIT_SHA,
+                     cx, cy - 24, &fonts::DejaVu12);
   _canvas.setTextColor(COLOR_TEXT, COLOR_PANEL);
-  _canvas.drawString(String("commit ") + FIRMWARE_GIT_SHA, cx, cy + 12,
-                     &fonts::DejaVu12);
+  if (network.hostname.length() > 0) {
+    _canvas.drawString(network.hostname, cx, cy - 2, &fonts::DejaVu12);
+  } else {
+    _canvas.drawString("M5Stack Dial", cx, cy - 2, &fonts::DejaVu12);
+  }
+  if (network.ipAddress.length() > 0) {
+    _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
+    _canvas.drawString(network.ipAddress, cx, cy + 20, &fonts::DejaVu12);
+  } else {
+    _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
+    _canvas.drawString(network.status.length() ? network.status : "No IP", cx,
+                       cy + 20, &fonts::DejaVu12);
+  }
   _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
-  _canvas.drawString("M5Stack Dial / ESP32-S3", cx, cy + 32,
-                     &fonts::DejaVu12);
+  _canvas.drawString("ESP32-S3", cx, cy + 42, &fonts::DejaVu12);
 }
 
 void DisplayUI::drawHelp() {
@@ -1116,12 +1188,34 @@ String DisplayUI::diacetylRestRemainingText(const Settings &settings) const {
   return String(minutes) + "m";
 }
 
+uint8_t DisplayUI::quickActionCount(const Settings &settings) const {
+  return settings.programActive ? QUICK_ACTION_MAX : QUICK_ACTION_BASE;
+}
+
+DisplayUI::QuickAction DisplayUI::quickActionAt(
+    uint8_t index, const Settings &settings) const {
+  // Base order: Profile, Mode, D-Rest; Program is last while a program runs.
+  if (settings.programActive && index == QUICK_ACTION_BASE) {
+    return QuickAction::Program;
+  }
+  switch (index % QUICK_ACTION_BASE) {
+  case 1:
+    return QuickAction::Mode;
+  case 2:
+    return QuickAction::DRest;
+  default:
+    return QuickAction::Profile;
+  }
+}
+
 const char *DisplayUI::quickActionLabel(QuickAction action) const {
   switch (action) {
   case QuickAction::Mode:
     return "Mode";
   case QuickAction::DRest:
     return "D-Rest";
+  case QuickAction::Program:
+    return "Program";
   default:
     return "Profile";
   }
@@ -1134,6 +1228,13 @@ String DisplayUI::quickActionValue(QuickAction action,
   }
   if (action == QuickAction::Mode) {
     return modeText(settings.mode);
+  }
+  if (action == QuickAction::Program) {
+    const uint8_t ri =
+        settings.programRunIndex < PROGRAM_SLOT_COUNT ? settings.programRunIndex
+                                                      : 0;
+    return String(settings.programStepIndex + 1) + "/" +
+           String(settings.programs[ri].stepCount);
   }
   // D-Rest: show remaining time when active, otherwise the configured duration.
   return settings.diacetylRestActive
@@ -1151,13 +1252,19 @@ String DisplayUI::quickPendingValue(const Settings &settings) const {
   if (_pendingQuickAction == QuickAction::Mode) {
     return String("Use ") + modeText(_pendingMode) + " mode";
   }
+  if (_pendingQuickAction == QuickAction::Program) {
+    return _pendingProgramSkip ? "Skip this step" : "Stop program";
+  }
   if (settings.diacetylRestActive) {
     // completeDiacetylRest activates the configured return profile, not the
     // currently active one (dashboard "After rest" may differ).
     return String("Finish -> ") +
            settings.profiles[diacetylRestReturnProfileIndex(settings)].name;
   }
-  return String("Start for ") + diacetylRestRemainingText(settings);
+  // Start path: show pending duration + return profile.
+  const uint32_t hours = _pendingDrestDurationSeconds / 3600UL;
+  return String("Start ") + String(hours) + "h then " +
+         settings.profiles[diacetylRestReturnProfileIndex(settings)].name;
 }
 
 String DisplayUI::menuValue(uint8_t index, const Settings &settings,
