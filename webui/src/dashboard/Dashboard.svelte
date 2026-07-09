@@ -383,6 +383,44 @@
     await tick();
     await loadHistory();
   }
+
+  let batchNameInput = $state('');
+  async function startBatch() {
+    if (offline) {
+      showBanner("Can't reach controller");
+      return;
+    }
+    try {
+      await postSettings({
+        batchAction: 'new',
+        batchName: batchNameInput || '',
+      });
+      await tick();
+      showBanner('Batch started');
+    } catch (e) {
+      showBanner('Batch start failed');
+    }
+  }
+
+  function programExitText(p) {
+    if (!p) return '';
+    if (p.stepExit === 0) {
+      return remainingText(p.stepRemainingSeconds) + ' left';
+    }
+    if (p.stepExit === 1 && p.stepGravity != null) {
+      return 'Advances when SG ≤ ' + Number(p.stepGravity).toFixed(3);
+    }
+    if (p.stepExit === 2) {
+      return 'Advances when SG stable ' + (p.stepStableHours || 24) + 'h';
+    }
+    if (p.stepExit === 3) {
+      return 'Advances on gravity velocity';
+    }
+    if (p.stepExit === 4) {
+      return 'Waits for manual skip';
+    }
+    return 'Advances on ' + (PROG_EXIT_TYPES[p.stepExit] || 'condition');
+  }
   const dRestStatusText = $derived.by(() => {
     if (!s) return 'Ready';
     const r = rest;
@@ -415,7 +453,12 @@
     <div class="top">
       <div>
         <div class="brand">Ferment<span>Dial</span></div>
-        <div class="deviceName">{s ? s.fermenterName : 'Fermenter'}</div>
+        <div class="deviceName">
+          {s ? (s.batchName || s.fermenterName) : 'Fermenter'}
+          {#if s?.batchName}
+            <span class="batchMeta"> · {s.fermenterName}</span>
+          {/if}
+        </div>
       </div>
       <div class="statusbar">
         <span class="pill">{s ? (s.wifiConnected ? s.ip : s.wifiStatus) : 'Wi-Fi'}</span>
@@ -556,11 +599,7 @@
           {#if prog.stepTarget != null}&rarr; {prog.stepTarget.toFixed(1)}{unit}{/if}
         </div>
         <p class="sub" style="font-size:12px;margin-top:6px">
-          {#if prog.stepExit === 0}
-            {remainingText(prog.stepRemainingSeconds)} left
-          {:else}
-            advances on {PROG_EXIT_TYPES[prog.stepExit] || 'condition'}
-          {/if}
+          {programExitText(prog)}
         </p>
         <div class="modes" style="margin-top:10px">
           <button onclick={progSkip}>SKIP</button>
@@ -622,6 +661,21 @@
         </div>
         <span class="dashFooterUptime">{s ? remainingText(s.uptimeSeconds) + ' uptime' : '-- uptime'}</span>
         <a class="dashFooterLink" href="/api/history.csv" download>Download history CSV</a>
+        <a class="dashFooterLink" href="/api/export.json" download>Status snapshot</a>
+      </div>
+      <div class="dashFooterRow" style="margin-top:10px">
+        <label class="fieldLabel" style="flex:1;min-width:140px;margin:0">
+          Batch name
+          <input
+            bind:value={batchNameInput}
+            maxlength="24"
+            placeholder={s?.batchName || 'e.g. Pale Ale #3'}
+            disabled={offline}
+          />
+        </label>
+        <button type="button" class="btnCompact primary" disabled={offline} onclick={startBatch}>
+          New batch
+        </button>
       </div>
     </section>
   </div>
