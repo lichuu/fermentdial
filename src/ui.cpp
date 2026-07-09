@@ -53,6 +53,7 @@ void DisplayUI::update(uint32_t nowMs, Settings &settings,
   for (uint8_t i = 0; i < _hydroDeviceCount; i++) {
     _hydroDevices[i] = model.hydrometerDevices[i];
   }
+  _lastNetwork = model.network;
   processInput(nowMs, settings);
 
   // An un-confirmed setpoint preview reverts on its own, so a stray bump of the

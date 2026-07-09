@@ -6,6 +6,7 @@
 #include "time_sync.h"
 
 #if FERM_ENABLE_NETWORK
+#include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <LittleFS.h>
 #include <WiFi.h>
@@ -167,6 +168,14 @@ void NetworkManager::update(uint32_t nowMs, Settings &settings) {
   if (_snapshot.wifiConnected) {
     _snapshot.ipAddress = WiFi.localIP().toString();
     _snapshot.status = _snapshot.ipAddress;
+    // Soft-fail mDNS so multi-vessel discovery works when the LAN allows it.
+    static bool mdnsStarted = false;
+    if (!mdnsStarted) {
+      mdnsStarted = MDNS.begin(_hostname.c_str());
+      if (mdnsStarted) {
+        MDNS.addService("http", "tcp", 80);
+      }
+    }
   } else {
     _snapshot.ipAddress = "";
     _snapshot.status = "Connecting";
