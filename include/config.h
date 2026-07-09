@@ -303,6 +303,10 @@ struct ProfileSettings {
 
 struct Settings {
   String fermenterName = DEFAULT_FERMENTER_NAME;
+  // Optional batch label for the current ferment (empty → UI uses fermenterName).
+  String batchName = "";
+  // Epoch seconds when the batch was started; 0 if unknown / never set.
+  uint32_t batchStartedAt = 0;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
   // Live operating setpoint. Profiles hold recallable presets; this is the
@@ -709,6 +713,11 @@ inline void sanitizeSettings(Settings &settings) {
   if (settings.fermenterName.length() > MAX_FERMENTER_NAME_LENGTH) {
     settings.fermenterName =
         settings.fermenterName.substring(0, MAX_FERMENTER_NAME_LENGTH);
+  }
+  settings.batchName.trim();
+  if (settings.batchName.length() > MAX_FERMENTER_NAME_LENGTH) {
+    settings.batchName =
+        settings.batchName.substring(0, MAX_FERMENTER_NAME_LENGTH);
   }
   settings.brightness = clampBrightness(settings.brightness);
   if (settings.activeProfile >= PROFILE_COUNT) {
