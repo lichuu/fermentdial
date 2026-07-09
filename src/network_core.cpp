@@ -497,6 +497,12 @@ void NetworkManager::startWebServer() {
   _server.on("/api/selfcheck", HTTP_GET, [this]() {
     _server.send(200, "application/json", selfCheckJson(millis()));
   });
+  _server.on("/api/export.json", HTTP_GET, [this]() {
+    _server.sendHeader("Cache-Control", "no-store");
+    _server.sendHeader("Content-Disposition",
+                       "attachment; filename=\"fermentdial-export.json\"");
+    _server.send(200, "application/json; charset=utf-8", exportJson(millis()));
+  });
   _server.on("/api/history.csv", HTTP_GET, [this]() {
     _server.setContentLength(CONTENT_LENGTH_UNKNOWN);
     _server.sendHeader("Content-Disposition",

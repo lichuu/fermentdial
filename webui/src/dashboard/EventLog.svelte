@@ -74,18 +74,22 @@
   ]);
 </script>
 
-<section class="panel eventPanel" hidden={events.length === 0}>
+<section class="panel eventPanel">
   <h2>Events</h2>
-  <div class="eventScroll">
-    <ul class="eventList">
-      {#each events as e}
-        <li class="ev" class:warn={FAULTY.has(e.typeName)}>
-          <span class="evWhen">{when(e)}</span>
-          <span class="evMsg">{e.message}</span>
-        </li>
-      {/each}
-    </ul>
-  </div>
+  {#if events.length === 0}
+    <p class="sub" style="font-size:12px;margin:0">No events yet</p>
+  {:else}
+    <div class="eventScroll">
+      <ul class="eventList">
+        {#each events as e}
+          <li class="ev" class:warn={FAULTY.has(e.typeName)}>
+            <span class="evWhen">{when(e)}</span>
+            <span class="evMsg">{e.message}</span>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {/if}
 </section>
 
 <style>

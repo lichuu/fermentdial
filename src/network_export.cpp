@@ -242,6 +242,8 @@ String NetworkManager::selfCheckJson(uint32_t nowMs) const {
   return json;
 }
 
+// Public unauthenticated dashboard payload — also nested under /api/export.json.
+// Keep free of secrets (no Wi-Fi password, MQTT token, Brewfather id, etc.).
 String NetworkManager::statusJson(uint32_t nowMs) const {
   const bool f = _webStatus.unitsFahrenheit;
   const float temperature = toDisplayTemp(_webStatus.tempC, f);
@@ -287,6 +289,12 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
   json +=
       "\"tempValid\":" + String(_webStatus.tempValid ? "true" : "false") + ",";
   json += "\"fermenterName\":" + jsonString(_webStatus.fermenterName) + ",";
+  if (_settings != nullptr) {
+    json += "\"batchName\":" + jsonString(_settings->batchName) + ",";
+    json += "\"batchStartedAt\":" + String(_settings->batchStartedAt) + ",";
+  } else {
+    json += "\"batchName\":\"\",\"batchStartedAt\":0,";
+  }
   json += "\"temperature\":" + jsonFloat(temperature) + ",";
   json += "\"target\":" + jsonFloat(target) + ",";
   json += "\"activeProfile\":" + String(profileIndex) + ",";
@@ -330,18 +338,22 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
       json += "\"stepType\":" + String(static_cast<int>(st.type)) + ",";
       json += "\"stepExit\":" + String(static_cast<int>(ex)) + ",";
       json += "\"stepTarget\":" + jsonFloat(toDisplayTemp(st.targetC, f)) + ",";
+      json += "\"stepGravity\":" + jsonFloat(st.gravityThreshold, 3) + ",";
+      json += "\"stepStableHours\":" + String(st.stableHours) + ",";
       json += "\"stepElapsedSeconds\":" + String(s.programStepElapsedSeconds) +
               ",";
       json += "\"stepDurationSeconds\":" + String(st.durationSeconds) + ",";
       json += "\"stepRemainingSeconds\":" + String(remaining);
     } else {
       json += "\"stepType\":0,\"stepExit\":0,\"stepTarget\":null,"
+              "\"stepGravity\":null,\"stepStableHours\":0,"
               "\"stepElapsedSeconds\":0,\"stepDurationSeconds\":0,"
               "\"stepRemainingSeconds\":0";
     }
   } else {
     json += "\"active\":false,\"runIndex\":0,\"slot\":5,\"stepIndex\":0,"
             "\"stepCount\":0,\"stepType\":0,\"stepExit\":0,\"stepTarget\":null,"
+            "\"stepGravity\":null,\"stepStableHours\":0,"
             "\"stepElapsedSeconds\":0,\"stepDurationSeconds\":0,"
             "\"stepRemainingSeconds\":0";
   }
@@ -507,6 +519,20 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
     }
   }
   json += "]";
+  json += "}";
+  return json;
+}
+
+String NetworkManager::exportJson(uint32_t nowMs) const {
+  // Wraps statusJson (must stay secret-free — see comment on statusJson).
+  String json = "{";
+  json += "\"export\":\"fermentdial-status\",";
+  json += "\"firmwareName\":" + jsonString(String(FIRMWARE_NAME)) + ",";
+  json += "\"firmwareVersion\":" + jsonString(String(FIRMWARE_VERSION)) + ",";
+  json += "\"firmwareGitSha\":" + jsonString(String(FIRMWARE_GIT_SHA)) + ",";
+  // statusJson is a full object — nest it under "status".
+  json += "\"status\":";
+  json += statusJson(nowMs);
   json += "}";
   return json;
 }
