@@ -103,6 +103,20 @@ void NetworkManager::handleSettingsPost() {
         fromDisplayDelta(_server.arg("tempOffset").toFloat(), unitsF);
     changed = true;
   }
+  // Single-point calibration: set offset so displayed temp becomes calibrateRef.
+  // offset = ref - raw  (displayed = raw + offset).
+  if (_server.hasArg("calibrateRef")) {
+    if (!_webStatus.tempValid || isnan(_webStatus.rawTempC)) {
+      _server.send(400, "application/json",
+                   "{\"ok\":false,\"error\":\"no valid sensor reading\"}");
+      return;
+    }
+    const float refC =
+        fromDisplayTemp(_server.arg("calibrateRef").toFloat(), unitsF);
+    _settings->tempOffsetC =
+        clampFloat(refC - _webStatus.rawTempC, MIN_OFFSET_C, MAX_OFFSET_C);
+    changed = true;
+  }
 
   if (applyHydrometerSettingsFromPost(_server, *_settings)) {
     changed = true;
