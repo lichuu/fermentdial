@@ -139,6 +139,7 @@ input.inputInvalid, select.inputInvalid { border-color: var(--fault) !important;
 .brand { font-weight: 700; font-size: 19px; color: var(--accent); letter-spacing: -0.01em; }
 .brand span { color: var(--text); }
 .deviceName { color: var(--muted); font-weight: 500; margin-top: 2px; }
+.batchMeta { color: var(--muted); font-weight: 400; opacity: 0.85; }
 h1 { font-size: 21px; margin: 0; color: var(--accent); font-weight: 700; letter-spacing: -0.02em; }
 h1 a { color: inherit; }
 h1 a:hover { text-decoration: none; }

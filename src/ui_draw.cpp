@@ -221,11 +221,14 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
     _canvas.drawString(subLine, cx, cy + 46, &fonts::DejaVu12);
   }
 
-  // 7. fermenter name + output chips in the bottom gap (hidden while the
-  // setpoint preview shows its confirm/cancel row in that space).
+  // 7. fermenter / batch name + output chips in the bottom gap (hidden while
+  // the setpoint preview shows its confirm/cancel row in that space).
   if (!editing) {
     _canvas.setTextColor(COLOR_TEXT_MUTED, bg);
-    _canvas.drawString(settings.fermenterName, cx, cy + 62, &fonts::DejaVu12);
+    const String nameLine = settings.batchName.length() > 0
+                                ? settings.batchName
+                                : settings.fermenterName;
+    _canvas.drawString(nameLine, cx, cy + 62, &fonts::DejaVu12);
     drawOutputChips(model);
   }
 
