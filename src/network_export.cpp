@@ -296,6 +296,8 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
     json += "\"batchName\":\"\",\"batchStartedAt\":0,";
   }
   json += "\"temperature\":" + jsonFloat(temperature) + ",";
+  json += "\"rawTemperature\":" +
+          jsonFloat(toDisplayTemp(_webStatus.rawTempC, f)) + ",";
   json += "\"target\":" + jsonFloat(target) + ",";
   json += "\"activeProfile\":" + String(profileIndex) + ",";
   json +=
