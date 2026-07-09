@@ -143,7 +143,6 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   hintIn.faultCode = model.faultCode;
   hintIn.tempValid = model.tempValid;
   hintIn.tempC = model.tempC;
-  hintIn.heaterOn = model.heaterOn;
   hintIn.pumpOn = model.pumpOn;
   hintIn.pumpOffElapsedMs = model.pumpOffElapsedMs;
   hintIn.outputTestActive = model.outputTestActive;
@@ -232,8 +231,6 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
       _canvas.setTextDatum(middle_center);
       _canvas.setTextColor(attnCol, COLOR_PANEL);
       _canvas.drawString("!", cx + 84, cy, &fonts::FreeSansBold12pt7b);
-    } else if (model.demoSensor) {
-      // DEMO sits on the right when there is no attention mark.
     }
   } else {
     // Confirm/cancel row for the previewed setpoint (rects match
@@ -750,9 +747,6 @@ void DisplayUI::drawOutputChips(const UiModel &model) {
                        &fonts::DejaVu12);
   }
 }
-
-// Tiny letter under each output chip so icons stay readable for guests.
-// Called from drawMain after chips when not editing — kept in drawOutputChips.
 
 void DisplayUI::drawMenu(const Settings &settings,
                          const NetworkSnapshot &network) {
