@@ -4,16 +4,26 @@ export function formatMode(mode) {
   return String(mode).replaceAll('_', ' ');
 }
 
+async function parseJsonResponse(r) {
+  if (!r.ok) {
+    throw new Error('HTTP ' + r.status);
+  }
+  return r.json();
+}
+
 export function getStatus() {
-  return fetch('/api/status').then((r) => r.json());
+  return fetch('/api/status').then(parseJsonResponse);
 }
 
 export function getHistory() {
-  return fetch('/api/history').then((r) => r.json());
+  return fetch('/api/history').then(parseJsonResponse);
 }
 
 export function getHistoryCsv() {
-  return fetch('/api/history.csv').then((r) => r.text());
+  return fetch('/api/history.csv').then((r) => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.text();
+  });
 }
 
 export function getWifiScan() {
@@ -42,7 +52,7 @@ export function postSettings(fields, options = {}) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(fields).toString(),
     signal: options.signal,
-  }).then((r) => r.json());
+  }).then(parseJsonResponse);
 }
 
 /** Live backlight preview while dragging; does not persist to NVS. */

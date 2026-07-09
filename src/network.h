@@ -57,6 +57,9 @@ struct WebStatus {
   FaultCode faultCode = FaultCode::None;
   bool heaterOn = false;
   bool pumpOn = false;
+  uint32_t pumpOffElapsedMs = 0;
+  bool notReaching = false;
+  bool longOutput = false;
   bool demoSensor = false;
 };
 

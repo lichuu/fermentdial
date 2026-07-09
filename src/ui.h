@@ -15,9 +15,12 @@ struct UiModel {
   FaultCode faultCode = FaultCode::None;
   bool heaterOn = false;
   bool pumpOn = false;
+  uint32_t pumpOffElapsedMs = 0;
   bool outputTestActive = false;
   OutputTestKind outputTestKind = OutputTestKind::None;
   bool demoSensor = false;
+  bool notReaching = false;
+  bool longOutput = false;
   HydrometerReading hydrometer;
   HydrometerReading hydrometerDevices[HydrometerManager::MAX_DEVICES];
   uint8_t hydrometerDeviceCount = 0;
@@ -247,6 +250,8 @@ class DisplayUI {
   // 0 = off, 1 = scanning for Tilt, 2 = scanning for RAPT, 3+ = device index
   // (index - 3) within _hydroDevices.
   int32_t _hydroOptionIndex = 0;
+  // Last main-screen attention flags (for badge tap → toast).
+  uint8_t _lastAttention = 0;
 };
 
 }  // namespace ferm

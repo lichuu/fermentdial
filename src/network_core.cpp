@@ -2,6 +2,7 @@
 
 #include "history.h"
 #include "network_detail.h"
+#include "policy.h"
 #include "time_sync.h"
 
 #if FERM_ENABLE_NETWORK
@@ -231,6 +232,9 @@ void NetworkManager::publishState(uint32_t nowMs, const Settings &settings,
   _webStatus.faultCode = controller.faultCode();
   _webStatus.heaterOn = controller.heaterOn();
   _webStatus.pumpOn = controller.pumpOn();
+  _webStatus.pumpOffElapsedMs = controller.pumpOffElapsedMs(nowMs);
+  _webStatus.notReaching = alertNotReachingActive();
+  _webStatus.longOutput = alertLongRuntimeActive();
   _webStatus.demoSensor = sensor.demoMode();
 
   if (nowMs - _lastPublishMs < 5000) {
