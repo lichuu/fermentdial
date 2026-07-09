@@ -68,6 +68,20 @@ export function targetLimits(unit) {
   return { min: 35, max: 95, step: DISPLAY_STEP, decimals: 1, fallback: 68 };
 }
 
+/** Reference bath temps for single-point calibration (ice ~32F / 0C). */
+export function calibrationRefLimits(unit) {
+  if (unit === 'C') {
+    return {
+      min: roundTo(fToC(10), 1),
+      max: roundTo(fToC(120), 1),
+      step: DISPLAY_STEP,
+      decimals: 1,
+      fallback: 0,
+    };
+  }
+  return { min: 10, max: 120, step: DISPLAY_STEP, decimals: 1, fallback: 32 };
+}
+
 export function deltaLimits(unit) {
   if (unit === 'C') {
     return {

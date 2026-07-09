@@ -1102,7 +1102,7 @@ void DisplayUI::drawHelp() {
       {"Long press", "Back"},
       {"Tap !", "Alerts"},
   };
-  int16_t y = cy - 40;
+  int16_t y = cy - 46;
   for (auto &g : gestures) {
     _canvas.setTextDatum(middle_left);
     _canvas.setTextColor(COLOR_ACCENT, COLOR_PANEL);
@@ -1110,11 +1110,11 @@ void DisplayUI::drawHelp() {
     _canvas.setTextDatum(middle_right);
     _canvas.setTextColor(COLOR_TEXT_MUTED, COLOR_PANEL);
     _canvas.drawString(g[1], cx + 86, y, &fonts::DejaVu12);
-    y += 22;
+    y += 20;
   }
 
   _canvas.setTextDatum(middle_center);
-  drawGhostButton(cx, cy + 68, 84, 24, "Close", COLOR_TEXT_MUTED,
+  drawGhostButton(cx, cy + 70, 84, 24, "Close", COLOR_TEXT_MUTED,
                   &fonts::DejaVu12);
 }
 
