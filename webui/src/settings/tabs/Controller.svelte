@@ -7,6 +7,7 @@
     filterDecimalInput,
     showDecimalInvalid,
     offsetLimits,
+    targetLimits,
   } from '../../validation.js';
 
   let { status, refresh } = $props();
@@ -17,15 +18,26 @@
   let offset = $state('0.0');
   let controllerStatus = $state('');
 
+  let calRef = $state('32.0');
+  let calStatus = $state('');
+
   $effect(() => {
     coolOn = status.coolOn.toFixed(1);
     heatOn = status.heatOn.toFixed(1);
     hold = status.hold.toFixed(1);
     offset = status.tempOffset.toFixed(1);
+    // Default ice point in the active unit when unit changes.
+    if (status.unit === 'C') {
+      if (calRef === '32.0' || calRef === '32') calRef = '0.0';
+    } else if (calRef === '0.0' || calRef === '0') {
+      calRef = '32.0';
+    }
   });
 
   const bandLimits = $derived(deltaLimits(status.unit));
   const sensorOffsetLimits = $derived(offsetLimits(status.unit));
+  const refLimits = $derived(targetLimits(status.unit));
+  const deg = String.fromCharCode(176);
 
   async function saveControl() {
     coolOn = coerceDecimal(coolOn, bandLimits);
@@ -46,6 +58,31 @@
     await refresh();
     controllerStatus = 'Saved.';
   }
+
+  async function applyCalibration() {
+    calRef = coerceDecimal(calRef, refLimits);
+    const err = decimalError(calRef, refLimits, 'Reference temp');
+    if (err) {
+      calStatus = err;
+      return;
+    }
+    if (!status.tempValid) {
+      calStatus = 'No valid sensor reading.';
+      return;
+    }
+    calStatus = 'Calibrating...';
+    try {
+      await postSettings({ calibrateRef: calRef });
+      await refresh();
+      calStatus = 'Offset set so reading matches ' + calRef + deg + status.unit + '.';
+    } catch (e) {
+      calStatus = 'Calibration failed.';
+    }
+  }
+
+  function setIcePoint() {
+    calRef = status.unit === 'C' ? '0.0' : '32.0';
+  }
 </script>
 
 <section class="stackedCard">
@@ -59,7 +96,7 @@
       <div class="stackedRowTitle"><h3>Regulation</h3></div>
     </div>
     <div class="thresholds">
-      <label>Cool on<input
+      <label>Cool above<input
         inputmode="decimal"
         step="0.1"
         class:inputInvalid={showDecimalInvalid(coolOn, bandLimits)}
@@ -67,7 +104,7 @@
         oninput={(e) => { coolOn = filterDecimalInput(e.currentTarget.value); }}
         onblur={() => { coolOn = coerceDecimal(coolOn, bandLimits); }}
       /></label>
-      <label>Heat on<input
+      <label>Heat below<input
         inputmode="decimal"
         step="0.1"
         class:inputInvalid={showDecimalInvalid(heatOn, bandLimits)}
@@ -75,7 +112,7 @@
         oninput={(e) => { heatOn = filterDecimalInput(e.currentTarget.value); }}
         onblur={() => { heatOn = coerceDecimal(heatOn, bandLimits); }}
       /></label>
-      <label>Hold band<input
+      <label>In range<input
         inputmode="decimal"
         step="0.1"
         class:inputInvalid={showDecimalInvalid(hold, bandLimits)}
@@ -92,7 +129,39 @@
         onblur={() => { offset = coerceDecimal(offset, sensorOffsetLimits); }}
       /></label>
     </div>
+    <p class="formHint">Cool starts this far above the live setpoint; heat this far below. In-range is the hold band around target.</p>
     <button class="primary" onclick={saveControl}>Save controller settings</button>
     <div class="saveStatus">{controllerStatus}</div>
+  </article>
+
+  <article class="stackedRow">
+    <div class="stackedRowTop">
+      <div class="stackedRowTitle"><h3>Single-point calibration</h3></div>
+    </div>
+    <p class="formHint">
+      Put the probe in a known bath (ice water is ~{status.unit === 'C' ? '0' : '32'}{deg}{status.unit}),
+      wait for a stable reading, then set the reference. Offset becomes
+      <code>reference − raw</code> so the live display matches the bath.
+    </p>
+    <p class="formHint">
+      Live {status.tempValid ? status.temperature.toFixed(1) : '—'}{deg}{status.unit}
+      · raw {status.rawTemperature != null && status.tempValid ? Number(status.rawTemperature).toFixed(1) : '—'}{deg}{status.unit}
+      · offset {status.tempOffset.toFixed(1)}
+    </p>
+    <div class="thresholds">
+      <label>Reference temp<input
+        inputmode="decimal"
+        step="0.1"
+        class:inputInvalid={showDecimalInvalid(calRef, refLimits)}
+        value={calRef}
+        oninput={(e) => { calRef = filterDecimalInput(e.currentTarget.value, { allowNegative: true }); }}
+        onblur={() => { calRef = coerceDecimal(calRef, refLimits); }}
+      /></label>
+    </div>
+    <div class="modes" style="margin-top:8px">
+      <button type="button" class="btnSecondary" onclick={setIcePoint}>Ice point</button>
+      <button type="button" class="primary" onclick={applyCalibration}>Apply calibration</button>
+    </div>
+    <div class="saveStatus">{calStatus}</div>
   </article>
 </section>

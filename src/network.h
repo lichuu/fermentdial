@@ -31,6 +31,7 @@ struct NetworkSnapshot {
 struct WebStatus {
   bool tempValid = false;
   float tempC = NAN;
+  float rawTempC = NAN;  // before sensor offset (for calibration)
   String fermenterName = DEFAULT_FERMENTER_NAME;
   ProfileSettings profiles[PROFILE_COUNT];
   uint8_t activeProfile = static_cast<uint8_t>(ProfileSlot::Ale);
