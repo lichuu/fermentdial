@@ -29,13 +29,13 @@ test/smoke/drive.sh <device-ip> [output_dir]
 Example:
 
 ```sh
-test/smoke/drive.sh 192.168.30.48 test/smoke/out
+test/smoke/drive.sh 192.168.1.50 test/smoke/out
 ```
 
 If a prior run left D-Rest active:
 
 ```sh
-test/smoke/drive.sh --restore-only 192.168.30.48
+test/smoke/drive.sh --restore-only 192.168.1.50
 ```
 
 Outputs numbered PNGs (`01_main_baseline.png`, …) under `output_dir`. Review

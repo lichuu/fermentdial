@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" font-family="monospace" font-size="12">
+  <rect width="900" height="640" fill="#0d1117"/>
+
+  <!-- Title -->
+  <text x="450" y="28" text-anchor="middle" fill="#58a6ff" font-size="16" font-weight="bold">FermentDial — Wiring Diagram</text>
+
+  <!-- ══════════════════ M5Stack Dial ══════════════════ -->
+  <rect x="320" y="50" width="260" height="210" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="450" y="70" text-anchor="middle" fill="#8b949e" font-size="11">M5Stack Dial (ESP32-S3)</text>
+
+  <!-- PORT.A label -->
+  <rect x="330" y="80" width="90" height="18" rx="3" fill="#21262d" stroke="#30363d"/>
+  <text x="375" y="93" text-anchor="middle" fill="#79c0ff" font-size="10">PORT.A (Grove)</text>
+
+  <!-- PORT.A pins -->
+  <text x="340" y="115" fill="#a3b3c2" font-size="11">GPIO13 (Yellow) ─ DS18B20 DATA</text>
+  <text x="340" y="133" fill="#a3b3c2" font-size="11">GPIO15 (White)  ─ DS18B20 VCC</text>
+  <text x="340" y="151" fill="#a3b3c2" font-size="11">5V              ─ (not used)</text>
+  <text x="340" y="169" fill="#a3b3c2" font-size="11">GND             ─ DS18B20 GND</text>
+
+  <!-- Divider -->
+  <line x1="330" y1="180" x2="570" y2="180" stroke="#30363d" stroke-width="1"/>
+
+  <!-- GPIO trigger pins -->
+  <text x="340" y="198" fill="#a3b3c2" font-size="11">GPIO2  ─ Heater MOSFET trigger</text>
+  <text x="340" y="216" fill="#a3b3c2" font-size="11">GPIO1  ─ Pump MOSFET trigger</text>
+  <text x="340" y="234" fill="#a3b3c2" font-size="11">GND    ─ Shared trigger ground</text>
+
+  <!-- ══════════════════ DS18B20 Adapter ══════════════════ -->
+  <rect x="30" y="50" width="240" height="130" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="150" y="70" text-anchor="middle" fill="#8b949e" font-size="11">DS18B20 + 4.7 kΩ Adapter</text>
+  <text x="40" y="93"  fill="#a3b3c2" font-size="11">VCC  ─ 3.3 V  (from GPIO15)</text>
+  <text x="40" y="111" fill="#a3b3c2" font-size="11">DATA ─ GPIO13 (pulled up to VCC)</text>
+  <text x="40" y="129" fill="#a3b3c2" font-size="11">GND  ─ M5 GND</text>
+  <rect x="38" y="138" width="214" height="34" rx="3" fill="#0d1117" stroke="#58a6ff" stroke-width="0.8"/>
+  <text x="145" y="152" text-anchor="middle" fill="#58a6ff" font-size="10">⚠  Use 3.3 V only — GPIO13 is a</text>
+  <text x="145" y="165" text-anchor="middle" fill="#58a6ff" font-size="10">3.3 V-max input. Do NOT use 5 V.</text>
+
+  <!-- Wire: GPIO15 → DS18B20 VCC (White) -->
+  <polyline points="320,143 270,143 270,93 270,93" fill="none" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="273" y="140" fill="#ffffff" font-size="9">White</text>
+
+  <!-- Wire: GPIO13 → DS18B20 DATA (Yellow) -->
+  <polyline points="320,125 290,125 290,111 270,111" fill="none" stroke="#f5c518" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="272" y="106" fill="#f5c518" font-size="9">Yellow</text>
+
+  <!-- Wire: GND → DS18B20 GND (Black) -->
+  <polyline points="320,160 305,160 305,129 270,129" fill="none" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="5,3"/>
+
+  <!-- ══════════════════ 12V Power ══════════════════ -->
+  <rect x="630" y="50" width="230" height="90" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="745" y="70" text-anchor="middle" fill="#8b949e" font-size="11">12 V DC Supply</text>
+  <text x="640" y="91" fill="#a3b3c2" font-size="11">+ (pos) ─ 7.5 A fuse ─ +12 V bus</text>
+  <text x="640" y="109" fill="#a3b3c2" font-size="11">─ (neg) ─ GND (common)</text>
+  <rect x="638" y="117" width="214" height="16" rx="3" fill="#0d1117" stroke="#d29922" stroke-width="0.8"/>
+  <text x="745" y="129" text-anchor="middle" fill="#d29922" font-size="10">7.5 A fast-blow fuse on + line</text>
+
+  <!-- +12V bus rail (horizontal red line) -->
+  <line x1="630" y1="175" x2="860" y2="175" stroke="#f85149" stroke-width="2"/>
+  <text x="860" y="170" fill="#f85149" font-size="10" text-anchor="end">+12 V bus</text>
+
+  <!-- GND bus rail (horizontal dark line) -->
+  <line x1="30" y1="580" x2="860" y2="580" stroke="#6e7681" stroke-width="2"/>
+  <text x="860" y="576" fill="#6e7681" font-size="10" text-anchor="end">Common GND</text>
+
+  <!-- Wire: 12V supply + → bus -->
+  <line x1="745" y1="140" x2="745" y2="175" stroke="#f85149" stroke-width="1.5"/>
+
+  <!-- Wire: 12V supply − → GND bus -->
+  <line x1="745" y1="140" x2="745" y2="160"/>
+  <polyline points="800,140 800,580" fill="none" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- ══════════════════ Heater MOSFET ══════════════════ -->
+  <rect x="30" y="300" width="260" height="150" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="160" y="320" text-anchor="middle" fill="#8b949e" font-size="11">Heater MOSFET (AOD4184)</text>
+  <text x="40" y="343" fill="#a3b3c2" font-size="11">Gate   ─ GPIO2  (active HIGH)</text>
+  <text x="40" y="361" fill="#a3b3c2" font-size="11">Source ─ GND (common)</text>
+  <text x="40" y="379" fill="#a3b3c2" font-size="11">Drain  ─ Heater pad  (─)</text>
+  <text x="40" y="397" fill="#a3b3c2" font-size="11">Heater pad (+) ─ +12 V bus</text>
+  <rect x="38" y="408" width="244" height="34" rx="3" fill="#0d1117" stroke="#238636" stroke-width="0.8"/>
+  <text x="160" y="422" text-anchor="middle" fill="#238636" font-size="10">Low-side switch: +12 V → heater →</text>
+  <text x="160" y="435" text-anchor="middle" fill="#238636" font-size="10">MOSFET Drain→Source → GND</text>
+
+  <!-- Wire: GPIO2 → Heater Gate -->
+  <polyline points="320,198 160,198 160,300" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="163" y="252" fill="#3fb950" font-size="10">GPIO2 → Gate</text>
+
+  <!-- Wire: Heater Drain → +12V bus -->
+  <polyline points="290,379 630,379 630,175" fill="none" stroke="#f85149" stroke-width="1.5" stroke-dasharray="5,3"/>
+
+  <!-- Wire: Heater Source → GND bus -->
+  <polyline points="160,450 160,580" fill="none" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- M5 GND to GND bus -->
+  <polyline points="450,260 450,580" fill="none" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="453" y="500" fill="#6e7681" font-size="9">M5 GND</text>
+
+  <!-- ══════════════════ Pump MOSFET ══════════════════ -->
+  <rect x="350" y="300" width="260" height="150" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="480" y="320" text-anchor="middle" fill="#8b949e" font-size="11">Pump MOSFET (AOD4184)</text>
+  <text x="360" y="343" fill="#a3b3c2" font-size="11">Gate   ─ GPIO1  (active HIGH)</text>
+  <text x="360" y="361" fill="#a3b3c2" font-size="11">Source ─ GND (common)</text>
+  <text x="360" y="379" fill="#a3b3c2" font-size="11">Drain  ─ Pump  (─)</text>
+  <text x="360" y="397" fill="#a3b3c2" font-size="11">Pump   (+) ─ +12 V bus</text>
+  <rect x="358" y="408" width="244" height="34" rx="3" fill="#0d1117" stroke="#238636" stroke-width="0.8"/>
+  <text x="480" y="422" text-anchor="middle" fill="#238636" font-size="10">Low-side switch: +12 V → pump →</text>
+  <text x="480" y="435" text-anchor="middle" fill="#238636" font-size="10">MOSFET Drain→Source → GND</text>
+
+  <!-- Wire: GPIO1 → Pump Gate -->
+  <polyline points="320,216 480,216 480,300" fill="none" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="483" y="252" fill="#58a6ff" font-size="10">GPIO1 → Gate</text>
+
+  <!-- Wire: Pump Drain → +12V bus -->
+  <polyline points="610,379 630,379 630,175" fill="none" stroke="#f85149" stroke-width="1.5" stroke-dasharray="5,3"/>
+
+  <!-- Wire: Pump Source → GND bus -->
+  <polyline points="480,450 480,580" fill="none" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,2"/>
+
+  <!-- ══════════════════ Safety notes ══════════════════ -->
+  <rect x="630" y="300" width="230" height="210" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="745" y="320" text-anchor="middle" fill="#8b949e" font-size="11">Safety Rules (firmware)</text>
+  <text x="640" y="343" fill="#d29922" font-size="11">• Heater + pump never ON together</text>
+  <text x="640" y="363" fill="#d29922" font-size="11">• Demo mode: outputs forced OFF</text>
+  <text x="640" y="383" fill="#d29922" font-size="11">• Pump min-off: 120 s default</text>
+  <text x="640" y="403" fill="#d29922" font-size="11">• Pump min-run: 30 s default</text>
+  <text x="640" y="423" fill="#a3b3c2" font-size="11">Pin levels (MOSFET_ACTIVE_HIGH):</text>
+  <text x="640" y="441" fill="#a3b3c2" font-size="11">  HIGH → output ON</text>
+  <text x="640" y="459" fill="#a3b3c2" font-size="11">  LOW  → output OFF</text>
+  <text x="640" y="479" fill="#a3b3c2" font-size="11">All outputs default LOW on boot.</text>
+
+  <!-- Legend -->
+  <rect x="30" y="520" width="280" height="104" rx="5" fill="#161b22" stroke="#30363d"/>
+  <text x="170" y="538" text-anchor="middle" fill="#8b949e" font-size="11">Legend</text>
+  <line x1="42" y1="553" x2="72" y2="553" stroke="#f5c518" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="78" y="557" fill="#f5c518" font-size="10">DS18B20 Yellow DATA wire</text>
+  <line x1="42" y1="569" x2="72" y2="569" stroke="#ffffff" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="78" y="573" fill="#ffffff" font-size="10">DS18B20 White PWR wire (soft 3.3 V)</text>
+  <line x1="42" y1="585" x2="72" y2="585" stroke="#f85149" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="78" y="589" fill="#f85149" font-size="10">+12 V</text>
+  <line x1="155" y1="585" x2="185" y2="585" stroke="#6e7681" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="190" y="589" fill="#6e7681" font-size="10">GND</text>
+  <line x1="42" y1="601" x2="72" y2="601" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="78" y="605" fill="#3fb950" font-size="10">Heater trigger (GPIO2)</text>
+  <line x1="42" y1="617" x2="72" y2="617" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="78" y="621" fill="#58a6ff" font-size="10">Pump trigger (GPIO1)</text>
+</svg>

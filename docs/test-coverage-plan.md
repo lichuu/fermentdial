@@ -79,7 +79,7 @@ The exporters / JSON builders (`statusJson`, `settingsConfigJson`, `programJson`
 worth it. Instead, snapshot their **real HTTP output** before and after the refactor and diff.
 This is the net for the biggest, riskiest file (`network.cpp`).
 
-**Prerequisite:** flash the *current* `m5stack_dial_demo` to the dev device (192.168.30.48)
+**Prerequisite:** flash the *current* `m5stack_dial_demo` to the dev device (your Dial's LAN IP)
 **before** starting the refactor — the baseline must come from pre-refactor firmware. Demo env
 populates simulated sensor/hydrometer data and forces physical outputs off, so endpoints return
 full payloads without real hardware. Auth note: when no admin password is set, `isAuthed()`
