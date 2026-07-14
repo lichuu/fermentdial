@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Driven UI smoke harness — walks the 9-point checklist via /api/screen/input.
 #
-#   test/smoke/drive.sh 192.168.30.48 test/smoke/out
+#   test/smoke/drive.sh 192.168.1.50 test/smoke/out
 #
 # Requires a screen-mirror build (m5stack_dial_demo or m5stack_dial_wifi).
 set -euo pipefail
