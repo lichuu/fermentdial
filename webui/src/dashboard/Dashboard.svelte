@@ -502,7 +502,6 @@
       <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ale'}</div></div>
       <div class="card"><div class="label">Live setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
       <div class="card"><div class="label">Mode</div><div class="value">{formatMode(s?.mode)}</div></div>
-      <div class="card"><div class="label">Why</div><div class="value">{s?.hintDetail || s?.hint || '—'}</div></div>
     </section>
 
     <section class="controls">
