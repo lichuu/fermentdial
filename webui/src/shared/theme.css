@@ -631,6 +631,7 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
   display: flex;
   align-items: baseline;
   gap: 6px;
+  margin: 0; /* kill UA dl margins — they stack into huge inter-pill gaps */
   font-size: 13px;
   line-height: 1.4;
   flex-wrap: wrap;
@@ -646,6 +647,16 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
   width: fit-content;
   max-width: 100%;
 }
+/* Key/value pills in a row (IP + Setup AP). Wrap on narrow widths. */
+.metaStack {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+}
+.metaStack > .metaLine { margin: 0; }
 
 /* Prometheus scrape endpoint */
 .scrapeEndpoint {
