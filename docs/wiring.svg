@@ -5,12 +5,12 @@
   <text x="500" y="34" text-anchor="middle" fill="#58a6ff" font-size="15" font-weight="bold">FermentDial — Wiring</text>
 
   <!-- ════════ DS18B20 adapter ════════ -->
-  <rect x="40" y="170" width="195" height="155" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="137" y="196" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">DS18B20 adapter</text>
-  <text x="137" y="318" text-anchor="middle" fill="#8b949e" font-size="9">built-in 4.7 kΩ pull-up (472)</text>
-  <text x="228" y="218" text-anchor="end" fill="#8b949e" font-size="9">GND</text>
-  <text x="228" y="278" text-anchor="end" fill="#8b949e" font-size="9">DATA</text>
-  <text x="228" y="300" text-anchor="end" fill="#8b949e" font-size="9">VCC</text>
+  <rect x="40" y="175" width="195" height="165" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="137" y="201" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">DS18B20 adapter</text>
+  <text x="137" y="333" text-anchor="middle" fill="#8b949e" font-size="9">built-in 4.7 kΩ pull-up (472)</text>
+  <text x="228" y="228" text-anchor="end" fill="#8b949e" font-size="9">GND</text>
+  <text x="228" y="288" text-anchor="end" fill="#8b949e" font-size="9">DATA</text>
+  <text x="228" y="318" text-anchor="end" fill="#8b949e" font-size="9">VCC</text>
 
   <!-- warning -->
   <rect x="40" y="355" width="195" height="86" rx="8" fill="#161b22" stroke="#d29922"/>
@@ -20,14 +20,14 @@
   <text x="137" y="426" text-anchor="middle" fill="#d29922" font-size="10">never from the red 5 V wire.</text>
 
   <!-- ════════ sensor wires (PORT.A) ════════ -->
-  <line x1="235" y1="215" x2="380" y2="215" stroke="#6e7681" stroke-width="2"/>
-  <line x1="235" y1="275" x2="380" y2="275" stroke="#f5c518" stroke-width="2"/>
-  <line x1="235" y1="305" x2="380" y2="305" stroke="#e6edf3" stroke-width="2"/>
-  <text x="307" y="209" text-anchor="middle" fill="#8b949e" font-size="10">black · GND</text>
-  <text x="307" y="269" text-anchor="middle" fill="#f5c518" font-size="10">yellow · DATA</text>
-  <text x="307" y="299" text-anchor="middle" fill="#e6edf3" font-size="10">white · 3.3 V</text>
-  <line x1="370" y1="245" x2="380" y2="245" stroke="#6e7681" stroke-width="2" opacity="0.5"/>
-  <text x="364" y="248" text-anchor="end" fill="#6e7681" font-size="9">5 V — not used</text>
+  <line x1="235" y1="225" x2="380" y2="225" stroke="#6e7681" stroke-width="2"/>
+  <line x1="235" y1="285" x2="380" y2="285" stroke="#f5c518" stroke-width="2"/>
+  <line x1="235" y1="315" x2="380" y2="315" stroke="#e6edf3" stroke-width="2"/>
+  <text x="307" y="219" text-anchor="middle" fill="#8b949e" font-size="10">black · GND</text>
+  <text x="307" y="279" text-anchor="middle" fill="#f5c518" font-size="10">yellow · DATA</text>
+  <text x="307" y="309" text-anchor="middle" fill="#e6edf3" font-size="10">white · 3.3 V</text>
+  <line x1="370" y1="255" x2="380" y2="255" stroke="#6e7681" stroke-width="2" opacity="0.5"/>
+  <text x="364" y="258" text-anchor="end" fill="#6e7681" font-size="9">5 V — not used</text>
 
   <!-- ════════ M5Stack Dial ════════ -->
   <rect x="380" y="140" width="240" height="260" rx="14" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
@@ -35,51 +35,50 @@
   <text x="500" y="264" text-anchor="middle" fill="#c9d1d9" font-size="13" font-weight="bold">M5Stack Dial</text>
   <text x="500" y="283" text-anchor="middle" fill="#8b949e" font-size="10">ESP32-S3</text>
 
-  <text x="390" y="198" fill="#58a6ff" font-size="9" font-weight="bold">PORT.A</text>
-  <text x="390" y="218" fill="#8b949e" font-size="9">GND</text>
-  <text x="390" y="248" fill="#8b949e" font-size="9">5 V</text>
-  <text x="390" y="278" fill="#8b949e" font-size="9">G13</text>
-  <text x="390" y="308" fill="#8b949e" font-size="9">G15</text>
+  <text x="390" y="205" fill="#58a6ff" font-size="9" font-weight="bold">PORT.A</text>
+  <text x="390" y="228" fill="#8b949e" font-size="9">GND</text>
+  <text x="390" y="258" fill="#8b949e" font-size="9">5 V</text>
+  <text x="390" y="288" fill="#8b949e" font-size="9">G13</text>
+  <text x="390" y="318" fill="#8b949e" font-size="9">G15</text>
 
-  <text x="610" y="212" text-anchor="end" fill="#58a6ff" font-size="9" font-weight="bold">PORT.B</text>
-  <text x="610" y="233" text-anchor="end" fill="#8b949e" font-size="9">G2</text>
-  <text x="610" y="268" text-anchor="end" fill="#8b949e" font-size="9">G1</text>
-  <text x="610" y="303" text-anchor="end" fill="#8b949e" font-size="9">GND</text>
-  <text x="610" y="338" text-anchor="end" fill="#6e7681" font-size="9">5 V</text>
-  <line x1="620" y1="335" x2="630" y2="335" stroke="#6e7681" stroke-width="2" opacity="0.5"/>
-  <text x="636" y="338" fill="#6e7681" font-size="9">not used</text>
+  <text x="610" y="205" text-anchor="end" fill="#58a6ff" font-size="9" font-weight="bold">PORT.B</text>
+  <text x="610" y="228" text-anchor="end" fill="#8b949e" font-size="9">G2</text>
+  <text x="610" y="258" text-anchor="end" fill="#8b949e" font-size="9">G1</text>
+  <text x="610" y="288" text-anchor="end" fill="#8b949e" font-size="9">GND</text>
+  <text x="610" y="318" text-anchor="end" fill="#6e7681" font-size="9">5 V</text>
+  <line x1="620" y1="315" x2="630" y2="315" stroke="#6e7681" stroke-width="2" opacity="0.5"/>
+  <text x="636" y="318" fill="#6e7681" font-size="9">not used</text>
 
   <!-- ════════ trigger wires (PORT.B) ════════ -->
-  <line x1="620" y1="230" x2="785" y2="230" stroke="#f5c518" stroke-width="2"/>
-  <text x="702" y="224" text-anchor="middle" fill="#f5c518" font-size="10">yellow · G2 (heater)</text>
+  <line x1="620" y1="225" x2="785" y2="225" stroke="#f5c518" stroke-width="2"/>
+  <text x="702" y="219" text-anchor="middle" fill="#f5c518" font-size="10">yellow · G2 (heater)</text>
 
-  <polyline points="620,265 745,265 745,455 785,455" fill="none" stroke="#e6edf3" stroke-width="2"/>
-  <text x="678" y="259" text-anchor="middle" fill="#e6edf3" font-size="10">white · G1 (pump)</text>
+  <polyline points="620,255 745,255 745,455 785,455" fill="none" stroke="#e6edf3" stroke-width="2"/>
+  <text x="678" y="249" text-anchor="middle" fill="#e6edf3" font-size="10">white · G1 (pump)</text>
 
-  <line x1="620" y1="300" x2="700" y2="300" stroke="#6e7681" stroke-width="2"/>
-  <text x="660" y="294" text-anchor="middle" fill="#8b949e" font-size="10">black · GND</text>
-  <line x1="700" y1="283" x2="700" y2="560" stroke="#6e7681" stroke-width="2"/>
-  <circle cx="700" cy="300" r="3.5" fill="#6e7681"/>
+  <line x1="620" y1="285" x2="700" y2="285" stroke="#6e7681" stroke-width="2"/>
+  <text x="660" y="279" text-anchor="middle" fill="#8b949e" font-size="10">black · GND</text>
+  <line x1="700" y1="285" x2="700" y2="560" stroke="#6e7681" stroke-width="2"/>
+  <circle cx="700" cy="295" r="3.5" fill="#6e7681"/>
 
   <!-- ════════ heater chain ════════ -->
-  <rect x="785" y="110" width="120" height="50" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="845" y="131" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">Heater pad</text>
-  <text x="845" y="147" text-anchor="middle" fill="#8b949e" font-size="9">12 V</text>
+  <rect x="785" y="105" width="120" height="50" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="845" y="126" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">Heater pad</text>
+  <text x="845" y="142" text-anchor="middle" fill="#8b949e" font-size="9">12 V</text>
   <text x="898" y="139" text-anchor="end" fill="#f85149" font-size="10" font-weight="bold">+</text>
 
-  <line x1="845" y1="160" x2="845" y2="195" stroke="#6e7681" stroke-width="2"/>
-  <text x="853" y="176" fill="#6e7681" font-size="9">−</text>
+  <line x1="845" y1="155" x2="845" y2="190" stroke="#6e7681" stroke-width="2"/>
+  <text x="853" y="171" fill="#6e7681" font-size="9">−</text>
 
-  <rect x="785" y="195" width="120" height="70" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="845" y="222" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="bold">MOSFET module</text>
-  <text x="845" y="238" text-anchor="middle" fill="#8b949e" font-size="9">AOD4184 · trig = HIGH</text>
-  <text x="791" y="226" fill="#6e7681" font-size="8">G</text>
-  <text x="850" y="206" fill="#6e7681" font-size="8">D</text>
-  <text x="850" y="260" fill="#6e7681" font-size="8">S</text>
+  <rect x="785" y="190" width="120" height="70" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="845" y="217" text-anchor="middle" fill="#c9d1d9" font-size="11" font-weight="bold">MOSFET module</text>
+  <text x="845" y="233" text-anchor="middle" fill="#8b949e" font-size="9">AOD4184 · trig = HIGH</text>
+  <text x="791" y="221" fill="#6e7681" font-size="8">G</text>
+  <text x="850" y="201" fill="#6e7681" font-size="8">D</text>
+  <text x="850" y="255" fill="#6e7681" font-size="8">S</text>
 
   <!-- heater source → GND (hop over white wire) -->
-  <path d="M 845 265 V 283 H 751 A 6 6 0 0 0 739 283 H 700" fill="none" stroke="#6e7681" stroke-width="2"/>
-  <circle cx="700" cy="283" r="3.5" fill="#6e7681"/>
+  <path d="M 845 260 V 295 H 751 A 6 6 0 0 0 739 295 H 700" fill="none" stroke="#6e7681" stroke-width="2"/>
 
   <!-- ════════ pump chain ════════ -->
   <rect x="785" y="330" width="120" height="50" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
@@ -110,13 +109,13 @@
   <text x="908" y="415" text-anchor="end" fill="#8b949e" font-size="9">D1</text>
 
   <!-- ════════ 12 V supply and bus ════════ -->
-  <rect x="785" y="45" width="180" height="50" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
-  <text x="875" y="66" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">12 V DC supply</text>
-  <text x="875" y="84" text-anchor="middle" fill="#8b949e" font-size="9">7.5 A fuse on the + line</text>
-  <text x="927" y="103" text-anchor="end" fill="#f85149" font-size="10" font-weight="bold">+</text>
-  <text x="960" y="75" text-anchor="end" fill="#8b949e" font-size="10" font-weight="bold">−</text>
+  <rect x="785" y="45" width="120" height="50" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="845" y="66" text-anchor="middle" fill="#c9d1d9" font-size="12" font-weight="bold">12 V DC supply</text>
+  <text x="838" y="84" text-anchor="middle" fill="#8b949e" font-size="9">fuse: 7.5 A</text>
+  <text x="899" y="84" text-anchor="end" fill="#f85149" font-size="10" font-weight="bold">+</text>
+  <text x="913" y="54" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="bold">−</text>
 
-  <line x1="933" y1="95" x2="933" y2="105" stroke="#f85149" stroke-width="2"/>
+  <polyline points="905,80 933,80 933,105" fill="none" stroke="#f85149" stroke-width="2"/>
   <rect x="926" y="105" width="14" height="20" rx="3" fill="#0d1117" stroke="#d29922" stroke-width="1.5"/>
   <line x1="933" y1="125" x2="933" y2="355" stroke="#f85149" stroke-width="2"/>
   <text transform="rotate(-90 947 250)" x="947" y="250" text-anchor="middle" fill="#f85149" font-size="9">+12 V</text>
@@ -125,8 +124,7 @@
   <circle cx="933" cy="135" r="3.5" fill="#f85149"/>
   <line x1="933" y1="355" x2="905" y2="355" stroke="#f85149" stroke-width="2"/>
 
-  <line x1="965" y1="70" x2="970" y2="70" stroke="#6e7681" stroke-width="2"/>
-  <line x1="970" y1="70" x2="970" y2="560" stroke="#6e7681" stroke-width="2"/>
+  <polyline points="905,60 970,60 970,560" fill="none" stroke="#6e7681" stroke-width="2"/>
 
   <!-- ════════ common ground rail ════════ -->
   <line x1="700" y1="560" x2="970" y2="560" stroke="#6e7681" stroke-width="2.5"/>

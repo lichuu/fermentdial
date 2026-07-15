@@ -6,6 +6,11 @@ DS18B20 probe, reads Bluetooth hydrometers, and serves a full web dashboard —
 while staying fully usable standalone on the Dial's round touchscreen if Wi-Fi
 is never configured.
 
+> **Status:** the firmware is feature-complete and heavily exercised in demo
+> mode (simulated sensor, outputs disabled), but the first physical 12 V
+> build is still in progress — the hardware path hasn't been burned in on a
+> real rig yet. Build reports and issues are very welcome.
+
 <p align="center">
   <img src="docs/images/dial_main.png" width="220" alt="Main screen">
   <img src="docs/images/dial_setpoint_adjust.png" width="220" alt="Setpoint adjust">
