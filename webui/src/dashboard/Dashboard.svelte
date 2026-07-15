@@ -3,7 +3,7 @@
   import Sparkline from './Sparkline.svelte';
   import HydrometerChart from './HydrometerChart.svelte';
   import EventLog from './EventLog.svelte';
-  import { formatMode, getStatus, getHistory, getHistoryCsv, postSettings } from '../api.js';
+  import { formatMode, getStatus, getHistory, getHistoryCsv, postSettings, releaseTagUrl } from '../api.js';
   import {
     coerceDecimal,
     decimalError,
@@ -684,12 +684,11 @@
     </section>
 
     <footer class="buildFoot">
-      FermentDial v{s?.firmwareVersion || '—'} ·
-      <a
-        href={'https://github.com/lichuu/fermentdial/commit/' + (s?.firmwareGitSha || '')}
-        target="_blank"
-        rel="noreferrer"
-      >{(s?.firmwareGitSha || '').slice(0, 7) || '———————'}</a>
+      FermentDial
+      <a href={releaseTagUrl(s?.firmwareVersion)} target="_blank" rel="noreferrer"
+        >v{s?.firmwareVersion || '—'}</a
+      >
+      · {(s?.firmwareGitSha || '').slice(0, 7) || '———————'}
     </footer>
   </div>
 </main>

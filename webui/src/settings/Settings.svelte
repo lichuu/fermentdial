@@ -1,6 +1,6 @@
 <script>
   import Menu from '../shared/Menu.svelte';
-  import { getStatus, getSettingsConfig } from '../api.js';
+  import { getStatus, getSettingsConfig, releaseTagUrl } from '../api.js';
   import Profiles from './tabs/Profiles.svelte';
   import Programs from './tabs/Programs.svelte';
   import Hydrometer from './tabs/Hydrometer.svelte';
@@ -102,12 +102,11 @@
 
   {#if config}
     <footer class="buildFoot">
-      FermentDial v{config.firmwareVersion} ·
-      <a
-        href={'https://github.com/lichuu/fermentdial/commit/' + (config.firmwareGitSha || '')}
-        target="_blank"
-        rel="noreferrer"
-      >{(config.firmwareGitSha || '').slice(0, 7)}</a>
+      FermentDial
+      <a href={releaseTagUrl(config.firmwareVersion)} target="_blank" rel="noreferrer"
+        >v{config.firmwareVersion}</a
+      >
+      · {(config.firmwareGitSha || '').slice(0, 7)}
     </footer>
   {/if}
 </main>

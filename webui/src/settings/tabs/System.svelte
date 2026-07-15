@@ -302,10 +302,6 @@
     </form>
     {#if deviceStatus}<p class="formFeedback">{deviceStatus}</p>{/if}
     <dl class="metaLine">
-      <dt>Firmware</dt>
-      <dd>{config.firmwareName}</dd>
-    </dl>
-    <dl class="metaLine">
       <dt>Hostname</dt>
       <dd><code>{config.hostname}</code></dd>
     </dl>
@@ -363,14 +359,16 @@
       <label>Password<input name="pass" type="password" placeholder="leave blank to keep saved" bind:value={pass} /></label>
       <button type="submit" class="formSubmit">Save &amp; reboot</button>
     </form>
-    <dl class="metaLine">
-      <dt>Connected IP</dt>
-      <dd>{config.wifiIp || 'not connected'}</dd>
-    </dl>
-    <dl class="metaLine">
-      <dt>Setup AP</dt>
-      <dd>{config.apSsid}</dd>
-    </dl>
+    <div class="metaStack">
+      <dl class="metaLine">
+        <dt>Connected IP</dt>
+        <dd>{config.wifiIp || 'not connected'}</dd>
+      </dl>
+      <dl class="metaLine">
+        <dt>Setup AP</dt>
+        <dd>{config.apSsid}</dd>
+      </dl>
+    </div>
   </article>
 
   <article class="stackedRow dangerZone">

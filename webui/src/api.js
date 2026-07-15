@@ -4,6 +4,13 @@ export function formatMode(mode) {
   return String(mode).replaceAll('_', ' ');
 }
 
+/** GitHub Releases page for a firmware version (accepts "0.2.6" or "v0.2.6"). */
+export function releaseTagUrl(version) {
+  const v = String(version || '').replace(/^v/i, '').trim();
+  if (!v) return 'https://github.com/lichuu/fermentdial/releases';
+  return `https://github.com/lichuu/fermentdial/releases/tag/v${v}`;
+}
+
 async function parseJsonResponse(r) {
   if (!r.ok) {
     throw new Error('HTTP ' + r.status);
