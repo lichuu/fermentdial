@@ -189,7 +189,15 @@ void DisplayUI::drawMain(uint32_t nowMs, const Settings &settings,
   constexpr int16_t kHydroRowY = 46;
   constexpr int16_t kTempVisualBottomY = 12;
   const int16_t stateY = cy + (kTempVisualBottomY + kHydroRowY) / 2;
-  _canvas.drawString(stateLine, cx, stateY, &fonts::FreeSansBold12pt7b);
+  if (largeFontLoaded) {
+    // Scale the loaded DejaVu VLW (44 px) instead of switching to FreeSans,
+    // so the state line shares the temperature's typeface.
+    _canvas.setTextSize(0.5f);
+    _canvas.drawString(stateLine, cx, stateY);
+    _canvas.setTextSize(1.0f);
+  } else {
+    _canvas.drawString(stateLine, cx, stateY, &fonts::FreeSansBold12pt7b);
+  }
 
   // Prefer why-detail over the SG line when it explains idle holdoff; otherwise
   // show hydrometer status as before.
