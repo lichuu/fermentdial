@@ -11,3 +11,9 @@ dependencies = [
 
 [tool.uv]
 package = false
+# platformio 6.1.19 (latest) pins starlette<0.53, which carries several
+# fixed advisories (request.form() limits, Host header validation, UNC/SSRF
+# path handling). starlette is only used by `platformio home`'s dev server,
+# not `platformio run`; override to a patched version since upstream hasn't
+# moved the pin.
+override-dependencies = ["starlette>=1.3.1"]
