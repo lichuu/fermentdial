@@ -46,7 +46,12 @@
 namespace ferm {
 
 constexpr const char *FIRMWARE_NAME = "FermentDial";
-constexpr const char *FIRMWARE_VERSION = "0.1.0";
+// Release builds inject the tag version via -D FERM_FIRMWARE_VERSION="x.y.z"
+// (see .github/workflows/release.yml); local builds use the fallback below.
+#ifndef FERM_FIRMWARE_VERSION
+#define FERM_FIRMWARE_VERSION "0.1.0"
+#endif
+constexpr const char *FIRMWARE_VERSION = FERM_FIRMWARE_VERSION;
 constexpr const char *FIRMWARE_GIT_SHA = FERM_GIT_SHA;
 
 // DS18B20 DATA on PORT.A Yellow. VCC must be ~3.3V (not 5V): the adapter
