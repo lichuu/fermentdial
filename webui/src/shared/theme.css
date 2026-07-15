@@ -302,6 +302,9 @@ body[data-state="fault"] .state { color: var(--fault); }
 .historyHint strong { color: var(--text); font-weight: 600; }
 .dashFooter { padding: 12px 14px; }
 .dashFooterRow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+/* The batch row pairs a captioned input with a button; bottom-align so the
+   button sits on the input's baseline instead of the label block's centre. */
+.dashFooterRow.batchRow { align-items: flex-end; margin-top: 10px; }
 .dashFooterStat { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .dashFooterStat .label { margin: 0; }
 .dashFooterFault { font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
