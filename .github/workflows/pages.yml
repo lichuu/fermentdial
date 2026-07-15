@@ -1,0 +1,49 @@
+name: pages
+
+# Deploys the GitHub Pages site (web installer + OTA feed). The firmware
+# binaries always come from the latest published GitHub release, so a
+# site-only change redeploys without cutting a new release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site-src/**'
+      - 'tools/gen_site_manifests.py'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    name: Deploy Pages site
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble site from the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p site/ota site/flash
+          cp site-src/index.html site/
+          TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
+          VERSION="${TAG#v}"
+          echo "Bundling firmware from release ${TAG}"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D site/ota \
+            -p 'fermentdial-demo.bin' -p 'fermentdial-wifi.bin'
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D site/flash \
+            -p 'fermentdial-demo-factory.bin' -p 'fermentdial-wifi-factory.bin'
+          python3 tools/gen_site_manifests.py "$VERSION" "$GITHUB_REPOSITORY"
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4

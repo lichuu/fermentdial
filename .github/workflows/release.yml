@@ -11,11 +11,8 @@ permissions:
 
 jobs:
   release:
-    name: Build, publish release, deploy OTA site
+    name: Build and publish release
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
@@ -49,60 +46,14 @@ jobs:
               0x10000 ".pio/build/${env}/firmware.bin"
           done
 
-      - name: Assemble release assets and OTA site
-        env:
-          TAG: ${{ github.ref_name }}
-          REPO: ${{ github.repository }}
+      - name: Collect release assets
         run: |
-          VERSION="${TAG#v}"
-          mkdir -p out site/ota site/flash
+          mkdir -p out
           cp .pio/build/m5stack_dial_demo/firmware.bin out/fermentdial-demo.bin
           cp .pio/build/m5stack_dial_wifi/firmware.bin out/fermentdial-wifi.bin
           cp .pio/build/m5stack_dial/firmware.bin out/fermentdial-offline.bin
           cp .pio/build/m5stack_dial_demo/factory.bin out/fermentdial-demo-factory.bin
           cp .pio/build/m5stack_dial_wifi/factory.bin out/fermentdial-wifi-factory.bin
-          cp out/fermentdial-demo.bin out/fermentdial-wifi.bin site/ota/
-          cp out/fermentdial-demo-factory.bin out/fermentdial-wifi-factory.bin site/flash/
-          cp site-src/index.html site/
-          python3 - "$VERSION" <<'EOF'
-          import json, sys
-          version = sys.argv[1]
-          for variant, label in (("demo", "demo sensor"), ("wifi", "real sensor")):
-              manifest = {
-                  "name": f"FermentDial ({label})",
-                  "version": version,
-                  "new_install_prompt_erase": True,
-                  "builds": [{
-                      "chipFamily": "ESP32-S3",
-                      "improv": True,
-                      "parts": [{"path": f"fermentdial-{variant}-factory.bin", "offset": 0}],
-                  }],
-              }
-              with open(f"site/flash/{variant}.json", "w") as f:
-                  json.dump(manifest, f, indent=2)
-          EOF
-          python3 - "$VERSION" "$REPO" <<'EOF'
-          import hashlib, json, os, sys
-          version, repo = sys.argv[1], sys.argv[2]
-          builds = {}
-          for variant in ("demo", "wifi"):
-              path = f"site/ota/fermentdial-{variant}.bin"
-              with open(path, "rb") as f:
-                  data = f.read()
-              builds[variant] = {
-                  "file": f"fermentdial-{variant}.bin",
-                  "size": len(data),
-                  "sha256": hashlib.sha256(data).hexdigest(),
-              }
-          manifest = {
-              "version": version,
-              "notes_url": f"https://github.com/{repo}/releases/tag/v{version}",
-              "builds": builds,
-          }
-          with open("site/ota/manifest.json", "w") as f:
-              json.dump(manifest, f, indent=2)
-          print(json.dumps(manifest, indent=2))
-          EOF
 
       - name: Create GitHub release
         env:
@@ -111,9 +62,8 @@ jobs:
         run: |
           gh release create "$TAG" out/*.bin --generate-notes --verify-tag
 
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+  # The Pages site (installer + OTA feed) bundles assets from the release
+  # created above, so it deploys after the release job.
+  pages:
+    needs: release
+    uses: ./.github/workflows/pages.yml
