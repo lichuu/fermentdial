@@ -667,7 +667,7 @@
         <a class="dashFooterLink" href="/api/history.csv" download>Download history CSV</a>
         <a class="dashFooterLink" href="/api/export.json" download>Status snapshot</a>
       </div>
-      <div class="dashFooterRow" style="margin-top:10px">
+      <div class="dashFooterRow batchRow">
         <label class="fieldLabel" style="flex:1;min-width:140px;margin:0">
           Batch name
           <input
