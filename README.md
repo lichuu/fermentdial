@@ -140,7 +140,15 @@ as CSV.
 
 ## OTA Updates
 
-After the first USB flash, network builds accept updates over HTTP:
+The easiest path: **Settings → System → Check for updates** in the web
+dashboard. Your browser fetches the latest release from this project's GitHub
+Pages site and streams it to the Dial — the device itself never needs
+internet access. Release binaries are also attached to
+[GitHub Releases](https://github.com/lichuu/fermentdial/releases) for manual
+upload at `/firmware`.
+
+For development, network builds accept updates over HTTP after the first USB
+flash:
 
 ```sh
 uv run platformio run -e m5stack_dial_wifi_ota -t upload --upload-port <device-ip>

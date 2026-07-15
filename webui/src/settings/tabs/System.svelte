@@ -1,5 +1,7 @@
 <script>
-  import { postForm, postBrightnessPreview, getWifiScan } from '../../api.js';
+  import { postForm, postBrightnessPreview, getWifiScan, getStatus } from '../../api.js';
+
+  const OTA_MANIFEST_URL = 'https://lichuu.github.io/fermentdial/ota/manifest.json';
 
   let { status, config } = $props();
 
@@ -80,6 +82,110 @@
 
   function onFirmwarePick(ev) {
     firmwareFile = ev.target.files[0] || null;
+  }
+
+  // Online update: the browser fetches the release from GitHub Pages (the
+  // device itself never talks to GitHub) and streams it to POST /firmware.
+  let otaPhase = $state('idle'); // idle|checking|current|available|downloading|installing|rebooting|error
+  let otaManifest = $state(null);
+  let otaProgress = $state(0);
+  let otaError = $state('');
+
+  function versionParts(v) {
+    return String(v || '').replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
+  }
+
+  function isNewer(remote, local) {
+    const r = versionParts(remote);
+    const l = versionParts(local);
+    for (let i = 0; i < Math.max(r.length, l.length); i++) {
+      if ((r[i] || 0) !== (l[i] || 0)) return (r[i] || 0) > (l[i] || 0);
+    }
+    return false;
+  }
+
+  async function checkForUpdate() {
+    otaPhase = 'checking';
+    otaError = '';
+    try {
+      const res = await fetch(OTA_MANIFEST_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      otaManifest = await res.json();
+      otaPhase = isNewer(otaManifest.version, config.firmwareVersion) ? 'available' : 'current';
+    } catch (e) {
+      otaPhase = 'error';
+      otaError = 'Could not fetch update info — no release published yet, or this browser is offline.';
+    }
+  }
+
+  async function sha256Hex(blob) {
+    // SubtleCrypto needs a secure context; the dashboard is plain http, so
+    // this is best-effort (TLS to GitHub already covers transit integrity).
+    if (!crypto?.subtle) return null;
+    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+    return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function installUpdate() {
+    const variant = status.demo ? 'demo' : 'wifi';
+    const build = otaManifest?.builds?.[variant];
+    if (!build) {
+      otaPhase = 'error';
+      otaError = `This release has no "${variant}" build.`;
+      return;
+    }
+    otaPhase = 'downloading';
+    otaProgress = 0;
+    try {
+      const res = await fetch(new URL(build.file, OTA_MANIFEST_URL).href, { cache: 'no-store' });
+      if (!res.ok || !res.body) throw new Error('HTTP ' + res.status);
+      const total = Number(res.headers.get('content-length')) || build.size || 0;
+      const reader = res.body.getReader();
+      const chunks = [];
+      let received = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        received += value.length;
+        if (total) otaProgress = Math.round((received / total) * 100);
+      }
+      const blob = new Blob(chunks, { type: 'application/octet-stream' });
+      if (build.size && blob.size !== build.size) throw new Error('size mismatch');
+      const digest = await sha256Hex(blob);
+      if (digest && build.sha256 && digest !== build.sha256) throw new Error('checksum mismatch');
+
+      otaPhase = 'installing';
+      const fd = new FormData();
+      fd.append('firmware', blob, build.file);
+      const up = await fetch('/firmware', { method: 'POST', body: fd });
+      // An auth-gated device 302s to /login instead of flashing.
+      if (up.redirected) throw new Error('not logged in');
+      if (!up.ok) throw new Error('upload HTTP ' + up.status);
+
+      otaPhase = 'rebooting';
+      await waitForReboot(otaManifest.version);
+    } catch (e) {
+      otaPhase = 'error';
+      otaError = 'Update failed (' + (e?.message || e) + '). The device keeps its old firmware until a flash completes.';
+    }
+  }
+
+  async function waitForReboot(targetVersion) {
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      try {
+        const s = await getStatus();
+        if (s.firmwareVersion === targetVersion) {
+          location.reload();
+          return;
+        }
+      } catch (e) {
+        // Device still rebooting.
+      }
+    }
+    otaPhase = 'error';
+    otaError = 'The device did not report the new version after the update — check it manually.';
   }
 
   async function factoryReset() {
@@ -261,6 +367,34 @@
       </div>
     </div>
     {#if status.otaEnabled}
+      <div class="formSection">
+        {#if otaPhase === 'idle' || otaPhase === 'checking'}
+          <button type="button" class="btnSecondary" onclick={checkForUpdate} disabled={otaPhase === 'checking'}>
+            {otaPhase === 'checking' ? 'Checking…' : 'Check for updates'}
+          </button>
+        {:else if otaPhase === 'current'}
+          <p class="formHint">
+            Up to date — v{config.firmwareVersion} is the latest release.
+            <a href={otaManifest.notes_url} target="_blank" rel="noreferrer">Release notes</a>
+          </p>
+          <button type="button" class="btnSecondary" onclick={checkForUpdate}>Check again</button>
+        {:else if otaPhase === 'available'}
+          <p class="formHint">
+            Version {otaManifest.version} is available (running v{config.firmwareVersion}).
+            <a href={otaManifest.notes_url} target="_blank" rel="noreferrer">Release notes</a>
+          </p>
+          <button type="button" class="formSubmit" onclick={installUpdate}>Download &amp; install</button>
+        {:else if otaPhase === 'downloading'}
+          <p class="formHint">Downloading… {otaProgress}%</p>
+        {:else if otaPhase === 'installing'}
+          <p class="formHint">Installing — outputs are off. Do not power down the Dial.</p>
+        {:else if otaPhase === 'rebooting'}
+          <p class="formHint">Flashed. Waiting for the device to reboot…</p>
+        {:else if otaPhase === 'error'}
+          <p class="formFeedback">{otaError}</p>
+          <button type="button" class="btnSecondary" onclick={checkForUpdate}>Try again</button>
+        {/if}
+      </div>
       <form class="panelForm" method="post" action="/firmware" enctype="multipart/form-data">
         <label>
           Firmware .bin
