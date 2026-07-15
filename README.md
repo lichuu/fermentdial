@@ -50,8 +50,8 @@ is never configured.
 | GPIO13 (PORT.A yellow) | DS18B20 DATA (adapter has built-in 4.7 kΩ pull-up) |
 | GPIO15 (PORT.A white) | DS18B20 VCC — driven HIGH as a software 3.3 V rail |
 | M5 GND | DS18B20 GND |
-| GPIO2 | Heater MOSFET trigger input (active HIGH) |
-| GPIO1 | Pump MOSFET trigger input (active HIGH) |
+| GPIO2 (PORT.B yellow) | Heater MOSFET trigger input (active HIGH) |
+| GPIO1 (PORT.B white) | Pump MOSFET trigger input (active HIGH) |
 | M5 GND | MOSFET trigger ground |
 | 12 V input | 7.5 A fuse → +12 V bus |
 | Heater/pump + | +12 V bus |
@@ -65,6 +65,9 @@ Electrical notes:
   3.3 V-max input — power the sensor from the GPIO15 soft rail (or another
   3.3 V source), **never 5 V**.
 - The heater pad and cooling pump are low-side-switched 12 V DC loads.
+- Add a flyback diode across the pump terminals (stripe toward +12 V) — the
+  pump is an inductive load and the diode protects the MOSFET from switching
+  spikes. The heater pad is resistive and does not need one.
 - The firmware never intentionally energizes heater and pump at the same
   time, enforces pump minimum-off/minimum-run times, and forces physical
   outputs OFF in demo-sensor builds.
