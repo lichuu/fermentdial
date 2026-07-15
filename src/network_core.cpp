@@ -274,6 +274,33 @@ bool NetworkManager::requestSetupPortal() {
 #endif
 }
 
+bool NetworkManager::improvJoin(const String &ssid, const String &pass,
+                                uint32_t nowMs) {
+#if FERM_ENABLE_NETWORK
+  if (ssid.length() == 0) {
+    return false;
+  }
+  _prefs.putString("ssid", ssid);
+  _prefs.putString("pass", pass);
+  _wifiSsid = ssid;
+  _wifiPassword = pass;
+  if (_apMode) {
+    _dns.stop();
+    WiFi.softAPdisconnect(true);
+    _apMode = false;
+  }
+  _snapshot.wifiConfigured = true;
+  _snapshot.ssid = ssid;
+  startWifi(nowMs);
+  return true;
+#else
+  (void)ssid;
+  (void)pass;
+  (void)nowMs;
+  return false;
+#endif
+}
+
 void NetworkManager::startWifi(uint32_t nowMs) {
 #if FERM_ENABLE_NETWORK
   if (_wifiSsid.length() == 0) {

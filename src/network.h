@@ -165,6 +165,10 @@ public:
   NetworkSnapshot snapshot() const { return _snapshot; }
   bool consumeSettingsChanged();
   bool requestSetupPortal();
+  // Improv serial provisioning: save credentials through the normal "net"
+  // path and start a live STA connect (no reboot, the serial session must
+  // survive). Returns false if ssid is empty or networking is compiled out.
+  bool improvJoin(const String &ssid, const String &pass, uint32_t nowMs);
 
 private:
   NetworkSnapshot _snapshot;
