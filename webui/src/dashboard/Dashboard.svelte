@@ -682,5 +682,14 @@
         </button>
       </div>
     </section>
+
+    <footer class="buildFoot">
+      FermentDial v{s?.firmwareVersion || '—'} ·
+      <a
+        href={'https://github.com/lichuu/fermentdial/commit/' + (s?.firmwareGitSha || '')}
+        target="_blank"
+        rel="noreferrer"
+      >{(s?.firmwareGitSha || '').slice(0, 7) || '———————'}</a>
+    </footer>
   </div>
 </main>

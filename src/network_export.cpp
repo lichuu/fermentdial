@@ -545,6 +545,7 @@ String NetworkManager::settingsConfigJson() const {
   json += "\"hostname\":" + jsonString(_hostname) + ",";
   json += "\"firmwareName\":" + jsonString(FIRMWARE_NAME) + ",";
   json += "\"firmwareVersion\":" + jsonString(FIRMWARE_VERSION) + ",";
+  json += "\"firmwareGitSha\":" + jsonString(FIRMWARE_GIT_SHA) + ",";
   json += "\"passwordSet\":" +
           String(_adminPassword.length() > 0 ? "true" : "false") + ",";
   json += "\"wifiSsid\":" + jsonString(_wifiSsid) + ",";

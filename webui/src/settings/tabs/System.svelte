@@ -1,5 +1,5 @@
 <script>
-  import { postForm, postBrightnessPreview, getWifiScan, getStatus } from '../../api.js';
+  import { postForm, postBrightnessPreview, getWifiScan } from '../../api.js';
 
   const OTA_MANIFEST_URL = 'https://lichuu.github.io/fermentdial/ota/manifest.json';
 
@@ -89,7 +89,12 @@
   let otaPhase = $state('idle'); // idle|checking|current|available|downloading|installing|rebooting|error
   let otaManifest = $state(null);
   let otaProgress = $state(0);
+  let otaLoaded = $state(0);
+  let otaTotal = $state(0);
+  let otaRebootSecs = $state(0);
   let otaError = $state('');
+
+  const mb = (bytes) => (bytes / 1048576).toFixed(1);
 
   function versionParts(v) {
     return String(v || '').replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
@@ -143,11 +148,13 @@
       const reader = res.body.getReader();
       const chunks = [];
       let received = 0;
+      otaTotal = total;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
         received += value.length;
+        otaLoaded = received;
         if (total) otaProgress = Math.round((received / total) * 100);
       }
       const blob = new Blob(chunks, { type: 'application/octet-stream' });
@@ -156,14 +163,12 @@
       if (digest && build.sha256 && digest !== build.sha256) throw new Error('checksum mismatch');
 
       otaPhase = 'installing';
-      const fd = new FormData();
-      fd.append('firmware', blob, build.file);
-      const up = await fetch('/firmware', { method: 'POST', body: fd });
-      // An auth-gated device 302s to /login instead of flashing.
-      if (up.redirected) throw new Error('not logged in');
-      if (!up.ok) throw new Error('upload HTTP ' + up.status);
+      otaProgress = 0;
+      otaLoaded = 0;
+      await postFirmwareBlob(blob, build.file);
 
       otaPhase = 'rebooting';
+      otaRebootSecs = 0;
       await waitForReboot(otaManifest.version);
     } catch (e) {
       otaPhase = 'error';
@@ -171,11 +176,46 @@
     }
   }
 
+  // fetch cannot observe upload progress; XHR drives the installing bar.
+  function postFirmwareBlob(blob, filename) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/firmware');
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        otaLoaded = e.loaded;
+        otaTotal = e.total;
+        otaProgress = Math.round((e.loaded / e.total) * 100);
+      };
+      xhr.onload = () => {
+        // An auth-gated device redirects to /login instead of flashing.
+        if (xhr.responseURL && !xhr.responseURL.endsWith('/firmware')) {
+          reject(new Error('not logged in'));
+        } else if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error('upload HTTP ' + xhr.status));
+        }
+      };
+      xhr.onerror = () => reject(new Error('upload failed'));
+      const fd = new FormData();
+      fd.append('firmware', blob, filename);
+      xhr.send(fd);
+    });
+  }
+
   async function waitForReboot(targetVersion) {
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      otaRebootSecs = (i + 1) * 2;
       try {
-        const s = await getStatus();
+        // Plain fetch with a short timeout: a rebooting device leaves normal
+        // requests hanging for ~30 s, which froze this counter.
+        const res = await fetch('/api/status', {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(1800),
+        });
+        const s = await res.json();
         if (s.firmwareVersion === targetVersion) {
           location.reload();
           return;
@@ -384,12 +424,18 @@
             <a href={otaManifest.notes_url} target="_blank" rel="noreferrer">Release notes</a>
           </p>
           <button type="button" class="formSubmit" onclick={installUpdate}>Download &amp; install</button>
-        {:else if otaPhase === 'downloading'}
-          <p class="formHint">Downloading… {otaProgress}%</p>
-        {:else if otaPhase === 'installing'}
-          <p class="formHint">Installing — outputs are off. Do not power down the Dial.</p>
+        {:else if otaPhase === 'downloading' || otaPhase === 'installing'}
+          <p class="formHint">
+            {otaPhase === 'downloading' ? 'Downloading' : 'Installing'}… {otaProgress}%
+            {#if otaTotal}({mb(otaLoaded)} / {mb(otaTotal)} MB){/if}
+          </p>
+          <div class="otaProgress"><div style="width:{otaProgress}%"></div></div>
+          {#if otaPhase === 'installing'}
+            <p class="formHint">Outputs are off. Do not power down the Dial.</p>
+          {/if}
         {:else if otaPhase === 'rebooting'}
-          <p class="formHint">Flashed. Waiting for the device to reboot…</p>
+          <p class="formHint">Flashed. Waiting for the device to reboot… ({otaRebootSecs} s)</p>
+          <div class="otaProgress indeterminate"><div></div></div>
         {:else if otaPhase === 'error'}
           <p class="formFeedback">{otaError}</p>
           <button type="button" class="btnSecondary" onclick={checkForUpdate}>Try again</button>

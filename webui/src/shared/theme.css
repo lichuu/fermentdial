@@ -319,6 +319,33 @@ body[data-state="fault"] .state { color: var(--fault); }
 /* The batch row pairs a captioned input with a button; bottom-align so the
    button sits on the input's baseline instead of the label block's centre. */
 .dashFooterRow.batchRow { align-items: flex-end; margin-top: 10px; }
+
+/* ---- OTA update progress ---- */
+.otaProgress {
+  height: 8px; margin: 8px 0;
+  background: var(--face); border: 1px solid var(--border);
+  border-radius: 999px; overflow: hidden;
+}
+.otaProgress > div {
+  height: 100%; background: var(--primary);
+  border-radius: 999px; transition: width 0.25s ease;
+}
+.otaProgress.indeterminate > div {
+  width: 30%;
+  animation: otaSlide 1.4s ease-in-out infinite;
+}
+@keyframes otaSlide {
+  0% { margin-left: -30%; }
+  100% { margin-left: 100%; }
+}
+
+/* ---- Page footer: build identity ---- */
+.buildFoot {
+  margin: 18px 0 6px; text-align: center;
+  color: var(--muted); font-size: 12px;
+}
+.buildFoot a { color: var(--muted); font-family: var(--font-mono); }
+.buildFoot a:hover { color: var(--accent); }
 .dashFooterStat { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .dashFooterStat .label { margin: 0; }
 .dashFooterFault { font-size: 14px; font-weight: 700; letter-spacing: 0.01em; }
