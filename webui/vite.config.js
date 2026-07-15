@@ -75,6 +75,9 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: '',
       cssCodeSplit: false,
+      // Inline the hero font subset (~13 KB woff2) into app.css — the
+      // firmware serves fixed asset routes, so no separate font file.
+      assetsInlineLimit: 20480,
       rollupOptions: {
         output: {
           entryFileNames: 'app.js',

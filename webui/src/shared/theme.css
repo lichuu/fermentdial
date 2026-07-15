@@ -38,6 +38,19 @@
     Consolas, monospace;
 }
 
+/* The Dial's own display font (DejaVu Sans Bold, same as the VLW fonts baked
+   into the firmware), subset to basic latin + degree. Used for the hero
+   readout so it renders identically everywhere — `system-ui` on Linux can
+   resolve different families per weight, which made the state line look like
+   a different font. Regenerate: pyftsubset DejaVuSans-Bold.ttf
+   --unicodes="U+0020-007E,U+00B0,U+2013,U+2014" --flavor=woff2 */
+@font-face {
+  font-family: 'DejaVu Sans Web';
+  src: url('./dejavu-sans-bold-subset.woff2') format('woff2');
+  font-weight: 400 800;
+  font-display: swap;
+}
+
 html { background: var(--bg); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -261,9 +274,10 @@ body[data-state="fault"] .hero { border-top-color: var(--fault); }
 
 .tempBlock { min-width: 0; }
 .tempLine { display: flex; align-items: flex-start; }
-.temp { font-size: 78px; line-height: 0.9; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.unit { font-size: 26px; color: var(--accent); margin-left: 8px; margin-top: 8px; font-weight: 600; }
-.state { font-size: 24px; font-weight: 700; margin-top: 8px; color: var(--ok); letter-spacing: -0.01em; }
+.temp, .unit, .state { font-family: 'DejaVu Sans Web', var(--font-sans); }
+.temp { font-size: 74px; line-height: 0.9; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.unit { font-size: 24px; color: var(--accent); margin-left: 8px; margin-top: 8px; font-weight: 700; }
+.state { font-size: 23px; font-weight: 700; margin-top: 8px; color: var(--ok); letter-spacing: -0.01em; }
 body[data-state="heating"] .state { color: var(--heat); }
 body[data-state="cooling"] .state, body[data-state="crashing"] .state { color: var(--cool); }
 body[data-state="fault"] .state { color: var(--fault); }
