@@ -3,22 +3,73 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>FermentDial</title>
+  <title>FermentDial — Web Installer</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
     body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-           background: #0d1117; color: #c9d1d9; max-width: 640px;
-           margin: 4rem auto; padding: 0 1.5rem; line-height: 1.6; }
+           background: #0d1117; color: #c9d1d9; max-width: 680px;
+           margin: 3rem auto; padding: 0 1.5rem; line-height: 1.6; }
     a { color: #58a6ff; }
     h1 { color: #58a6ff; }
+    h2 { font-size: 1.05rem; margin-top: 2rem; }
     code { background: #161b22; padding: 2px 6px; border-radius: 4px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px;
+            padding: 1rem 1.25rem; margin: 1rem 0; }
+    .card h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+    .card p { margin: 0.25rem 0 0.75rem; color: #8b949e; font-size: 0.9rem; }
+    button.flash { background: #316d84; color: #e6edf3; border: none;
+                   border-radius: 8px; padding: 0.6rem 1.2rem; font: inherit;
+                   font-weight: bold; cursor: pointer; }
+    button.flash:hover { background: #3d819b; }
+    .hint { color: #8b949e; font-size: 0.85rem; }
+    .warn { color: #d29922; }
   </style>
 </head>
 <body>
   <h1>FermentDial</h1>
-  <p>Fermentation temperature controller firmware for the M5Stack Dial.</p>
-  <p>This site hosts over-the-air firmware update files. Your FermentDial's web
-     dashboard checks <code>ota/manifest.json</code> here when you press
-     &ldquo;Check for updates&rdquo; in Settings &rarr; System.</p>
+  <p>Fermentation temperature controller firmware for the M5Stack Dial.
+     Install it from this page over USB — no toolchain required. After
+     flashing, the installer asks for your Wi-Fi network and hands you a link
+     to the device dashboard. Wi-Fi credentials travel over the USB cable
+     only; this site never sees them.</p>
+
+  <div class="card">
+    <h3>Demo firmware</h3>
+    <p>Simulated sensor, all outputs disabled — safe way to explore the UI
+       and dashboard with nothing wired up.</p>
+    <esp-web-install-button manifest="flash/demo.json">
+      <button class="flash" slot="activate">Connect &amp; install demo</button>
+      <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
+      <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
+    </esp-web-install-button>
+  </div>
+
+  <div class="card">
+    <h3>Real-sensor firmware</h3>
+    <p>DS18B20 probe + heater/pump control. Wire the hardware first — see the
+       <a href="https://github.com/lichuu/fermentdial#hardware">wiring guide</a>.</p>
+    <esp-web-install-button manifest="flash/wifi.json">
+      <button class="flash" slot="activate">Connect &amp; install</button>
+      <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
+      <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
+    </esp-web-install-button>
+  </div>
+
+  <h2>Notes</h2>
+  <ul class="hint">
+    <li>Use a USB-C <em>data</em> cable, not a charge-only cable.</li>
+    <li>Works in Chrome and Edge on desktop (Web Serial). Firefox and Safari
+        can't flash — use the <a href="https://github.com/lichuu/fermentdial#getting-started">
+        PlatformIO route</a> instead.</li>
+    <li>If no serial port shows up, hold the Dial's side button while
+        plugging in USB to enter download mode.</li>
+    <li>Skipped the Wi-Fi step? The device starts an open
+        <code>FermentDial-Setup-XXXX</code> access point — join it and open
+        <code>http://192.168.4.1/</code>.</li>
+    <li>Future updates install from the dashboard: Settings &rarr; System
+        &rarr; Check for updates.</li>
+  </ul>
+
   <p><a href="https://github.com/lichuu/fermentdial">Source, documentation, and
      releases on GitHub</a></p>
 </body>

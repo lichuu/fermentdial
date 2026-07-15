@@ -6,6 +6,7 @@
 #include "events.h"
 #include "history.h"
 #include "hydrometer.h"
+#include "improv_serial.h"
 #include "network.h"
 #include "policy.h"
 #include "storage.h"
@@ -22,6 +23,7 @@ TemperatureSensor temperatureSensor;
 FermentationController controller;
 HydrometerManager hydrometer;
 NetworkManager network;
+ImprovSerial improvSerial;
 DisplayUI ui;
 
 uint32_t lastSerialLogMs = 0;
@@ -142,6 +144,7 @@ void setup() {
 #endif
   network.begin(settings, hydrometer);
   network.setEventLog(&eventLog);
+  improvSerial.begin(&network);
 #if FERM_DEMO_SENSOR
   // LittleFS survives USB/OTA flashes; drop any prior demo CSV so the web
   // chart does not replay stacked cycles from earlier runs.
@@ -165,6 +168,7 @@ void loop() {
   const HydrometerReading selectedHydrometer =
       hydrometer.selectedReading(settings, nowMs);
   network.update(nowMs, settings);
+  improvSerial.loop(nowMs);
   const bool diacetylRestChanged = updateDiacetylRest(nowMs);
   const bool gradualCrashChanged = updateGradualCrash(nowMs);
   const bool programChanged = updateProgramRunner(nowMs, selectedHydrometer);

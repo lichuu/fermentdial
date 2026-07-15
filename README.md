@@ -79,8 +79,14 @@ Electrical notes:
 
 ## Getting Started
 
-The repo pins PlatformIO through [`uv`](https://docs.astral.sh/uv/) — no
-global `pio` install needed.
+**No-toolchain route:** open the
+[web installer](https://lichuu.github.io/fermentdial/) in Chrome or Edge,
+plug the Dial in over USB, and click install. It flashes the latest release
+and then asks for your Wi-Fi network right in the browser (credentials go
+over the USB cable, not the internet).
+
+**From source:** the repo pins PlatformIO through
+[`uv`](https://docs.astral.sh/uv/) — no global `pio` install needed.
 
 ```sh
 git clone https://github.com/lichuu/fermentdial.git
@@ -114,7 +120,11 @@ use them for actual fermentation control.
 
 ## Wi-Fi Setup and Web UI
 
-If no credentials are saved, the Dial starts a setup access point:
+Network builds speak [Improv Wi-Fi](https://www.improv-wifi.com/) over USB
+serial, so the web installer (and any Improv-capable tool) can configure
+Wi-Fi without joining a setup network.
+
+Otherwise, if no credentials are saved, the Dial starts a setup access point:
 
 - SSID: `FermentDial-Setup-XXXX` (open network)
 - Setup page: `http://192.168.4.1/` (scan networks, enter your Wi-Fi password)
