@@ -32,30 +32,24 @@
   --gold: #ffd178;
   --fault: #e44840;
 
-  --font-sans: "DejaVu Sans Web", system-ui, -apple-system, "Segoe UI", Roboto,
+  --font-sans: "Inter Web", system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Source Code Pro", Menlo,
     Consolas, monospace;
 }
 
-/* The Dial's own typeface (DejaVu Sans, same family as the VLW fonts baked
-   into the firmware), subset to latin + latin-1 + typographic punctuation.
-   The whole UI uses it so text renders identically on every machine —
-   `system-ui` on Linux can resolve different families per weight, which made
-   bold text look like a different font. Regenerate: pyftsubset DejaVuSans.ttf
+/* Inter (variable, all weights in one file), subset to latin + latin-1 +
+   the arrows/bullets/punctuation the UI uses. Embedded so text renders
+   identically on every machine — `system-ui` on Linux can resolve different
+   families per weight, which made bold text look like a different font.
+   Regenerate: pyftsubset InterVariable.woff2 (from rsms.me/inter)
    --unicodes="U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,
-   U+2039-203A,U+2116,U+2190-2193,U+2248,U+26A0" --flavor=woff2 (and the same
-   for DejaVuSans-Bold.ttf). */
+   U+2039-203A,U+2116,U+2190-2193,U+2248,U+26A0" --flavor=woff2
+   --layout-features='kern,liga,calt,tnum' */
 @font-face {
-  font-family: 'DejaVu Sans Web';
-  src: url('./dejavu-sans-subset.woff2') format('woff2');
-  font-weight: 100 500;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'DejaVu Sans Web';
-  src: url('./dejavu-sans-bold-subset.woff2') format('woff2');
-  font-weight: 600 900;
+  font-family: 'Inter Web';
+  src: url('./inter-variable-subset.woff2') format('woff2');
+  font-weight: 100 900;
   font-display: swap;
 }
 

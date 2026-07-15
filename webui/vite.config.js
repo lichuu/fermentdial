@@ -75,9 +75,9 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       assetsDir: '',
       cssCodeSplit: false,
-      // Inline the DejaVu font subsets (~20 KB woff2 each) into app.css —
-      // the firmware serves fixed asset routes, so no separate font files.
-      assetsInlineLimit: 32768,
+      // Inline the Inter variable-font subset (~56 KB woff2) into app.css —
+      // the firmware serves fixed asset routes, so no separate font file.
+      assetsInlineLimit: 65536,
       rollupOptions: {
         output: {
           entryFileNames: 'app.js',
