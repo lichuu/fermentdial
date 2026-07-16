@@ -1,8 +1,8 @@
 # UI smoke harness (`test/smoke/`)
 
-Driven visual smoke for the M5Stack Dial UI. The script walks the manual
-9-point checklist from `docs/test-coverage-plan.md` by injecting gestures through
-`POST /api/screen/input` and capturing a framebuffer PNG per step via
+A device-driven visual smoke test for the M5Stack Dial UI. The script walks the
+manual 9-point checklist from `docs/test-coverage-plan.md` by injecting gestures
+through `POST /api/screen/input` and capturing a framebuffer PNG per step via
 `GET /api/screen`.
 
 **What it covers:** UI logic and rendering through the screen-mirror path (same
@@ -40,8 +40,8 @@ test/smoke/drive.sh --restore-only 192.168.1.50
 
 Outputs numbered PNGs (`01_main_baseline.png`, …) under `output_dir`. Review
 each frame for garbled fonts, layout breaks, or wrong colors. Live values
-(temperature, SG, RSSI) vary per run — this is visual review, not byte-exact
-golden comparison.
+(temperature, SG, RSSI) vary per run, so this is visual review rather than
+byte-exact golden comparison.
 
 The `settle` primitive polls `/api/screen` until the framebuffer MD5 changes
 (relative to the pre-gesture frame), which doubles as a cheap assertion that
@@ -57,7 +57,7 @@ each gesture had a visible effect.
 | 4 | Quick menu | main tap → quick; mode flow; QuickProfile → Crash → gradual prompt | Quick (Profile/Mode/D-Rest); crash gradual prompt |
 | 5 | Settings edit/save/cancel | Control → **Cool above** / **Heat below** edit; save/cancel | Edit, confirm-save, group item list |
 | 6 | About / Help fonts | help badge tap; System → About | Help and About screens, legible fonts |
-| 7 | Output test + reject toast | Daily → Mode OFF; System → heater test confirm | Confirm-test prompt; “Test blocked” toast |
+| 7 | Output test + reject toast | Daily → Mode OFF; System → heater test confirm | Confirm-test prompt; "Test blocked" toast |
 | 8 | Wi-Fi item toast | System → Wi-Fi item tap | Setup-AP or network toast (build-dependent) |
 | 9 | Brightness / idle | baseline `cap` only | Main at configured brightness; **idle dim is manual** (on-dial edit: System → Brightness) |
 
@@ -79,27 +79,28 @@ each gesture had a visible effect.
 
 **Navigation notes:** Settings are two-level (**Daily / Control / System**).
 `hold` steps item-list → group-list → Main (not always straight to Main).
-`menu_goto N` assumes the list is currently on entry 0 — true right after
-`open_menu` / `enter_group` (firmware resets focus). Do **not** “anchor” by
-scrolling up a fixed count; wrapping lists make that land on the wrong item
+`menu_goto N` assumes the list is currently on entry 0, which is true right
+after `open_menu` / `enter_group` (firmware resets focus). Do **not** "anchor"
+by scrolling up a fixed count; wrapping lists make that land on the wrong item
 when the count is not a multiple of the list length. Re-enter the group to
 re-anchor mid-flow. Use `open_menu_at G I` from Main. Preset **Target** is
 read-only for built-in profiles; edit steps use **Cool above** / **Mode**.
-Never park on Daily **D-Rest** during scroll demos — a centre tap starts the rest.
-Recalling/applying a profile ends any running program and D-Rest in firmware (`activateProfile`).
-The harness still runs `restore_device_state` as a belt-and-suspenders cleanup
-(`dRestAction=end`, `profile=0`, `mode=AUTO` if needed).
+Never park on Daily **D-Rest** during scroll demos, because a centre tap starts
+the rest. Recalling/applying a profile ends any running program and D-Rest in
+firmware (`activateProfile`). The harness still runs `restore_device_state` as
+a belt-and-suspenders cleanup (`dRestAction=end`, `profile=0`, `mode=AUTO` if
+needed).
 
 ## Residual manual pass
 
 After reviewing harness PNGs:
 
-1. **Physical encoder** — short press, long press, setpoint nudge on Main.
-2. **Physical touch** — swipes and taps on the round panel.
-3. **Idle brightness dim** — wait for idle timeout (~30 s) and confirm dimming.
+1. **Physical encoder:** short press, long press, setpoint nudge on Main.
+2. **Physical touch:** swipes and taps on the round panel.
+3. **Idle brightness dim:** wait for idle timeout (~30 s) and confirm dimming.
 
 ## CI note
 
-Device-bound; not suitable for CI. Lives alongside `test/golden/` as a
-re-runnable local asset. Golden HTTP captures do not use `/api/screen`, so this
-harness does not affect golden baselines.
+The harness is device-bound and not suitable for CI. It lives alongside
+`test/golden/` as a re-runnable local asset. Golden HTTP captures do not use
+`/api/screen`, so this harness does not affect golden baselines.

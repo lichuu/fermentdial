@@ -2,13 +2,13 @@
 
 Appliance-style fermentation temperature controller firmware for the
 **M5Stack Dial** (ESP32-S3). It drives a heater pad and a cooling pump around a
-DS18B20 probe, reads Bluetooth hydrometers, and serves a full web dashboard —
-while staying fully usable standalone on the Dial's round touchscreen if Wi-Fi
-is never configured.
+DS18B20 probe, reads Bluetooth hydrometers, and serves a full web dashboard.
+If you never configure Wi-Fi, everything still works standalone on the Dial's
+round touchscreen.
 
 > **Status:** the firmware is feature-complete and heavily exercised in demo
 > mode (simulated sensor, outputs disabled), but the first physical 12 V
-> build is still in progress — the hardware path hasn't been burned in on a
+> build is still in progress; the hardware path hasn't been burned in on a
 > real rig yet. Build reports and issues are very welcome.
 
 <p align="center">
@@ -23,29 +23,29 @@ is never configured.
 
 ## Features
 
-- **Local-first control** — profiles (Ale, Lager, Kveik, Soft Crash, Crash, two
+- **Local-first control.** Profiles (Ale, Lager, Kveik, Soft Crash, Crash, two
   custom slots), heat/cool/auto/off modes, hysteresis and pump-protection
   timing, all adjustable from the Dial itself. Wi-Fi is optional.
-- **Round-screen UI** — rotate the encoder to nudge the setpoint (with
+- **Round-screen UI.** Rotate the encoder to nudge the setpoint (with
   confirm), tap for a quick menu, swipe between pages, hold for settings.
-- **BLE hydrometers** — Tilt, Tilt Pro, and RAPT Pill. Gravity, ABV, and
+- **BLE hydrometers.** Tilt, Tilt Pro, and RAPT Pill. Gravity, ABV, and
   gravity velocity on the Dial and dashboard.
-- **Multi-step programs** — the custom slots run step programs that hold or
+- **Multi-step programs.** The custom slots run step programs that hold or
   ramp and advance on time, gravity, or gravity velocity (e.g. "hold 68 °F
   until SG < 1.020, then rest, then crash").
-- **Guided cold crash** — direct or gradual (stepped) crash to avoid shocking
+- **Guided cold crash.** Direct or gradual (stepped) crash to avoid shocking
   the yeast, plus a one-tap diacetyl rest with automatic return profile.
-- **Web dashboard (PWA)** — embedded Svelte app served from the firmware:
+- **Web dashboard (PWA).** An embedded Svelte app served from the firmware:
   live status, mode/profile/setpoint control, program editor, fermentation
   history graph, CSV export, and a settings area with device self-check.
-- **Batch tracking & calibration** — named batch sessions with exportable
+- **Batch tracking & calibration.** Named batch sessions with exportable
   snapshots, and single-point temperature calibration (ice-point supported)
   from the web UI.
-- **Integrations** — MQTT with Home Assistant discovery, Brewfather custom
+- **Integrations.** MQTT with Home Assistant discovery, Brewfather custom
   stream, InfluxDB, and a Prometheus-style `/metrics` endpoint.
-- **OTA updates** — over HTTP from PlatformIO or by uploading a `.bin` in the
-  browser. Optional admin password protects config pages and OTA.
-- **Screen mirror** — demo/dev builds serve the Dial's framebuffer at
+- **OTA updates.** Over HTTP from PlatformIO or by uploading a `.bin` in the
+  browser. An optional admin password protects config pages and OTA.
+- **Screen mirror.** Demo/dev builds serve the Dial's framebuffer at
   `/screen`, with remote tap/scroll injection for UI testing.
 
 ## Hardware
@@ -53,7 +53,7 @@ is never configured.
 | Connection | Wiring |
 | --- | --- |
 | GPIO13 (PORT.A yellow) | DS18B20 DATA (adapter has built-in 4.7 kΩ pull-up) |
-| GPIO15 (PORT.A white) | DS18B20 VCC — driven HIGH as a software 3.3 V rail |
+| GPIO15 (PORT.A white) | DS18B20 VCC, driven HIGH as a software 3.3 V rail |
 | M5 GND | DS18B20 GND |
 | GPIO2 (PORT.B yellow) | Heater MOSFET trigger input (active HIGH) |
 | GPIO1 (PORT.B white) | Pump MOSFET trigger input (active HIGH) |
@@ -67,11 +67,11 @@ is never configured.
 Electrical notes:
 
 - The DS18B20 adapter's pull-up ties DATA to VCC, and GPIO13 is a
-  3.3 V-max input — power the sensor from the GPIO15 soft rail (or another
+  3.3 V-max input, so power the sensor from the GPIO15 soft rail (or another
   3.3 V source), **never 5 V**.
 - The heater pad and cooling pump are low-side-switched 12 V DC loads.
-- Add a flyback diode across the pump terminals (stripe toward +12 V) — the
-  pump is an inductive load and the diode protects the MOSFET from switching
+- Add a flyback diode across the pump terminals (stripe toward +12 V). The
+  pump is an inductive load, and the diode protects the MOSFET from switching
   spikes. The heater pad is resistive and does not need one.
 - The firmware never intentionally energizes heater and pump at the same
   time, enforces pump minimum-off/minimum-run times, and forces physical
@@ -86,7 +86,7 @@ and then asks for your Wi-Fi network right in the browser (credentials go
 over the USB cable, not the internet).
 
 **From source:** the repo pins PlatformIO through
-[`uv`](https://docs.astral.sh/uv/) — no global `pio` install needed.
+[`uv`](https://docs.astral.sh/uv/), so you don't need a global `pio` install.
 
 ```sh
 git clone https://github.com/lichuu/fermentdial.git
@@ -109,13 +109,13 @@ cp include/secrets.example.h include/secrets.h   # gitignored; edit as needed
 | `m5stack_dial_demo` (default) | simulated | yes | try everything with no wiring; outputs forced OFF |
 | `m5stack_dial_wifi` | DS18B20 | yes | real fermentation control with dashboard |
 | `m5stack_dial` | DS18B20 | no | fully offline controller |
-| `native`, `native_demo` | – | – | host-side unit tests |
+| `native`, `native_demo` | n/a | n/a | host-side unit tests |
 
 ```sh
 uv run platformio run -e m5stack_dial_wifi -t upload
 ```
 
-Demo builds show a `DEMO SENSOR` badge and cannot energize hardware — do not
+Demo builds show a `DEMO SENSOR` badge and cannot energize hardware; do not
 use them for actual fermentation control.
 
 ## Wi-Fi Setup and Web UI
@@ -135,7 +135,7 @@ Once joined to your network, the dashboard lives at the device's IP or at
 stays responsive on phones.
 
 <p align="center">
-  <img src="docs/images/web_settings.png" width="720" alt="Settings — profiles, cold crash, diacetyl rest">
+  <img src="docs/images/web_settings.png" width="720" alt="Settings: profiles, cold crash, diacetyl rest">
 </p>
 
 <p align="center">
@@ -152,7 +152,7 @@ as CSV.
 
 The easiest path: **Settings → System → Check for updates** in the web
 dashboard. Your browser fetches the latest release from this project's GitHub
-Pages site and streams it to the Dial — the device itself never needs
+Pages site and streams it to the Dial, so the device itself never needs
 internet access. Release binaries are also attached to
 [GitHub Releases](https://github.com/lichuu/fermentdial/releases) for manual
 upload at `/firmware`.
@@ -176,11 +176,11 @@ export `FERM_OTA_PASSWORD` for CLI uploads.
   <img src="docs/images/dial_help.png" width="180" alt="Help overlay">
 </p>
 
-- **Rotate** — adjust the setpoint (confirm/cancel prompt).
-- **Tap** — quick menu: profile, mode, cold crash.
-- **Swipe** — switch between controller and hydrometer pages.
-- **Hold** — full settings menu (profiles, deltas, output tests, Wi-Fi,
-  about).
+- **Rotate** adjusts the setpoint (with a confirm/cancel prompt).
+- **Tap** opens the quick menu: profile, mode, cold crash.
+- **Swipe** switches between the controller and hydrometer pages.
+- **Hold** opens the full settings menu (profiles, deltas, output tests,
+  Wi-Fi, about).
 
 ## Development
 
@@ -192,8 +192,8 @@ export `FERM_OTA_PASSWORD` for CLI uploads.
   plus a golden-image baseline in `test/golden` and a device-driven UI smoke
   harness in `test/smoke` that uses the screen mirror.
 - **Screen mirror**: mirror builds serve the live framebuffer at `/screen`
-  and accept remote input at `/api/screen/input` — handy for screenshots and
-  remote debugging.
+  and accept remote input at `/api/screen/input`, which is handy for
+  screenshots and remote debugging.
 - **Fonts**: `tools/make_vlw_font.py` converts TTFs to M5GFX VLW fonts.
 
 Build all firmware environments before calling a change verified:
