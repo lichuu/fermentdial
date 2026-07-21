@@ -58,9 +58,10 @@ round touchscreen.
 | GPIO2 (PORT.B yellow) | Heater MOSFET trigger input (active HIGH) |
 | GPIO1 (PORT.B white) | Pump MOSFET trigger input (active HIGH) |
 | M5 GND | MOSFET trigger ground |
-| 12 V input | 7.5 A fuse → +12 V bus |
+| 12 V input | 7.5 A fuse → SPST ON/OFF (on + only) → +12 V bus |
 | Heater/pump + | +12 V bus |
 | Heater/pump − | MOSFET switched negative (low-side, AOD4184) |
+| Dial power | Rear 6–36 V terminal from +12 V bus and common GND |
 
 ![Wiring diagram](docs/wiring.svg)
 
@@ -73,6 +74,13 @@ Electrical notes:
 - Add a flyback diode across the pump terminals (stripe toward +12 V). The
   pump is an inductive load, and the diode protects the MOSFET from switching
   spikes. The heater pad is resistive and does not need one.
+- Power path is **PSU + → 7.5 A fuse → SPST 2-pin rocker → +12 V bus**.
+  A typical automotive SPST rocker (e.g. 20 A @ 12 V DC) only breaks the
+  positive; PSU − goes straight to the common GND rail. The switch’s two
+  leads are series on + — either color is fine; do not treat switch black as
+  system ground.
+- Feed the Dial from the rear **6–36 V** screw terminal off the same +12 V
+  bus (and common GND). USB-C is optional for flashing only.
 - The firmware never intentionally energizes heater and pump at the same
   time, enforces pump minimum-off/minimum-run times, and forces physical
   outputs OFF in demo-sensor builds.
