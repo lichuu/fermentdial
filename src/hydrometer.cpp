@@ -229,6 +229,16 @@ HydrometerReading HydrometerManager::selectedReading(const Settings &settings,
                     ? (settings.hydrometerOriginalGravity - reading.gravity) *
                           131.25f
                     : NAN;
+  // Apparent attenuation. OG must sit above 1.000 or the ratio is undefined;
+  // early readings can drift slightly above OG, so floor at zero.
+  reading.attenuation =
+      gravityIsValid(settings.hydrometerOriginalGravity) &&
+              gravityIsValid(reading.gravity) &&
+              settings.hydrometerOriginalGravity > 1.0f
+          ? fmaxf(0.0f, (settings.hydrometerOriginalGravity - reading.gravity) /
+                            (settings.hydrometerOriginalGravity - 1.0f) *
+                            100.0f)
+          : NAN;
   reading.stale = readingIsStale(reading, nowMs);
   if (gravityIsValid(settings.hydrometerStableGravity) &&
       gravityIsValid(reading.gravity) &&

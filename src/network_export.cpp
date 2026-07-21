@@ -486,6 +486,7 @@ String NetworkManager::statusJson(uint32_t nowMs) const {
           String(selected.gravityVelocityValid ? "true" : "false") + ",";
   json += "\"originalGravity\":" + jsonFloat(selected.originalGravity, 3) + ",";
   json += "\"abv\":" + jsonFloat(selected.abv, 1) + ",";
+  json += "\"attenuation\":" + jsonFloat(selected.attenuation, 1) + ",";
   json += "\"stableSeconds\":" + String(selected.stableSeconds) + ",";
   json += "\"lastSeenSeconds\":" + hydrometerAgeText(nowMs, selected.lastSeenMs);
   json += "},";
