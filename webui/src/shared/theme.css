@@ -293,15 +293,74 @@ body[data-state="fault"] .state { color: var(--fault); }
 .card, .panel { border: 1px solid var(--border); border-radius: var(--radius); background: var(--card); padding: 14px; min-width: 0; }
 .label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 .value { font-size: 23px; font-weight: 700; margin-top: 4px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+/* Hydrometer block: info card plus temperature and attenuation ring gauges,
+   in equal thirds. Explicit tracks — a spanning card inside the auto-fit
+   .grid stops auto-fit from collapsing empty tracks. */
+.hydroGrid { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 900px) {
+  .hydroGrid { grid-template-columns: 1fr; }
+}
+
+/* Key/value rows under a card's main value. */
+.metaRows { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.metaRows span:nth-child(odd) { color: var(--muted); }
+
+/* Ring gauge cards (temperature, attenuation). */
+.gaugeBody { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
+.ringGauge { position: relative; width: 80px; height: 80px; flex: none; }
+.ringGauge svg { width: 100%; height: 100%; display: block; }
+.ringTrack { fill: none; stroke: var(--panel2); stroke-width: 10; }
+.ringFill { fill: none; stroke-width: 10; stroke-linecap: round; }
+.ringLabel { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.gaugeReadout { min-width: 0; }
+.gaugeVal { display: flex; align-items: baseline; gap: 5px; font-variant-numeric: tabular-nums; }
+.gaugeValNum { font-size: 28px; font-weight: 700; letter-spacing: -0.01em; line-height: 1.15; }
+.gaugeValUnit { color: var(--muted); font-size: 14px; font-weight: 600; }
+.gaugeSub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.gaugeSub b { color: var(--text); font-weight: 600; }
+
 .panel h2 { font-size: 16px; margin: 0; color: var(--text); font-weight: 600; letter-spacing: -0.01em; }
 .panelHead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .panelHead h2 { margin: 0; }
 .panelHead span { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 
-.controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
+.controls { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px; }
+/* Control panel: mode buttons, profile, and setpoint in one aligned row. */
+.controlRow { display: grid; grid-template-columns: minmax(300px, 1.4fr) 1fr 1fr; gap: 16px; align-items: end; margin-top: 12px; }
+/* One control height across the row — the dashboard's 20px setpoint input
+   would otherwise outgrow the buttons and select beside it. */
+.controlRow .modes button,
+.controlRow select,
+.controlRow .targetCtl button,
+.controlRow .targetCtl input { height: 44px; padding-top: 0; padding-bottom: 0; }
+.controlRow .targetCtl input { font-size: 17px; }
+@media (max-width: 760px) {
+  .controlRow { grid-template-columns: 1fr; }
+}
 .targetCtl { display: grid; grid-template-columns: 50px 1fr 50px; gap: 8px; align-items: center; }
 .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .modes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.modesRow { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 640px) {
+  .modesRow { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* Collapsible panel (e.g. Diacetyl Rest): header row stays visible, form expands. */
+details.panel > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; list-style: none; user-select: none; -webkit-user-select: none; }
+details.panel > summary::-webkit-details-marker { display: none; }
+details.panel > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  flex: none;
+  margin-right: 3px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+details.panel[open] > summary::after { transform: rotate(-135deg); }
+.summaryHint { margin-left: auto; color: var(--muted); font-size: 12px; }
 .heat { background: #3b1807; }
 .cool { background: #123040; }
 
