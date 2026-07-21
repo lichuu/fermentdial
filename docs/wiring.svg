@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 660" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-  <rect width="1000" height="660" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 660" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <rect width="1140" height="660" fill="#0d1117"/>
 
-  <text x="500" y="28" text-anchor="middle" fill="#58a6ff" font-size="15" font-weight="bold">FermentDial — Wiring</text>
+  <text x="570" y="28" text-anchor="middle" fill="#58a6ff" font-size="15" font-weight="bold">FermentDial — Wiring</text>
 
   <!-- ════════ DS18B20 adapter ════════ -->
   <rect x="40" y="175" width="195" height="165" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
@@ -122,29 +122,31 @@
   <text x="913" y="50" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="bold">−</text>
 
   <!-- + from PSU to fuse -->
-  <polyline points="905,68 933,68 933,82" fill="none" stroke="#f85149" stroke-width="2"/>
+  <line x1="905" y1="68" x2="925" y2="68" stroke="#f85149" stroke-width="2"/>
   <!-- fuse -->
-  <rect x="926" y="82" width="14" height="18" rx="3" fill="#0d1117" stroke="#d29922" stroke-width="1.5"/>
-  <text x="950" y="95" fill="#d29922" font-size="8">7.5 A</text>
+  <rect x="925" y="61" width="18" height="14" rx="3" fill="#0d1117" stroke="#d29922" stroke-width="1.5"/>
+  <text x="934" y="90" text-anchor="middle" fill="#d29922" font-size="8">7.5 A</text>
   <!-- fuse out to switch -->
-  <line x1="933" y1="100" x2="933" y2="108" stroke="#f85149" stroke-width="2"/>
+  <line x1="943" y1="68" x2="975" y2="68" stroke="#f85149" stroke-width="2"/>
   <!-- SPST rocker switch (2-pin) -->
-  <rect x="908" y="108" width="50" height="28" rx="4" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
-  <text x="933" y="120" text-anchor="middle" fill="#58a6ff" font-size="8" font-weight="bold">SPST</text>
-  <text x="933" y="131" text-anchor="middle" fill="#8b949e" font-size="7">ON/OFF</text>
+  <rect x="975" y="54" width="56" height="28" rx="4" fill="#161b22" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="1003" y="66" text-anchor="middle" fill="#58a6ff" font-size="8" font-weight="bold">SPST</text>
+  <text x="1003" y="77" text-anchor="middle" fill="#8b949e" font-size="7">ON/OFF</text>
   <!-- switch out → +12 V bus -->
-  <line x1="933" y1="136" x2="933" y2="355" stroke="#f85149" stroke-width="2"/>
-  <text transform="rotate(-90 955 245)" x="955" y="245" text-anchor="middle" fill="#f85149" font-size="9">+12 V bus</text>
+  <polyline points="1031,68 1050,68 1050,355" fill="none" stroke="#f85149" stroke-width="2"/>
+  <text transform="rotate(-90 1069 245)" x="1069" y="245" text-anchor="middle" fill="#f85149" font-size="9">+12 V bus</text>
 
-  <line x1="933" y1="135" x2="905" y2="135" stroke="#f85149" stroke-width="2"/>
-  <circle cx="933" cy="135" r="3.5" fill="#f85149"/>
-  <line x1="933" y1="355" x2="905" y2="355" stroke="#f85149" stroke-width="2"/>
+  <!-- bus taps: heater + / Dial VIN, pump + -->
+  <line x1="1050" y1="135" x2="905" y2="135" stroke="#f85149" stroke-width="2"/>
+  <circle cx="1050" cy="135" r="3.5" fill="#f85149"/>
+  <circle cx="905" cy="135" r="3.5" fill="#f85149"/>
+  <line x1="1050" y1="355" x2="905" y2="355" stroke="#f85149" stroke-width="2"/>
 
   <!-- PSU − to common GND -->
-  <polyline points="905,50 970,50 970,575" fill="none" stroke="#6e7681" stroke-width="2"/>
+  <polyline points="905,50 1095,50 1095,575" fill="none" stroke="#6e7681" stroke-width="2"/>
 
   <!-- ════════ common ground rail ════════ -->
-  <line x1="460" y1="575" x2="970" y2="575" stroke="#6e7681" stroke-width="2.5"/>
+  <line x1="460" y1="575" x2="1095" y2="575" stroke="#6e7681" stroke-width="2.5"/>
   <text x="702" y="567" fill="#8b949e" font-size="10">common GND</text>
 
   <!-- footnotes -->

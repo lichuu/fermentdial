@@ -34,6 +34,7 @@ struct HydrometerReading {
   bool gravityVelocityValid = false;
   float originalGravity = NAN;
   float abv = NAN;
+  float attenuation = NAN;
   uint32_t stableSeconds = 0;
   uint32_t lastSeenMs = 0;
   bool stale = false;

@@ -1,5 +1,6 @@
 <script>
   import Menu from '../shared/Menu.svelte';
+  import RingGauge from './RingGauge.svelte';
   import Sparkline from './Sparkline.svelte';
   import HydrometerChart from './HydrometerChart.svelte';
   import EventLog from './EventLog.svelte';
@@ -21,11 +22,12 @@
   let graphSamples = $state([]);
   let graphSource = $state('live');
   let graphSourceLabel = $state('Live');
-  /** User preference: 'auto' | 'live' | 'csv'. auto = Full when CSV has data. */
+  /** User preference: 'live' | 'csv'. Live is the default; Full (csv) only
+      when explicitly chosen. Legacy stored 'auto' resolves to live. */
   let historyPref = $state(
     typeof localStorage !== 'undefined'
-      ? localStorage.getItem(HISTORY_PREF_KEY) || 'auto'
-      : 'auto',
+      ? localStorage.getItem(HISTORY_PREF_KEY) || 'live'
+      : 'live',
   );
   let liveGraphSamples = $state([]);
   let csvGraphSamples = $state([]);
@@ -282,10 +284,7 @@
   function applyHistoryPreference() {
     const hasCsv =
       csvGraphSamples.length >= 1 && hasGraphSeries(csvGraphSamples);
-    let use = historyPref;
-    if (use === 'auto') {
-      use = hasCsv ? 'csv' : 'live';
-    }
+    let use = historyPref === 'auto' ? 'live' : historyPref;
     if (use === 'csv' && hasCsv) {
       graphSamples = csvGraphSamples;
       graphSource = 'csv';
@@ -350,6 +349,41 @@
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
   const hydro = $derived(s?.hydrometer || {});
+  // Firmware floors attenuation at 0; past 100 the ring simply stays full
+  // while the label keeps the true value. Older firmware has no attenuation
+  // field, so fall back to computing it from OG and current gravity.
+  const attnPct = $derived.by(() => {
+    if (!hydro.valid) return null;
+    if (hydro.attenuation != null) return hydro.attenuation;
+    const og = hydro.originalGravity;
+    if (og == null || !(og > 1.0) || hydro.gravity == null) return null;
+    return Math.max(0, ((og - hydro.gravity) / (og - 1.0)) * 100);
+  });
+  // Temperature gauge: ring fill is distance from target, saturating at
+  // TEMP_GAUGE_SPAN display degrees; heat/cool color by direction.
+  const TEMP_GAUGE_SPAN = 2.0;
+  const tempDelta = $derived(
+    hydro.valid && s ? hydro.temperature - s.target : null,
+  );
+  const tempDeltaText = $derived(
+    tempDelta == null
+      ? '--' + deg
+      : (tempDelta >= 0 ? '+' : '-') + Math.abs(tempDelta).toFixed(1) + deg,
+  );
+  const tempGaugePct = $derived(
+    tempDelta == null
+      ? null
+      : (Math.min(Math.abs(tempDelta), TEMP_GAUGE_SPAN) / TEMP_GAUGE_SPAN) * 100,
+  );
+  const tempStroke = $derived(
+    tempDelta == null
+      ? 'var(--muted)'
+      : Math.abs(tempDelta) < 0.3
+        ? 'var(--ok)'
+        : tempDelta > 0
+          ? 'var(--heat)'
+          : 'var(--cool)',
+  );
   const prog = $derived(s?.program || {});
   const heroSub = $derived.by(() => {
     if (!s) return 'Waiting for controller status';
@@ -498,58 +532,64 @@
       </div>
     </section>
 
-    <section class="grid">
-      <div class="card"><div class="label">Profile</div><div class="value">{s ? (rest.active ? 'D-Rest' : s.profileName) : 'Ale'}</div></div>
-      <div class="card"><div class="label">Live setpoint</div><div class="value"><span>{s ? s.target.toFixed(1) : '--.-'}</span><span class="unit">{unit || 'F'}</span></div></div>
-      <div class="card"><div class="label">Mode</div><div class="value">{formatMode(s?.mode)}</div></div>
-    </section>
-
     <section class="controls">
       <div class="panel">
-        <h2>Mode</h2>
-        <div class="modes">
-          <button
-            class="danger"
-            class:active={s?.mode === 'OFF'}
-            class:armed={offArmed}
-            disabled={offline}
-            onclick={setModeOff}
-          >{offArmed ? 'TAP TO CONFIRM' : 'OFF'}</button>
-          <button class:active={s?.mode === 'AUTO'} disabled={offline} onclick={() => setMode('AUTO')}>AUTO</button>
-          <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} disabled={offline} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
-          <button class="cool" class:active={s?.mode === 'COOL_ONLY'} disabled={offline} onclick={() => setMode('COOL_ONLY')}>COOL</button>
+        <h2>Control</h2>
+        <div class="controlRow">
+          <div>
+            <div class="fieldLabel">Mode</div>
+            <div class="modes modesRow" style="margin-top:6px">
+              <button
+                class="danger"
+                class:active={s?.mode === 'OFF'}
+                class:armed={offArmed}
+                disabled={offline}
+                onclick={setModeOff}
+              >{offArmed ? 'CONFIRM' : 'OFF'}</button>
+              <button class:active={s?.mode === 'AUTO'} disabled={offline} onclick={() => setMode('AUTO')}>AUTO</button>
+              <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} disabled={offline} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
+              <button class="cool" class:active={s?.mode === 'COOL_ONLY'} disabled={offline} onclick={() => setMode('COOL_ONLY')}>COOL</button>
+            </div>
+          </div>
+          <div>
+            <div class="fieldLabel">Profile</div>
+            <select
+              bind:this={profileSelectEl}
+              onchange={selectProfile}
+              disabled={offline}
+              style="margin-top:6px"
+            >
+              {#each s?.profiles || [] as p}
+                <option value={p.index}>{p.name}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <div class="fieldLabel">Live setpoint (this batch)</div>
+            <div class="targetCtl" style="margin-top:6px">
+              <button disabled={offline} onclick={() => nudge(-0.1)}>-</button>
+              <input
+                bind:this={targetInputEl}
+                inputmode="decimal"
+                step="0.1"
+                disabled={offline}
+                oninput={onTargetInput}
+                onchange={applyTarget}
+                onblur={applyTarget}
+              />
+              <button disabled={offline} onclick={() => nudge(0.1)}>+</button>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="panel">
-        <h2>Profile</h2>
-        <select bind:this={profileSelectEl} onchange={selectProfile} disabled={offline}>
-          {#each s?.profiles || [] as p}
-            <option value={p.index}>{p.name}</option>
-          {/each}
-        </select>
-        <div class="fieldLabel" style="margin-top:12px">Live setpoint (this batch)</div>
-        <div class="targetCtl" style="margin-top:6px">
-          <button disabled={offline} onclick={() => nudge(-0.1)}>-</button>
-          <input
-            bind:this={targetInputEl}
-            inputmode="decimal"
-            step="0.1"
-            disabled={offline}
-            oninput={onTargetInput}
-            onchange={applyTarget}
-            onblur={applyTarget}
-          />
-          <button disabled={offline} onclick={() => nudge(0.1)}>+</button>
-        </div>
-        <p class="sub" style="font-size:12px;margin-top:10px">
-          Profile recall loads a preset into the live setpoint. Built-in profile names/targets
-          are fixed; rename Custom slots in
-          <a href="/settings#profiles">Settings → Profiles</a>.
-        </p>
-      </div>
-      <div class="panel">
-        <h2>Diacetyl Rest</h2>
-        <div class="row">
+      <details class="panel">
+        <summary>
+          <h2>Diacetyl Rest</h2>
+          <span class="summaryHint">
+            {rest.active ? 'Active - ' + remainingText(rest.remainingSeconds) + ' left' : 'Ready'}
+          </span>
+        </summary>
+        <div class="row" style="margin-top:12px">
           <label class="fieldLabel">Rest temp<input
             bind:this={dRestTargetInputEl}
             inputmode="decimal"
@@ -591,7 +631,7 @@
           <button disabled={!rest.active} onclick={endDrest}>STOP</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">{dRestStatusText}</p>
-      </div>
+      </details>
       <div class="panel" hidden={!prog.active}>
         <h2>Program</h2>
         <div class="fieldLabel">
@@ -614,11 +654,64 @@
       </div>
     </section>
 
-    <section class="grid" hidden={!hydro.selected}>
-      <div class="card"><div class="label">Hydrometer</div><div class="value">{hydro.label || 'Hydrometer'}</div></div>
-      <div class="card"><div class="label">Gravity</div><div class="value">{hydro.valid ? 'SG ' + hydro.gravity.toFixed(3) : hydro.stale ? 'stale' : 'waiting'}</div></div>
-      <div class="card"><div class="label">Temp</div><div class="value">{hydro.valid ? hydro.temperature.toFixed(1) + (unit || '') : '--.-'}</div></div>
-      <div class="card"><div class="label">ABV</div><div class="value">{hydro.valid && hydro.abv != null ? hydro.abv.toFixed(1) + '%' : '--.-%'}</div></div>
+    <section class="grid hydroGrid" hidden={!hydro.selected}>
+      <div class="card">
+        <div class="label">Hydrometer</div>
+        <div class="value">{hydro.label || 'Hydrometer'}</div>
+        <div class="metaRows">
+          <span>Type</span>
+          <span>{hydro.type || '—'}{hydro.color ? ' · ' + hydro.color : ''}</span>
+          <span>Signal</span>
+          <span>{hydro.rssi ? hydro.rssi + ' dBm' : '—'}</span>
+          <span>Battery</span>
+          <span>{hydro.batteryV != null ? hydro.batteryV.toFixed(2) + ' V' : '—'}</span>
+        </div>
+      </div>
+      <div class="card gaugeCard">
+        <div class="label">Temperature</div>
+        <div class="gaugeBody">
+          <RingGauge pct={tempGaugePct} label={tempDeltaText} stroke={tempStroke} />
+          <div class="gaugeReadout">
+            <div class="gaugeVal">
+              <span class="gaugeValNum">{hydro.valid ? hydro.temperature.toFixed(1) : '--.-'}</span>
+              <span class="gaugeValUnit">{unit || 'F'}</span>
+            </div>
+            <div class="gaugeSub">
+              {#if s}
+                target <b>{s.target.toFixed(1)}{unit}</b>
+                {#if tempDelta != null}
+                  · <b>{tempDeltaText}{s.unit}</b> from target
+                {/if}
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card gaugeCard">
+        <div class="label">Attenuation</div>
+        <div class="gaugeBody">
+          <RingGauge
+            pct={attnPct}
+            label={attnPct != null ? Math.round(attnPct) + '%' : '--%'}
+          />
+          <div class="gaugeReadout">
+            <div class="gaugeVal">
+              <span class="gaugeValNum">{hydro.valid ? hydro.gravity.toFixed(3) : hydro.stale ? 'stale' : 'waiting'}</span>
+              {#if hydro.valid}<span class="gaugeValUnit">SG</span>{/if}
+            </div>
+            <div class="gaugeSub">
+              {#if hydro.originalGravity != null}
+                from OG <b>{hydro.originalGravity.toFixed(3)}</b>
+                {#if hydro.valid && hydro.abv != null}
+                  · <b>{hydro.abv.toFixed(1)}%</b> ABV
+                {/if}
+              {:else}
+                OG not recorded yet
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="panel historyPanel">
