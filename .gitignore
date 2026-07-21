@@ -12,3 +12,5 @@ design/
 webui/node_modules/
 webui/dist/
 webui/.env.local
+.design-sync/
+ds-bundle/
