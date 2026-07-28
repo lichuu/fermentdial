@@ -22,6 +22,7 @@
   /* Primary action. One variable to retheme. */
   --primary: #356f89;
   --primary-hover: #3f819d;
+  --primary-hover-border: #4a92b0;
   --primary-foreground: #ffffff;
   --blue: var(--primary);
   --ring: rgba(176, 216, 248, 0.45);
@@ -35,9 +36,13 @@
   --cool: #b0d8f8;
   --cool-face: #123040;
   --cool-hover: #1a3c4e;
+  --cool-border: #2a5570;
+  --cool-active-border: #d0eaf8;
   --heat: #e36018;
   --heat-face: #3b1807;
   --heat-hover: #4a220c;
+  --heat-border: #6a3018;
+  --heat-active-border: #f08a4a;
   --ok: #36c87a;
   --gold: #ffd178;
   --fault: #e44840;
@@ -129,7 +134,7 @@ button.primary:hover:not(:disabled),
 .formSubmit:hover:not(:disabled),
 .btnCompact.primary:hover:not(:disabled) {
   background: var(--primary-hover);
-  border-color: #4a92b0;
+  border-color: var(--primary-hover-border);
 }
 .btnSecondary, .btnBrowse {
   background: var(--panel2);
@@ -156,12 +161,12 @@ button.primary:hover:not(:disabled),
 /* Mode chips keep their heat/cool identity when selected. */
 .modes .heat.active {
   background: var(--heat) !important;
-  border-color: #f08a4a !important;
+  border-color: var(--heat-active-border) !important;
   color: #081317 !important;
 }
 .modes .cool.active {
   background: var(--cool) !important;
-  border-color: #d0eaf8 !important;
+  border-color: var(--cool-active-border) !important;
   color: #081317 !important;
 }
 
@@ -389,18 +394,26 @@ details.panel > summary::after {
 }
 details.panel[open] > summary::after { transform: rotate(-135deg); }
 .summaryHint { margin-left: auto; color: var(--muted); font-size: 12px; }
-.heat {
+/* Scope heat/cool chrome to buttons (mode chips). Status pills use
+   .out / .out.on.heat / .out.on.cool and must keep muted OFF styling. */
+button.heat, .modes .heat {
   background: var(--heat-face);
-  border-color: #6a3018;
+  border-color: var(--heat-border);
   color: #ffd8bf;
 }
-.cool {
+button.cool, .modes .cool {
   background: var(--cool-face);
-  border-color: #2a5570;
+  border-color: var(--cool-border);
   color: var(--accent);
 }
-.heat:hover:not(:disabled):not(.active) { background: var(--heat-hover); }
-.cool:hover:not(:disabled):not(.active) { background: var(--cool-hover); }
+button.heat:hover:not(:disabled):not(.active),
+.modes .heat:hover:not(:disabled):not(.active) {
+  background: var(--heat-hover);
+}
+button.cool:hover:not(:disabled):not(.active),
+.modes .cool:hover:not(:disabled):not(.active) {
+  background: var(--cool-hover);
+}
 
 .historyPanel,
 .eventPanel,
@@ -602,7 +615,12 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
   text-overflow: ellipsis;
 }
 .tab:hover:not(.active) { color: var(--text); background: transparent; }
-.tab.active { background: var(--primary); color: #fff; }
+/* Active tab must beat button:hover:not(:disabled) (0,2,1) specificity. */
+.tab.active,
+.tab.active:hover:not(:disabled) {
+  background: var(--primary);
+  color: #fff;
+}
 .tabpanel { display: none; }
 .tabpanel.tabpanel-shown { display: block; }
 .tabpanel > .panel { margin-bottom: 12px; }
