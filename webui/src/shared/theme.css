@@ -131,6 +131,21 @@ button.primary:hover, .formSubmit:hover:not(:disabled), .btnCompact.primary:hove
   border-color: var(--fault) !important;
   color: #081317 !important;
 }
+.heat.armed {
+  background: var(--heat) !important;
+  border-color: #f08a4a !important;
+  color: #081317 !important;
+}
+.cool.armed {
+  background: var(--cool) !important;
+  border-color: #d0eaf8 !important;
+  color: #081317 !important;
+}
+button.armed:not(.danger):not(.heat):not(.cool):not(.active) {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #081317 !important;
+}
 .active {
   background: var(--accent) !important;
   border-color: var(--accent) !important;
@@ -283,6 +298,47 @@ body[data-state="heating"] .state { color: var(--heat); }
 body[data-state="cooling"] .state, body[data-state="crashing"] .state { color: var(--cool); }
 body[data-state="fault"] .state { color: var(--fault); }
 .sub { margin-top: 6px; color: var(--muted); }
+.heroStatus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  position: relative;
+  z-index: 1;
+}
+.heroChip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(16, 33, 38, 0.72);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-shadow: none;
+}
+.heroChip-mode {
+  color: var(--accent);
+  border-color: #2a4a58;
+}
+.heroChip-heat { color: #ffd8bf; border-color: #6a3018; }
+.heroChip-cool { color: var(--accent); border-color: #2a5570; }
+.heroAlert {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid #5a4020;
+  background: rgba(42, 36, 24, 0.88);
+  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-shadow: none;
+  position: relative;
+  z-index: 1;
+}
 .outputs { display: grid; gap: 8px; min-width: 116px; }
 .out { border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); padding: 10px; background: var(--face); color: var(--muted); font-weight: 600; text-align: center; }
 .out.on.heat { background: #3b1807; color: #ffd8bf; border-color: var(--heat); }

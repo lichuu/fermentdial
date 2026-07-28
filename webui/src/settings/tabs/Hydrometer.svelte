@@ -71,9 +71,31 @@
     await refresh();
   }
 
+  let ogArmed = $state(false);
+  let ogArmTimer = null;
+  let actionStatus = $state('');
+
+  function clearOgArm() {
+    ogArmed = false;
+    clearTimeout(ogArmTimer);
+    ogArmTimer = null;
+  }
+
   async function resetHydrometerOg() {
-    await postSettings({ hydrometerResetOg: 1 });
-    await refresh();
+    if (!ogArmed) {
+      ogArmed = true;
+      clearTimeout(ogArmTimer);
+      ogArmTimer = setTimeout(clearOgArm, 3000);
+      return;
+    }
+    clearOgArm();
+    try {
+      await postSettings({ hydrometerResetOg: 1 });
+      await refresh();
+      actionStatus = 'Original gravity cleared';
+    } catch (e) {
+      actionStatus = 'Reset OG failed — check connection';
+    }
   }
 </script>
 
@@ -105,10 +127,15 @@
       </div>
     {/if}
     <div class="row">
-      <button type="button" onclick={resetHydrometerOg}>Reset OG</button>
+      <button
+        type="button"
+        class="danger"
+        class:armed={ogArmed}
+        onclick={resetHydrometerOg}
+      >{ogArmed ? 'CONFIRM RESET OG' : 'Reset OG'}</button>
       <button type="button" onclick={clearHydrometer}>Clear selection</button>
     </div>
-    <div class="saveStatus">{statusText}</div>
+    <div class="saveStatus">{actionStatus || statusText}</div>
     <div class="networkList">
       {#if !devices.length}
         <p class="formHint">
