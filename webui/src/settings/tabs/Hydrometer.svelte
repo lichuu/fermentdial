@@ -74,11 +74,23 @@
   let ogArmed = $state(false);
   let ogArmTimer = null;
   let actionStatus = $state('');
+  let actionStatusTimer = null;
 
   function clearOgArm() {
     ogArmed = false;
     clearTimeout(ogArmTimer);
     ogArmTimer = null;
+  }
+
+  function setActionStatus(msg) {
+    actionStatus = msg;
+    clearTimeout(actionStatusTimer);
+    actionStatusTimer = msg
+      ? setTimeout(() => {
+          actionStatus = '';
+          actionStatusTimer = null;
+        }, 3500)
+      : null;
   }
 
   async function resetHydrometerOg() {
@@ -92,11 +104,20 @@
     try {
       await postSettings({ hydrometerResetOg: 1 });
       await refresh();
-      actionStatus = 'Original gravity cleared';
+      setActionStatus('Original gravity cleared');
     } catch (e) {
-      actionStatus = 'Reset OG failed — check connection';
+      setActionStatus('Reset OG failed — check connection');
     }
   }
+
+  $effect(() => {
+    return () => {
+      clearTimeout(ogArmTimer);
+      clearTimeout(actionStatusTimer);
+      ogArmTimer = null;
+      actionStatusTimer = null;
+    };
+  });
 </script>
 
 <section class="stackedCard">

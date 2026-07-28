@@ -110,6 +110,11 @@
       showBanner(err, 3500, 'error');
       return;
     }
+    // change + blur both fire on commit; skip when the value is unchanged.
+    const next = parseFloat(targetInputEl.value);
+    if (s && Number.isFinite(next) && Number.isFinite(s.target) && next === s.target) {
+      return;
+    }
     const u = s?.unit || 'F';
     post({ target: targetInputEl.value }, `Setpoint ${targetInputEl.value}${deg}${u}`);
   }
@@ -413,11 +418,20 @@
     if (og == null || !(og > 1.0) || hydro.gravity == null) return null;
     return Math.max(0, ((og - hydro.gravity) / (og - 1.0)) * 100);
   });
-  // Temperature gauge: ring fill is distance from target, saturating at
-  // TEMP_GAUGE_SPAN display degrees; heat/cool color by direction.
-  const TEMP_GAUGE_SPAN = 2.0;
+  // Beer (hydrometer) temp vs live setpoint — not the control-probe error
+  // (that lives in the hero as probeDelta). Span and "ok" band use display
+  // degrees so °C is not 1.8× looser than °F; prefer firmware hold band.
+  const tempGaugeSpan = $derived(s?.unit === 'C' ? 1.1 : 2.0);
+  const tempOkBand = $derived(
+    s && Number.isFinite(s.hold) ? Math.max(0.05, s.hold) : s?.unit === 'C' ? 0.17 : 0.3,
+  );
   const tempDelta = $derived(
-    hydro.valid && s ? hydro.temperature - s.target : null,
+    hydro.valid &&
+      s &&
+      Number.isFinite(hydro.temperature) &&
+      Number.isFinite(s.target)
+      ? hydro.temperature - s.target
+      : null,
   );
   const tempDeltaText = $derived(
     tempDelta == null
@@ -427,12 +441,12 @@
   const tempGaugePct = $derived(
     tempDelta == null
       ? null
-      : (Math.min(Math.abs(tempDelta), TEMP_GAUGE_SPAN) / TEMP_GAUGE_SPAN) * 100,
+      : (Math.min(Math.abs(tempDelta), tempGaugeSpan) / tempGaugeSpan) * 100,
   );
   const tempStroke = $derived(
     tempDelta == null
       ? 'var(--muted)'
-      : Math.abs(tempDelta) < 0.3
+      : Math.abs(tempDelta) <= tempOkBand
         ? 'var(--ok)'
         : tempDelta > 0
           ? 'var(--heat)'
@@ -497,10 +511,18 @@
   }
 
   async function resetFerment() {
-    await postSettings({ fermentReset: 1 });
-    await tick();
-    await loadHistory();
-    showBanner('Ferment history reset');
+    if (offline) {
+      showBanner("Can't reach controller", 3500, 'error');
+      return;
+    }
+    try {
+      await postSettings({ fermentReset: 1 });
+      await tick();
+      await loadHistory();
+      showBanner('Ferment history reset');
+    } catch (e) {
+      showBanner('Reset failed — check connection', 3500, 'error');
+    }
   }
 
   let batchNameInput = $state('');
@@ -573,7 +595,7 @@
       <div
         class="offlineBanner"
         class:offlineBanner-info={bannerKind === 'info'}
-        role="status"
+        role={bannerKind === 'error' ? 'alert' : 'status'}
       >{banner}</div>
     {/if}
 
@@ -635,7 +657,8 @@
           </div>
           {#if heroAlert}
             <div class="heroAlert" role="status">{heroAlert}</div>
-          {:else if heroDetail}
+          {/if}
+          {#if heroDetail}
             <div class="sub">{heroDetail}</div>
           {/if}
         </div>
@@ -708,7 +731,7 @@
           </div>
         </div>
       </div>
-      <details class="panel">
+      <details class="panel" open={!!rest.active}>
         <summary>
           <h2>Diacetyl Rest</h2>
           <span class="summaryHint">
@@ -818,9 +841,9 @@
             </div>
             <div class="gaugeSub">
               {#if s}
-                target <b>{s.target.toFixed(1)}{unit}</b>
+                beer vs setpoint <b>{s.target.toFixed(1)}{unit}</b>
                 {#if tempDelta != null}
-                  · <b>{tempDeltaText}{s.unit}</b> from target
+                  · <b>{tempDeltaText}{s.unit}</b>
                 {/if}
               {/if}
             </div>

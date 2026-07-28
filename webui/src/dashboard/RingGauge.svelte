@@ -2,7 +2,7 @@
   let { pct = null, label = '--', stroke = 'var(--gold)' } = $props();
 
   const RING_C = 2 * Math.PI * 40;
-  const fill = $derived(pct != null ? Math.min(Math.max(pct, 0), 100) : 0);
+  const fill = $derived(Number.isFinite(pct) ? Math.min(Math.max(pct, 0), 100) : 0);
 </script>
 
 <div class="ringGauge">
