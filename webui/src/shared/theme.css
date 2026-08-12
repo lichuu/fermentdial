@@ -1,8 +1,5 @@
 /* FermentDial web UI — shadcn-style structure on the original teal palette.
-   One token system, restyled onto the existing class names.
-   Palette, type, motion, and spacing tokens live in tokens.css, which is the
-   shared source of truth (site-src/ symlinks the same file). Vite inlines this
-   @import into the single app.css the firmware serves. */
+   One token system, restyled onto the existing class names. */
 @import './tokens.css';
 
 html {
@@ -780,10 +777,7 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
   .tab { flex: 0 0 auto; min-width: 5.25rem; }
 }
 
-/* ---- Touch targets ----
-   The segmented controls are sized for a mouse. On touch devices the tab
-   strip, history toggle, and mode buttons were ~27-33px tall — under the 44px
-   guidance, and easy to fat-finger while holding the phone over a fermenter. */
+/* Coarse pointers get 44px targets; mouse keeps the compact strip. */
 @media (pointer: coarse) {
   .tab,
   .historyToggle button,

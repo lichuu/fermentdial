@@ -7,10 +7,6 @@
   <meta name="description" content="Flash FermentDial, a fermentation temperature controller for the M5Stack Dial, straight from your browser over USB.">
   <meta name="theme-color" content="#0d1b1e">
   <link rel="icon" type="image/svg+xml" href="icon.svg">
-
-  <!-- Palette, type, and rhythm come from the device dashboard's token file
-       (webui/src/shared/theme.css imports the same one). tokens.css and the
-       Inter subset beside it are symlinks — this page cannot drift. -->
   <link rel="stylesheet" href="tokens.css">
 
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
@@ -49,8 +45,6 @@
     }
     section + section { margin-top: clamp(1.5rem, 4vw, 2.5rem); }
 
-    /* ---- Hero: pitch on the left, a miniature of the real dashboard on the
-       right. Collapses to one column before the readout gets cramped. ---- */
     .hero {
       display: grid;
       grid-template-columns: 1fr;
@@ -146,7 +140,6 @@
     }
     .sectionHead p { margin: 0.4rem 0 0; color: var(--muted); max-width: 60ch; }
 
-    /* ---- Firmware choices: siblings in a grid, not cards inside cards ---- */
     .options {
       display: grid; gap: 0.75rem; margin-top: 1.25rem;
       grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
@@ -222,8 +215,6 @@
         </ul>
       </div>
 
-      <!-- Static illustration of the device dashboard, built from the same
-           tokens the real one uses. Decorative: hidden from screen readers. -->
       <div class="preview" aria-hidden="true">
         <div class="previewTop"><span>Chamber</span><span>Live</span></div>
         <div class="previewBody">
@@ -285,18 +276,18 @@
         <h2>Before you start</h2>
       </div>
       <ul class="notes">
-        <li><b>Use a data cable</b>USB-C charge-only cables power the Dial but
+        <li><b>Use a data cable</b> USB-C charge-only cables power the Dial but
             carry no serial data.</li>
-        <li><b>Chrome or Edge, on desktop</b>Web Serial isn't available in
+        <li><b>Chrome or Edge, on desktop</b> Web Serial isn't available in
             Firefox or Safari — use the
             <a href="https://github.com/lichuu/fermentdial#getting-started">PlatformIO route</a>
             instead.</li>
-        <li><b>No serial port listed?</b>Hold the Dial's side button while
+        <li><b>No serial port listed?</b> Hold the Dial's side button while
             plugging in USB to enter download mode.</li>
-        <li><b>Skipped the Wi-Fi step?</b>The device starts an open
+        <li><b>Skipped the Wi-Fi step?</b> The device starts an open
             <code>FermentDial-Setup-XXXX</code> access point — join it and open
             <code>http://192.168.4.1/</code>.</li>
-        <li><b>Updating later</b>Future releases install from the dashboard:
+        <li><b>Updating later</b> Future releases install from the dashboard:
             Settings → System → Check for updates.</li>
       </ul>
     </section>

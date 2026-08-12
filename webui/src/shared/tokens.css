@@ -1,7 +1,4 @@
-/* FermentDial design tokens — the single source of truth for the palette,
-   type, and rhythm. Imported by theme.css (device dashboard) and symlinked
-   into site-src/ so the public installer page cannot drift from the device UI.
-   Structural tokens only: never add a new hue here, reuse a semantic one. */
+/* Structural tokens only: never add a new hue here, reuse a semantic one. */
 :root {
   --radius: 0.625rem;
 
