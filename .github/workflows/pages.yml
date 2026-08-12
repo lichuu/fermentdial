@@ -8,6 +8,9 @@ on:
     branches: [main]
     paths:
       - 'site-src/**'
+      - 'webui/src/shared/tokens.css'
+      - 'webui/src/shared/inter-variable-subset.woff2'
+      - 'webui/public/icon.svg'
       - 'tools/gen_site_manifests.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -32,7 +35,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p site/ota site/flash
-          cp site-src/index.html site/
+          # -L: materialize the site-src/ symlinks as regular files.
+          cp -RL site-src/. site/
           TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
           VERSION="${TAG#v}"
           echo "Bundling firmware from release ${TAG}"

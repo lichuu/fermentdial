@@ -2,130 +2,293 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>FermentDial — Web Installer</title>
+  <meta name="description" content="Flash FermentDial, a fermentation temperature controller for the M5Stack Dial, straight from your browser over USB.">
+  <meta name="theme-color" content="#0d1b1e">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <link rel="stylesheet" href="tokens.css">
+
   <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
-    /* Tokens mirrored from the FermentDial web UI (webui/src/shared/theme.css). */
-    :root {
-      --radius: 0.625rem;
-      --bg: #0d1b1e;
-      --face: #102126;
-      --card: #132428;
-      --panel2: #1b3540;
-      --border: #1e3840;
-      --text: #d0e8f0;
-      --muted: #6a9aaa;
-      --accent: #b0d8f8;
-      --primary: #356f89;
-      --primary-foreground: #ffffff;
-      --gold: #ffd178;
-      --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-        Arial, "Noto Sans", sans-serif;
-      --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Source Code Pro",
-        Menlo, Consolas, monospace;
-    }
     * { box-sizing: border-box; }
-    html { background: var(--bg); }
+    html { background: var(--bg); -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
       font-family: var(--font-sans);
       font-size: 15px;
-      line-height: 1.45;
+      line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       background: var(--bg);
       color: var(--text);
+      /* A single wash of the accent behind the fold — the only decoration
+         on the page. Fixed so it doesn't band as the page scrolls. */
+      background-image: radial-gradient(80rem 40rem at 50% -18rem,
+        rgba(53, 111, 137, 0.22), transparent 70%);
+      background-repeat: no-repeat;
+      background-attachment: fixed;
     }
-    main { max-width: 800px; margin: auto; padding: 20px 16px 48px; }
     a { color: #79d4ff; text-decoration: none; }
     a:hover { text-decoration: underline; }
-    code { font-family: var(--font-mono); background: var(--face);
-           border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+    :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+    code {
+      font-family: var(--font-mono); font-size: 0.9em;
+      background: var(--face); border: 1px solid var(--border);
+      border-radius: 6px; padding: 1px 6px; overflow-wrap: anywhere;
+    }
 
-    header.page { margin: 14px 0 20px; }
-    header.page h1 { margin: 0; font-size: 24px; color: var(--accent); font-weight: 700; }
-    header.page p { margin: 4px 0 0; color: var(--muted); }
-    .badge {
-      display: inline-block; margin-left: 10px; padding: 2px 10px;
+    main {
+      max-width: 62rem;
+      margin: auto;
+      padding: clamp(1.5rem, 6vw, 4rem) var(--gutter-right)
+               calc(3rem + env(safe-area-inset-bottom)) var(--gutter-left);
+    }
+    section + section { margin-top: clamp(1.5rem, 4vw, 2.5rem); }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: clamp(1.75rem, 5vw, 3rem);
+      align-items: center;
+    }
+    @media (min-width: 56rem) {
+      .hero { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); }
+    }
+
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.3rem 0.75rem 0.3rem 0.5rem;
       border: 1px solid var(--border); border-radius: 999px;
-      font-size: 12px; font-weight: 600; color: var(--gold);
-      vertical-align: 4px;
+      background: var(--face);
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.03em;
+      color: var(--muted);
+    }
+    .eyebrow img { width: 1.15rem; height: 1.15rem; display: block; }
+    .eyebrow b { color: var(--gold); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .eyebrow[hidden] { display: none; }
+
+    h1 {
+      margin: 1rem 0 0;
+      font-size: clamp(2.25rem, 7vw, 3.5rem);
+      line-height: 1.04;
+      font-weight: 700;
+      letter-spacing: -0.035em;
+      color: var(--accent);
+    }
+    h1 span { color: var(--text); }
+    .lede {
+      margin: 0.85rem 0 0;
+      max-width: 34ch;
+      font-size: clamp(1rem, 2.2vw, 1.15rem);
+      color: var(--muted);
+    }
+    .heroMeta {
+      margin: 1.5rem 0 0; padding: 0; list-style: none;
+      display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem;
+      font-size: 0.85rem; color: var(--muted);
+    }
+    .heroMeta li { display: flex; align-items: center; gap: 0.45rem; }
+    .heroMeta li::before {
+      content: ""; width: 0.4rem; height: 0.4rem; flex: none;
+      border-radius: 999px; background: var(--ok);
     }
 
-    section.card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 18px 20px; margin: 14px 0;
+    /* Miniature of the dashboard hero card — same tokens, same shapes. */
+    .preview {
+      border: 1px solid var(--border);
+      border-top: 3px solid var(--ok);
+      border-radius: var(--radius);
+      background: var(--sunken);
+      box-shadow: var(--shadow-2);
+      padding: clamp(1rem, 3vw, 1.35rem);
     }
-    section.card h2 { margin: 0 0 2px; font-size: 17px; }
-    section.card p.desc { margin: 0 0 14px; color: var(--muted); font-size: 14px; }
+    .previewTop {
+      display: flex; justify-content: space-between; gap: 0.75rem;
+      color: var(--muted);
+      font-size: 0.7rem; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .previewBody {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 1rem; margin-top: 0.75rem; flex-wrap: wrap;
+    }
+    .previewTemp { display: flex; align-items: flex-start; }
+    .previewTemp b {
+      font-size: clamp(3rem, 9vw, 4.25rem); line-height: 0.9; font-weight: 700;
+      letter-spacing: -0.03em; font-variant-numeric: tabular-nums;
+    }
+    .previewTemp i {
+      font-style: normal; font-weight: 700; color: var(--accent);
+      font-size: 1.4rem; margin: 0.35rem 0 0 0.4rem;
+    }
+    .previewState { margin-top: 0.5rem; font-size: 1.25rem; font-weight: 700; color: var(--ok); }
+    .previewSub { margin-top: 0.35rem; color: var(--muted); font-size: 0.85rem; }
+    /* Shrink before the readout does — the temperature is the point. */
+    .previewOuts { display: grid; gap: 0.5rem; flex: 0 1 7.5rem; min-width: 6.5rem; }
+    .previewOuts div {
+      border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px);
+      padding: 0.6rem; background: var(--face); color: var(--muted);
+      font-size: 0.75rem; font-weight: 600; text-align: center;
+      letter-spacing: 0.02em;
+    }
+    .previewOuts .on { background: #123040; color: var(--accent); border-color: var(--cool); }
+
+    /* ---- Section headings ---- */
+    .sectionHead h2 {
+      margin: 0; font-size: clamp(1.15rem, 3vw, 1.4rem);
+      font-weight: 600; letter-spacing: -0.015em;
+    }
+    .sectionHead p { margin: 0.4rem 0 0; color: var(--muted); max-width: 60ch; }
+
+    .options {
+      display: grid; gap: 0.75rem; margin-top: 1.25rem;
+      grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    }
+    .option {
+      display: flex; flex-direction: column; gap: 0.6rem;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--card); padding: 1.25rem;
+      transition: border-color var(--dur-fast) var(--ease),
+                  background var(--dur-fast) var(--ease);
+    }
+    .option:hover { border-color: #2a4a58; background: #16292e; }
+    .optionHead { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+    .optionHead h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+    .tag {
+      padding: 0.15rem 0.55rem; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--face);
+      font-size: 0.68rem; font-weight: 600;
+      letter-spacing: 0.02em; text-transform: uppercase; white-space: nowrap;
+    }
+    .tag-demo { color: var(--gold); border-color: #5a4020; background: #2a2418; }
+    .tag-live { color: var(--ok); border-color: #2a6; background: #153528; }
+    .option p { margin: 0; color: var(--muted); font-size: 0.9rem; flex: 1; }
+    .option esp-web-install-button { display: block; margin-top: 0.25rem; }
 
     button.flash {
+      width: 100%;
       font: inherit; font-weight: 600; cursor: pointer;
       background: var(--primary); color: var(--primary-foreground);
-      border: 1px solid transparent; border-radius: calc(var(--radius) - 2px);
-      padding: 10px 18px; transition: filter 0.12s ease;
+      border: 1px solid #3f819d; border-radius: calc(var(--radius) - 2px);
+      padding: 0.7rem 1.1rem; min-height: 2.75rem;
+      transition: filter var(--dur-fast) var(--ease);
     }
-    button.flash:hover { filter: brightness(1.15); }
-    .hint { color: var(--muted); font-size: 13px; }
+    button.flash:hover { filter: brightness(1.12); }
+    .hint { display: block; color: var(--muted); font-size: 0.82rem; }
 
-    ul.notes { margin: 8px 0 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
-    ul.notes li { margin: 6px 0; }
-    footer { margin-top: 24px; color: var(--muted); font-size: 14px; }
+    /* ---- Notes ---- */
+    .notes {
+      display: grid; gap: 0.75rem; margin: 1.25rem 0 0; padding: 0;
+      grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+      list-style: none;
+    }
+    .notes li {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--card); padding: 1rem 1.1rem;
+      color: var(--muted); font-size: 0.88rem;
+    }
+    .notes b { display: block; margin-bottom: 0.25rem; color: var(--text); font-weight: 600; font-size: 0.9rem; }
+
+    footer {
+      margin-top: clamp(2rem, 5vw, 3.5rem);
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted); font-size: 0.88rem;
+    }
   </style>
 </head>
 <body>
   <main>
-    <header class="page">
-      <h1>FermentDial<span class="badge" id="version" hidden></span></h1>
-      <p>Fermentation temperature controller for the M5Stack Dial</p>
-    </header>
+    <section class="hero">
+      <div>
+        <span class="eyebrow" id="version" hidden>
+          <img src="icon.svg" alt="" width="192" height="192">
+          FermentDial <b></b>
+        </span>
+        <h1>Ferment<span>Dial</span></h1>
+        <p class="lede">A fermentation temperature controller for the M5Stack
+           Dial. Flash it from this page over USB — no toolchain required.</p>
+        <ul class="heroMeta">
+          <li>Heater &amp; pump control</li>
+          <li>Web dashboard</li>
+          <li>OTA updates</li>
+        </ul>
+      </div>
 
-    <section class="card">
-      <h2>Install over USB</h2>
-      <p class="desc">Flash the latest firmware from this page — no toolchain
-         required. After flashing, the installer asks for your Wi-Fi network
-         and hands you a link to the device dashboard. Credentials travel over
-         the USB cable only; this site never sees them.</p>
-
-      <section class="card" style="background: var(--face);">
-        <h2>Demo firmware</h2>
-        <p class="desc">Simulated sensor, outputs disabled — a safe way to
-           explore the Dial UI and dashboard with nothing wired up.</p>
-        <esp-web-install-button manifest="flash/demo.json">
-          <button class="flash" slot="activate">Connect &amp; install demo</button>
-          <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
-          <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
-        </esp-web-install-button>
-      </section>
-
-      <section class="card" style="background: var(--face);">
-        <h2>Real-sensor firmware</h2>
-        <p class="desc">DS18B20 probe + heater/pump control. Wire the hardware
-           first — see the
-           <a href="https://github.com/lichuu/fermentdial#hardware">wiring guide</a>.</p>
-        <esp-web-install-button manifest="flash/wifi.json">
-          <button class="flash" slot="activate">Connect &amp; install</button>
-          <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
-          <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
-        </esp-web-install-button>
-      </section>
+      <div class="preview" aria-hidden="true">
+        <div class="previewTop"><span>Chamber</span><span>Live</span></div>
+        <div class="previewBody">
+          <div>
+            <div class="previewTemp"><b>68.4</b><i>F</i></div>
+            <div class="previewState">Holding</div>
+            <div class="previewSub">Target 68.0 F · Ale — primary</div>
+          </div>
+          <div class="previewOuts">
+            <div>HEATER OFF</div>
+            <div class="on">PUMP ON</div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>Notes</h2>
+    <section>
+      <div class="sectionHead">
+        <h2>Install over USB</h2>
+        <p>The installer asks for your Wi-Fi network after flashing and hands
+           you a link to the device dashboard. Credentials travel over the USB
+           cable only — this site never sees them.</p>
+      </div>
+
+      <div class="options">
+        <article class="option">
+          <div class="optionHead">
+            <h3>Demo firmware</h3>
+            <span class="tag tag-demo">No hardware</span>
+          </div>
+          <p>Simulated sensor, outputs disabled — a safe way to explore the Dial
+             UI and dashboard with nothing wired up.</p>
+          <esp-web-install-button manifest="flash/demo.json">
+            <button class="flash" slot="activate">Connect &amp; install demo</button>
+            <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
+            <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
+          </esp-web-install-button>
+        </article>
+
+        <article class="option">
+          <div class="optionHead">
+            <h3>Real-sensor firmware</h3>
+            <span class="tag tag-live">Live outputs</span>
+          </div>
+          <p>DS18B20 probe with heater and pump control. Wire the hardware
+             first — see the
+             <a href="https://github.com/lichuu/fermentdial#hardware">wiring guide</a>.</p>
+          <esp-web-install-button manifest="flash/wifi.json">
+            <button class="flash" slot="activate">Connect &amp; install</button>
+            <span class="hint" slot="unsupported">Web flashing needs Chrome or Edge on desktop.</span>
+            <span class="hint" slot="not-allowed">Web flashing only works over HTTPS.</span>
+          </esp-web-install-button>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="sectionHead">
+        <h2>Before you start</h2>
+      </div>
       <ul class="notes">
-        <li>Use a USB-C <em>data</em> cable, not a charge-only cable.</li>
-        <li>Works in Chrome and Edge on desktop (Web Serial). Firefox and
-            Safari can't flash — use the
+        <li><b>Use a data cable</b> USB-C charge-only cables power the Dial but
+            carry no serial data.</li>
+        <li><b>Chrome or Edge, on desktop</b> Web Serial isn't available in
+            Firefox or Safari — use the
             <a href="https://github.com/lichuu/fermentdial#getting-started">PlatformIO route</a>
             instead.</li>
-        <li>If no serial port shows up, hold the Dial's side button while
+        <li><b>No serial port listed?</b> Hold the Dial's side button while
             plugging in USB to enter download mode.</li>
-        <li>Skipped the Wi-Fi step? The device starts an open
-            <code>FermentDial-Setup-XXXX</code> access point — join it and
-            open <code>http://192.168.4.1/</code>.</li>
-        <li>Future updates install from the dashboard: Settings &rarr; System
-            &rarr; Check for updates.</li>
+        <li><b>Skipped the Wi-Fi step?</b> The device starts an open
+            <code>FermentDial-Setup-XXXX</code> access point — join it and open
+            <code>http://192.168.4.1/</code>.</li>
+        <li><b>Updating later</b> Future releases install from the dashboard:
+            Settings → System → Check for updates.</li>
       </ul>
     </section>
 
@@ -134,12 +297,13 @@
       releases on GitHub</a>
     </footer>
   </main>
+
   <script>
     fetch('ota/manifest.json', { cache: 'no-store' })
       .then((r) => r.json())
       .then((m) => {
         const el = document.getElementById('version');
-        el.textContent = 'v' + m.version;
+        el.querySelector('b').textContent = 'v' + m.version;
         el.hidden = false;
       })
       .catch(() => {});

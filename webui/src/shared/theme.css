@@ -1,59 +1,13 @@
 /* FermentDial web UI — shadcn-style structure on the original teal palette.
    One token system, restyled onto the existing class names. */
-:root {
-  --radius: 0.625rem;
+@import './tokens.css';
 
-  /* Surfaces (original teal scheme) */
-  --bg: #0d1b1e;          /* page background */
-  --sunken: #091418;      /* deepest surface: hero */
-  --face: #102126;        /* inset/input surface: inputs, lists, insets */
-  --card: #132428;        /* raised surface: cards/panels */
-  --panel: var(--card);
-  --panel2: #1b3540;      /* raised mid surface */
-  --border: #1e3840;      /* hairline border */
-  --line: var(--border);
-  --input: #1e3840;       /* input/control border */
-
-  /* Foreground */
-  --text: #d0e8f0;        /* primary text */
-  --muted: #6a9aaa;       /* muted/secondary text */
-  --accent: #b0d8f8;      /* bright highlight + links */
-
-  /* Primary action. One variable to retheme. */
-  --primary: #356f89;
-  --primary-foreground: #ffffff;
-  --blue: var(--primary);
-  --ring: rgba(176, 216, 248, 0.45);
-
-  /* Semantic state */
-  --cool: #b0d8f8;
-  --heat: #e36018;
-  --ok: #36c87a;
-  --gold: #ffd178;
-  --fault: #e44840;
-
-  --font-sans: "Inter Web", system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Source Code Pro", Menlo,
-    Consolas, monospace;
+html {
+  background: var(--bg);
+  /* Stop iOS from inflating text in landscape, which broke the tabular-nums
+     alignment of the live readouts. */
+  -webkit-text-size-adjust: 100%;
 }
-
-/* Inter (variable, all weights in one file), subset to latin + latin-1 +
-   the arrows/bullets/punctuation the UI uses. Embedded so text renders
-   identically on every machine — `system-ui` on Linux can resolve different
-   families per weight, which made bold text look like a different font.
-   Regenerate: pyftsubset InterVariable.woff2 (from rsms.me/inter)
-   --unicodes="U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,
-   U+2039-203A,U+2116,U+2190-2193,U+2248,U+26A0" --flavor=woff2
-   --layout-features='kern,liga,calt,tnum' */
-@font-face {
-  font-family: 'Inter Web';
-  src: url('./inter-variable-subset.woff2') format('woff2');
-  font-weight: 100 900;
-  font-display: swap;
-}
-
-html { background: var(--bg); }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body {
@@ -65,13 +19,22 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  /* dvh tracks the collapsing mobile URL bar; 100vh above is the fallback. */
+  min-height: 100dvh;
 }
 a { color: #79d4ff; text-decoration: none; }
 a:hover { text-decoration: underline; }
 code { font-family: var(--font-mono); }
 
-body[data-page="dashboard"] main { max-width: 1040px; margin: auto; padding: 20px 16px; }
-body[data-page="settings"] main { max-width: 800px; margin: auto; padding: 20px 16px; }
+/* Page column. Gutters are fluid and clear the notch when the dashboard is
+   installed as a PWA and rotated to landscape. */
+body[data-page="dashboard"] main,
+body[data-page="settings"] main {
+  margin: auto;
+  padding: var(--gutter) var(--gutter-right) calc(var(--gutter) + env(safe-area-inset-bottom)) var(--gutter-left);
+}
+body[data-page="dashboard"] main { max-width: 1040px; }
+body[data-page="settings"] main { max-width: 800px; }
 .shell { padding: 0; }
 
 /* ---- Controls: inputs, selects, buttons ---- */
@@ -92,7 +55,7 @@ button {
   background: var(--panel2);
   color: var(--text);
   font-weight: 500;
-  transition: background 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), filter var(--dur-fast) var(--ease);
 }
 button:hover { background: #213f4a; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -181,7 +144,7 @@ h1 a:hover { text-decoration: none; }
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-2);
 }
 .menu.open { display: block; }
 .menu a {
@@ -276,8 +239,10 @@ body[data-state="fault"] .hero { border-top-color: var(--fault); }
 
 .tempBlock { min-width: 0; }
 .tempLine { display: flex; align-items: flex-start; }
-.temp { font-size: 74px; line-height: 0.9; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
-.unit { font-size: 24px; color: var(--accent); margin-left: 8px; margin-top: 8px; font-weight: 700; }
+/* The signature number. Scales continuously instead of stepping at 760px, so
+   it never crowds the unit on the awkward 380-760px widths. */
+.temp { font-size: clamp(52px, 11vw, 74px); line-height: 0.9; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.unit { font-size: clamp(20px, 3.6vw, 24px); color: var(--accent); margin-left: 8px; margin-top: 8px; font-weight: 700; }
 .state { font-size: 23px; font-weight: 700; margin-top: 8px; color: var(--ok); letter-spacing: -0.01em; }
 body[data-state="heating"] .state { color: var(--heat); }
 body[data-state="cooling"] .state, body[data-state="crashing"] .state { color: var(--cool); }
@@ -301,9 +266,12 @@ body[data-state="fault"] .state { color: var(--fault); }
   .hydroGrid { grid-template-columns: 1fr; }
 }
 
-/* Key/value rows under a card's main value. */
-.metaRows { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
+/* Key/value rows under a card's main value. minmax(0,…) on the value column
+   lets long values (device names, MACs) wrap instead of widening the grid
+   past the card. */
+.metaRows { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 16px; margin-top: 10px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .metaRows span:nth-child(odd) { color: var(--muted); }
+.metaRows span:nth-child(even) { overflow-wrap: anywhere; }
 
 /* Ring gauge cards (temperature, attenuation). */
 .gaugeBody { display: flex; align-items: center; gap: 14px; margin-top: 12px; }
@@ -357,7 +325,7 @@ details.panel > summary::after {
   border-right: 2px solid var(--muted);
   border-bottom: 2px solid var(--muted);
   transform: rotate(45deg);
-  transition: transform 0.15s ease;
+  transition: transform var(--dur-fast) var(--ease);
 }
 details.panel[open] > summary::after { transform: rotate(-135deg); }
 .summaryHint { margin-left: auto; color: var(--muted); font-size: 12px; }
@@ -388,7 +356,7 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
 }
 .otaProgress > div {
   height: 100%; background: var(--primary);
-  border-radius: 999px; transition: width 0.25s ease;
+  border-radius: 999px; transition: width var(--dur-slow) var(--ease);
 }
 .otaProgress.indeterminate > div {
   width: 30%;
@@ -397,6 +365,14 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
 @keyframes otaSlide {
   0% { margin-left: -30%; }
   100% { margin-left: 100%; }
+}
+/* Keep the "working" affordance without the sliding motion. */
+@media (prefers-reduced-motion: reduce) {
+  .otaProgress.indeterminate > div {
+    width: 100%;
+    animation: none;
+    opacity: 0.55;
+  }
 }
 
 /* ---- Page footer: build identity ---- */
@@ -452,7 +428,7 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
 .chartLegendBtn:hover {
   background: rgba(176, 216, 248, 0.12);
@@ -511,12 +487,9 @@ details.panel[open] > summary::after { transform: rotate(-135deg); }
 .chartTooltipRow strong { font-weight: 700; color: var(--text); }
 
 @media (max-width: 760px) {
-  body[data-page="dashboard"] main { padding: 14px 12px; }
   .controls { grid-template-columns: 1fr; }
   .readout { display: block; }
   .outputs { grid-template-columns: 1fr 1fr; margin-top: 14px; }
-  .temp { font-size: 58px; }
-  .unit { font-size: 22px; }
   .hydroChart { height: 220px; }
   .dashFooterLink { margin-left: 0; width: 100%; }
 }
@@ -791,7 +764,6 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
 .thresholds { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
 @media (max-width: 640px) {
-  body[data-page="settings"] main { padding: 14px 12px; }
   .row, .thresholds { grid-template-columns: 1fr; }
   .profileHeader { display: none; }
   .nav a { margin-left: 0; margin-right: 10px; }
@@ -803,4 +775,14 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
     flex-wrap: nowrap;
   }
   .tab { flex: 0 0 auto; min-width: 5.25rem; }
+}
+
+/* Coarse pointers get 44px targets; mouse keeps the compact strip. */
+@media (pointer: coarse) {
+  .tab,
+  .historyToggle button,
+  .scanModes button,
+  .integrationToggle button { min-height: 44px; }
+  .menu a { padding-top: 13px; padding-bottom: 13px; }
+  .chartLegendBtn { min-height: 34px; }
 }

@@ -1,0 +1,73 @@
+/* Structural tokens only: never add a new hue here, reuse a semantic one. */
+:root {
+  --radius: 0.625rem;
+
+  /* Surfaces (original teal scheme) */
+  --bg: #0d1b1e;          /* page background */
+  --sunken: #091418;      /* deepest surface: hero */
+  --face: #102126;        /* inset/input surface: inputs, lists, insets */
+  --card: #132428;        /* raised surface: cards/panels */
+  --panel: var(--card);
+  --panel2: #1b3540;      /* raised mid surface */
+  --border: #1e3840;      /* hairline border */
+  --line: var(--border);
+  --input: #1e3840;       /* input/control border */
+
+  /* Foreground */
+  --text: #d0e8f0;        /* primary text */
+  --muted: #6a9aaa;       /* muted/secondary text */
+  --accent: #b0d8f8;      /* bright highlight + links */
+
+  /* Primary action. One variable to retheme. */
+  --primary: #356f89;
+  --primary-foreground: #ffffff;
+  --blue: var(--primary);
+  --ring: rgba(176, 216, 248, 0.45);
+
+  /* Semantic state */
+  --cool: #b0d8f8;
+  --heat: #e36018;
+  --ok: #36c87a;
+  --gold: #ffd178;
+  --fault: #e44840;
+
+  --font-sans: "Inter Web", system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Source Code Pro", Menlo,
+    Consolas, monospace;
+
+  /* Elevation. Two steps only — this is an instrument panel, not a card stack. */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 12px 30px rgba(0, 0, 0, 0.5);
+
+  /* Motion. Every transition/animation references these so the
+     reduced-motion override below can zero them in one place. */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur-fast: 0.12s;
+  --dur-slow: 0.25s;
+
+  /* Page gutter — grows with the viewport, and clears the iOS notch when
+     the dashboard runs as an installed PWA in landscape. */
+  --gutter: clamp(12px, 3vw, 20px);
+  --gutter-left: max(var(--gutter), env(safe-area-inset-left));
+  --gutter-right: max(var(--gutter), env(safe-area-inset-right));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0s; --dur-slow: 0s; }
+}
+
+/* Inter (variable, all weights in one file), subset to latin + latin-1 +
+   the arrows/bullets/punctuation the UI uses. Embedded so text renders
+   identically on every machine — `system-ui` on Linux can resolve different
+   families per weight, which made bold text look like a different font.
+   Regenerate: pyftsubset InterVariable.woff2 (from rsms.me/inter)
+   --unicodes="U+0020-007E,U+00A0-00FF,U+2013-2014,U+2018-201D,U+2022,U+2026,
+   U+2039-203A,U+2116,U+2190-2193,U+2248,U+26A0" --flavor=woff2
+   --layout-features='kern,liga,calt,tnum' */
+@font-face {
+  font-family: 'Inter Web';
+  src: url('./inter-variable-subset.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
