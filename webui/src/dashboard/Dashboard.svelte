@@ -41,6 +41,7 @@
 
   let profileSelectEl;
   let targetInputEl;
+  let lastPostedTarget = null;
   let dRestTargetInputEl;
   let dRestHoursInputEl;
   let dRestReturnSelectEl;
@@ -110,13 +111,14 @@
       showBanner(err, 3500, 'error');
       return;
     }
-    // change + blur both fire on commit; skip when the value is unchanged.
     const next = parseFloat(targetInputEl.value);
-    if (s && Number.isFinite(next) && Number.isFinite(s.target) && next === s.target) {
-      return;
-    }
+    if (Number.isFinite(next) && next === lastPostedTarget) return;
+    if (s && Number.isFinite(next) && Number.isFinite(s.target) && next === s.target) return;
+    lastPostedTarget = next;
     const u = s?.unit || 'F';
-    post({ target: targetInputEl.value }, `Setpoint ${targetInputEl.value}${deg}${u}`);
+    post({ target: targetInputEl.value }, `Setpoint ${targetInputEl.value}${deg}${u}`).then((ok) => {
+      if (!ok && lastPostedTarget === next) lastPostedTarget = null;
+    });
   }
 
   function onTargetInput() {
@@ -203,7 +205,9 @@
       showBanner(err, 3500, 'error');
       return;
     }
+    if (rest.active && !requestConfirm('drest-start')) return;
     const u = s?.unit || 'F';
+    const verb = rest.active ? 'restarted' : 'started';
     post(
       {
         dRestAction: 'start',
@@ -211,7 +215,7 @@
         dRestHours: dRestHoursInputEl.value,
         dRestReturnProfile: dRestReturnSelectEl.value,
       },
-      `D-rest started · ${dRestHoursInputEl.value}h at ${dRestTargetInputEl.value}${deg}${u}`,
+      `D-rest ${verb} · ${dRestHoursInputEl.value}h at ${dRestTargetInputEl.value}${deg}${u}`,
     );
   }
 
@@ -407,6 +411,13 @@
 
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
+  let dRestOpen = $state(false);
+  let prevRestActive = false;
+  $effect(() => {
+    const active = !!rest.active;
+    if (active && !prevRestActive) dRestOpen = true;
+    prevRestActive = active;
+  });
   const hydro = $derived(s?.hydrometer || {});
   // Firmware floors attenuation at 0; past 100 the ring simply stays full
   // while the label keeps the true value. Older firmware has no attenuation
@@ -418,9 +429,7 @@
     if (og == null || !(og > 1.0) || hydro.gravity == null) return null;
     return Math.max(0, ((og - hydro.gravity) / (og - 1.0)) * 100);
   });
-  // Beer (hydrometer) temp vs live setpoint — not the control-probe error
-  // (that lives in the hero as probeDelta). Span and "ok" band use display
-  // degrees so °C is not 1.8× looser than °F; prefer firmware hold band.
+  // Span/hold are in display degrees so °C is not 1.8× looser.
   const tempGaugeSpan = $derived(s?.unit === 'C' ? 1.1 : 2.0);
   const tempOkBand = $derived(
     s && Number.isFinite(s.hold) ? Math.max(0.05, s.hold) : s?.unit === 'C' ? 0.17 : 0.3,
@@ -731,7 +740,7 @@
           </div>
         </div>
       </div>
-      <details class="panel" open={!!rest.active}>
+      <details class="panel" bind:open={dRestOpen}>
         <summary>
           <h2>Diacetyl Rest</h2>
           <span class="summaryHint">
@@ -776,7 +785,12 @@
           </select>
         </label>
         <div class="modes" style="margin-top:10px">
-          <button class="primary" disabled={offline || rest.active} onclick={startDrest}>START</button>
+          <button
+            class="primary"
+            class:armed={armedKey === 'drest-start'}
+            disabled={offline}
+            onclick={startDrest}
+          >{armedKey === 'drest-start' ? 'CONFIRM' : rest.active ? 'RESTART' : 'START'}</button>
           <button
             class="danger"
             class:armed={armedKey === 'drest-end'}

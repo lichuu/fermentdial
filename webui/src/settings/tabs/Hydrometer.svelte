@@ -74,6 +74,7 @@
   let ogArmed = $state(false);
   let ogArmTimer = null;
   let actionStatus = $state('');
+  let actionError = $state(false);
   let actionStatusTimer = null;
 
   function clearOgArm() {
@@ -82,12 +83,14 @@
     ogArmTimer = null;
   }
 
-  function setActionStatus(msg) {
+  function setActionStatus(msg, isError = false) {
     actionStatus = msg;
+    actionError = !!isError && !!msg;
     clearTimeout(actionStatusTimer);
     actionStatusTimer = msg
       ? setTimeout(() => {
           actionStatus = '';
+          actionError = false;
           actionStatusTimer = null;
         }, 3500)
       : null;
@@ -106,7 +109,7 @@
       await refresh();
       setActionStatus('Original gravity cleared');
     } catch (e) {
-      setActionStatus('Reset OG failed — check connection');
+      setActionStatus('Reset OG failed — check connection', true);
     }
   }
 
@@ -156,7 +159,7 @@
       >{ogArmed ? 'CONFIRM RESET OG' : 'Reset OG'}</button>
       <button type="button" onclick={clearHydrometer}>Clear selection</button>
     </div>
-    <div class="saveStatus">{actionStatus || statusText}</div>
+    <div class="saveStatus" class:saveStatus-error={actionError}>{actionStatus || statusText}</div>
     <div class="networkList">
       {#if !devices.length}
         <p class="formHint">

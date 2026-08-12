@@ -21,16 +21,17 @@
 
   /* Primary action. One variable to retheme. */
   --primary: #356f89;
+  --primary-border: #3f819d;
   --primary-hover: #3f819d;
   --primary-hover-border: #4a92b0;
   --primary-foreground: #ffffff;
   --blue: var(--primary);
   --ring: rgba(176, 216, 248, 0.45);
 
-  /* Interaction lifts — curated steps on the teal ladder (no muddy midtones) */
-  --hover: #243f4a;       /* soft lift from --panel2 */
-  --selected: #1f4150;    /* selected list / chip fill */
-  --link: #79d4ff;        /* links: accent + a touch of white */
+  /* Interaction lifts */
+  --hover: #243f4a;
+  --selected: #1f4150;
+  --link: #79d4ff;
 
   /* Semantic state */
   --cool: #b0d8f8;
@@ -127,11 +128,11 @@ input[type="range"] { padding: 0; accent-color: var(--primary); background: tran
 button.primary, .formSubmit, .btnCompact.primary {
   background: var(--primary);
   color: var(--primary-foreground);
-  border-color: var(--primary-hover);
+  border-color: var(--primary-border);
   font-weight: 600;
 }
 button.primary:hover:not(:disabled),
-.formSubmit:hover:not(:disabled),
+.formSubmit:hover:not(:disabled):not(.danger),
 .btnCompact.primary:hover:not(:disabled) {
   background: var(--primary-hover);
   border-color: var(--primary-hover-border);
@@ -144,10 +145,10 @@ button.primary:hover:not(:disabled),
 }
 .btnSecondary:hover:not(:disabled), .btnBrowse:hover:not(:disabled) {
   background: var(--hover);
-  border-color: #356f89;
+  border-color: var(--primary);
 }
 .danger { background: transparent; border-color: #5a2a2a; color: var(--fault); }
-.danger:hover:not(:disabled) { background: var(--danger-hover); }
+.danger:hover:not(:disabled) { background: var(--danger-hover); border-color: #5a2a2a; }
 .danger.armed {
   background: var(--fault) !important;
   border-color: var(--fault) !important;
@@ -736,6 +737,7 @@ label { display: block; color: var(--text); font-size: 13px; font-weight: 500; m
 .btnSecondary { width: 100%; margin: 0; padding: 10px 12px; }
 .formFeedback { margin: 0; font-size: 13px; color: var(--accent); font-weight: 500; }
 .saveStatus { color: var(--accent); font-size: 13px; margin-top: 8px; min-height: 16px; font-weight: 500; }
+.saveStatus-error { color: var(--fault); }
 .stackedRow .formHint,
 .stackedRow .formFeedback,
 .stackedRow .hint,
