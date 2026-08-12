@@ -20,16 +20,33 @@
 
   /* Primary action. One variable to retheme. */
   --primary: #356f89;
+  --primary-border: #3f819d;
+  --primary-hover: #3f819d;
+  --primary-hover-border: #4a92b0;
   --primary-foreground: #ffffff;
   --blue: var(--primary);
   --ring: rgba(176, 216, 248, 0.45);
 
+  /* Interaction lifts */
+  --hover: #243f4a;
+  --selected: #1f4150;
+  --link: #79d4ff;
+
   /* Semantic state */
   --cool: #b0d8f8;
+  --cool-face: #123040;
+  --cool-hover: #1a3c4e;
+  --cool-border: #2a5570;
+  --cool-active-border: #d0eaf8;
   --heat: #e36018;
+  --heat-face: #3b1807;
+  --heat-hover: #4a220c;
+  --heat-border: #6a3018;
+  --heat-active-border: #f08a4a;
   --ok: #36c87a;
   --gold: #ffd178;
   --fault: #e44840;
+  --danger-hover: #2a1416;
 
   --font-sans: "Inter Web", system-ui, -apple-system, "Segoe UI", Roboto,
     "Helvetica Neue", Arial, "Noto Sans", sans-serif;

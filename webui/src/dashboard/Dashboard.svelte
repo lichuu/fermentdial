@@ -36,16 +36,19 @@
   let offline = $state(false);
   let failStreak = $state(0);
   let banner = $state('');
+  let bannerKind = $state('info'); // 'info' | 'error'
   let bannerTimer = null;
 
   let profileSelectEl;
   let targetInputEl;
+  let lastPostedTarget = null;
   let dRestTargetInputEl;
   let dRestHoursInputEl;
   let dRestReturnSelectEl;
 
-  function showBanner(msg, ms = 3500) {
+  function showBanner(msg, ms = 3500, kind = 'info') {
     banner = msg;
+    bannerKind = kind;
     clearTimeout(bannerTimer);
     if (ms > 0) {
       bannerTimer = setTimeout(() => {
@@ -62,17 +65,20 @@
     return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
   }
 
-  async function post(fields) {
+  async function post(fields, okMsg) {
     if (offline) {
-      showBanner("Can't reach controller");
-      return;
+      showBanner("Can't reach controller", 3500, 'error');
+      return false;
     }
     try {
       await postSettings(fields);
       await tick();
+      if (okMsg) showBanner(okMsg);
+      return true;
     } catch (e) {
       // Banner is the user-facing signal; do not rethrow (avoids unhandled rejection).
-      showBanner('Save failed — check connection');
+      showBanner('Save failed — check connection', 3500, 'error');
+      return false;
     }
   }
 
@@ -86,6 +92,12 @@
     return ATTN_LABELS[slug] || slug;
   }
 
+  function modeChip(mode) {
+    if (mode === 'HEAT_ONLY') return 'HEAT';
+    if (mode === 'COOL_ONLY') return 'COOL';
+    return formatMode(mode);
+  }
+
   function tempLimits() {
     return targetLimits(s?.unit || 'F');
   }
@@ -94,8 +106,19 @@
     if (!targetInputEl) return;
     const limits = tempLimits();
     targetInputEl.value = coerceDecimal(targetInputEl.value, limits);
-    if (decimalError(targetInputEl.value, limits, 'Setpoint')) return;
-    post({ target: targetInputEl.value });
+    const err = decimalError(targetInputEl.value, limits, 'Setpoint');
+    if (err) {
+      showBanner(err, 3500, 'error');
+      return;
+    }
+    const next = parseFloat(targetInputEl.value);
+    if (Number.isFinite(next) && next === lastPostedTarget) return;
+    if (s && Number.isFinite(next) && Number.isFinite(s.target) && next === s.target) return;
+    lastPostedTarget = next;
+    const u = s?.unit || 'F';
+    post({ target: targetInputEl.value }, `Setpoint ${targetInputEl.value}${deg}${u}`).then((ok) => {
+      if (!ok && lastPostedTarget === next) lastPostedTarget = null;
+    });
   }
 
   function onTargetInput() {
@@ -112,40 +135,62 @@
   }
 
   function selectProfile() {
-    post({ profile: profileSelectEl.value });
+    const idx = profileSelectEl?.value;
+    const p = (s?.profiles || []).find((x) => String(x.index) === String(idx));
+    post({ profile: idx }, p ? `Profile → ${p.name}` : 'Profile updated');
   }
 
-  let offArmed = $state(false);
-  let offArmTimer = null;
+  // Two-tap confirm within 3s (same idea as the dial confirm step).
+  let armedKey = $state('');
+  let armTimer = null;
 
-  function disarmOff() {
-    offArmed = false;
-    clearTimeout(offArmTimer);
-    offArmTimer = null;
+  function clearArm() {
+    armedKey = '';
+    clearTimeout(armTimer);
+    armTimer = null;
+  }
+
+  function requestConfirm(key) {
+    if (armedKey === key) {
+      clearArm();
+      return true;
+    }
+    armedKey = key;
+    clearTimeout(armTimer);
+    armTimer = setTimeout(clearArm, 3000);
+    return false;
   }
 
   function setMode(mode) {
-    disarmOff();
-    post({ mode });
+    clearArm();
+    post({ mode }, `Mode → ${modeChip(mode)}`);
   }
 
-  // OFF is destructive, so require an explicit second tap within 3s
-  // (same idea as the dial's confirm step).
   function setModeOff() {
     if (s?.mode === 'OFF') {
-      disarmOff();
+      clearArm();
       return;
     }
-    if (!offArmed) {
-      offArmed = true;
-      clearTimeout(offArmTimer);
-      offArmTimer = setTimeout(() => {
-        offArmed = false;
-        offArmTimer = null;
-      }, 3000);
-      return;
-    }
+    if (!requestConfirm('OFF')) return;
     setMode('OFF');
+  }
+
+  function setModeHeat() {
+    if (s?.mode === 'HEAT_ONLY') {
+      clearArm();
+      return;
+    }
+    if (!requestConfirm('HEAT_ONLY')) return;
+    setMode('HEAT_ONLY');
+  }
+
+  function setModeCool() {
+    if (s?.mode === 'COOL_ONLY') {
+      clearArm();
+      return;
+    }
+    if (!requestConfirm('COOL_ONLY')) return;
+    setMode('COOL_ONLY');
   }
 
   function startDrest() {
@@ -156,13 +201,22 @@
     const err =
       decimalError(dRestTargetInputEl.value, limits, 'Rest temp') ||
       decimalError(dRestHoursInputEl.value, DREST_HOURS_LIMITS, 'Duration hours');
-    if (err) return;
-    post({
-      dRestAction: 'start',
-      dRestTarget: dRestTargetInputEl.value,
-      dRestHours: dRestHoursInputEl.value,
-      dRestReturnProfile: dRestReturnSelectEl.value,
-    });
+    if (err) {
+      showBanner(err, 3500, 'error');
+      return;
+    }
+    if (rest.active && !requestConfirm('drest-start')) return;
+    const u = s?.unit || 'F';
+    const verb = rest.active ? 'restarted' : 'started';
+    post(
+      {
+        dRestAction: 'start',
+        dRestTarget: dRestTargetInputEl.value,
+        dRestHours: dRestHoursInputEl.value,
+        dRestReturnProfile: dRestReturnSelectEl.value,
+      },
+      `D-rest ${verb} · ${dRestHoursInputEl.value}h at ${dRestTargetInputEl.value}${deg}${u}`,
+    );
   }
 
   function onDrestTargetInput() {
@@ -176,7 +230,9 @@
   }
 
   function endDrest() {
-    post({ dRestAction: 'end' });
+    if (!(s?.diacetylRest || {}).active) return;
+    if (!requestConfirm('drest-end')) return;
+    post({ dRestAction: 'end' }, 'Diacetyl rest ended');
   }
 
   function num(value) {
@@ -251,9 +307,16 @@
       document.body.dataset.state = next.state.toLowerCase();
       document.title = next.fermenterName + ' - FermentDial';
 
-      // Mode may go OFF from dial/API; drop a stale arm state.
-      if (next.mode === 'OFF' && offArmed) {
-        disarmOff();
+      // Drop stale confirm arms when mode/d-rest/program change elsewhere.
+      if (
+        (armedKey === 'OFF' && next.mode === 'OFF') ||
+        (armedKey === 'HEAT_ONLY' && next.mode === 'HEAT_ONLY') ||
+        (armedKey === 'COOL_ONLY' && next.mode === 'COOL_ONLY') ||
+        (armedKey === 'drest-end' && !(next.diacetylRest || {}).active) ||
+        ((armedKey === 'prog-stop' || armedKey === 'prog-skip') &&
+          !(next.program || {}).active)
+      ) {
+        clearArm();
       }
 
       if (profileSelectEl && document.activeElement !== profileSelectEl) {
@@ -340,14 +403,21 @@
       cancelled = true;
       clearInterval(tickTimer);
       clearInterval(historyTimer);
-      clearTimeout(offArmTimer);
+      clearTimeout(armTimer);
       clearTimeout(bannerTimer);
-      offArmTimer = null;
+      armTimer = null;
     };
   });
 
   const unit = $derived(s ? deg + s.unit : '');
   const rest = $derived(s?.diacetylRest || {});
+  let dRestOpen = $state(false);
+  let prevRestActive = false;
+  $effect(() => {
+    const active = !!rest.active;
+    if (active && !prevRestActive) dRestOpen = true;
+    prevRestActive = active;
+  });
   const hydro = $derived(s?.hydrometer || {});
   // Firmware floors attenuation at 0; past 100 the ring simply stays full
   // while the label keeps the true value. Older firmware has no attenuation
@@ -359,11 +429,18 @@
     if (og == null || !(og > 1.0) || hydro.gravity == null) return null;
     return Math.max(0, ((og - hydro.gravity) / (og - 1.0)) * 100);
   });
-  // Temperature gauge: ring fill is distance from target, saturating at
-  // TEMP_GAUGE_SPAN display degrees; heat/cool color by direction.
-  const TEMP_GAUGE_SPAN = 2.0;
+  // Span/hold are in display degrees so °C is not 1.8× looser.
+  const tempGaugeSpan = $derived(s?.unit === 'C' ? 1.1 : 2.0);
+  const tempOkBand = $derived(
+    s && Number.isFinite(s.hold) ? Math.max(0.05, s.hold) : s?.unit === 'C' ? 0.17 : 0.3,
+  );
   const tempDelta = $derived(
-    hydro.valid && s ? hydro.temperature - s.target : null,
+    hydro.valid &&
+      s &&
+      Number.isFinite(hydro.temperature) &&
+      Number.isFinite(s.target)
+      ? hydro.temperature - s.target
+      : null,
   );
   const tempDeltaText = $derived(
     tempDelta == null
@@ -373,28 +450,54 @@
   const tempGaugePct = $derived(
     tempDelta == null
       ? null
-      : (Math.min(Math.abs(tempDelta), TEMP_GAUGE_SPAN) / TEMP_GAUGE_SPAN) * 100,
+      : (Math.min(Math.abs(tempDelta), tempGaugeSpan) / tempGaugeSpan) * 100,
   );
   const tempStroke = $derived(
     tempDelta == null
       ? 'var(--muted)'
-      : Math.abs(tempDelta) < 0.3
+      : Math.abs(tempDelta) <= tempOkBand
         ? 'var(--ok)'
         : tempDelta > 0
           ? 'var(--heat)'
           : 'var(--cool)',
   );
   const prog = $derived(s?.program || {});
-  const heroSub = $derived.by(() => {
-    if (!s) return 'Waiting for controller status';
-    if (s.hintDetail) return s.hintDetail;
-    if (!s.tempValid) return 'Sensor fault - outputs forced off';
-    if (rest.active) return 'D-rest ' + remainingText(rest.remainingSeconds) + ' remaining';
-    if (s.attentionText) return s.attentionText;
-    if (s.attention?.length) {
-      return s.attention.map(attentionLabel).join(' · ');
+  // Control-probe delta vs live setpoint (what the controller actually regulates).
+  const probeDelta = $derived(
+    s?.tempValid ? s.temperature - s.target : null,
+  );
+  const probeDeltaText = $derived(
+    probeDelta == null
+      ? null
+      : (probeDelta >= 0 ? '+' : '-') + Math.abs(probeDelta).toFixed(1) + deg,
+  );
+  const heroAlert = $derived.by(() => {
+    if (!s) return '';
+    const parts = [];
+    if (s.fault && s.fault !== 'NONE') {
+      parts.push(s.fault === 'SENSOR FAULT'
+        ? 'Sensor fault — outputs forced off'
+        : s.fault === 'INTERLOCK FAULT'
+          ? 'Interlock fault — outputs forced off'
+          : s.fault);
+    } else if (!s.tempValid) {
+      parts.push('Sensor fault — outputs forced off');
     }
-    return formatMode(s.mode) + ' mode';
+    if (s.attention?.length) {
+      for (const slug of s.attention) {
+        if (slug === 'fault' && parts.length) continue;
+        parts.push(attentionLabel(slug));
+      }
+    } else if (s.attentionText) {
+      parts.push(s.attentionText);
+    }
+    return parts.join(' · ');
+  });
+  const heroDetail = $derived.by(() => {
+    if (!s) return '';
+    if (s.hintDetail) return s.hintDetail;
+    if (rest.active) return 'D-rest ' + remainingText(rest.remainingSeconds) + ' remaining';
+    return '';
   });
   const PROG_STEP_TYPES = ['Hold', 'Ramp', 'Crash', 'D-Rest', 'Manual wait'];
   const PROG_EXIT_TYPES = [
@@ -406,22 +509,35 @@
   ];
 
   function progStop() {
-    post({ programAction: 'stop' });
+    if (!(s?.program || {}).active) return;
+    if (!requestConfirm('prog-stop')) return;
+    post({ programAction: 'stop' }, 'Program stopped');
   }
   function progSkip() {
-    post({ programAction: 'skip' });
+    if (!(s?.program || {}).active) return;
+    if (!requestConfirm('prog-skip')) return;
+    post({ programAction: 'skip' }, 'Skipped to next step');
   }
 
   async function resetFerment() {
-    await postSettings({ fermentReset: 1 });
-    await tick();
-    await loadHistory();
+    if (offline) {
+      showBanner("Can't reach controller", 3500, 'error');
+      return;
+    }
+    try {
+      await postSettings({ fermentReset: 1 });
+      await tick();
+      await loadHistory();
+      showBanner('Ferment history reset');
+    } catch (e) {
+      showBanner('Reset failed — check connection', 3500, 'error');
+    }
   }
 
   let batchNameInput = $state('');
   async function startBatch() {
     if (offline) {
-      showBanner("Can't reach controller");
+      showBanner("Can't reach controller", 3500, 'error');
       return;
     }
     try {
@@ -436,7 +552,7 @@
       await tick();
       showBanner('Batch started');
     } catch (e) {
-      showBanner('Batch start failed');
+      showBanner('Batch start failed', 3500, 'error');
     }
   }
 
@@ -485,7 +601,11 @@
     {#if offline}
       <div class="offlineBanner" role="alert">Can't reach controller — controls paused</div>
     {:else if banner}
-      <div class="offlineBanner offlineBanner-info" role="status">{banner}</div>
+      <div
+        class="offlineBanner"
+        class:offlineBanner-info={bannerKind === 'info'}
+        role={bannerKind === 'error' ? 'alert' : 'status'}
+      >{banner}</div>
     {/if}
 
     <div class="top">
@@ -500,8 +620,8 @@
       </div>
       <div class="statusbar">
         <span class="pill">{s ? (s.wifiConnected ? s.ip : s.wifiStatus) : 'Wi-Fi'}</span>
-        {#if s?.attention?.length}
-          <span class="pill attention">{s.attentionText || attentionLabel(s.attention[0])}</span>
+        {#if heroAlert}
+          <span class="pill attention">{heroAlert.split(' · ')[0]}</span>
         {/if}
         <span class="pill demo" hidden={!s?.demo}>DEMO SENSOR</span>
         <Menu page="dashboard" />
@@ -523,7 +643,33 @@
             <span class="unit">{unit || 'F'}</span>
           </div>
           <div class="state">{s ? s.hint || s.state : 'Loading'}</div>
-          <div class="sub">{heroSub}</div>
+          <div class="heroStatus">
+            {#if probeDeltaText}
+              <span class="heroChip" class:heroChip-heat={probeDelta > 0.05} class:heroChip-cool={probeDelta < -0.05}>
+                {probeDeltaText} from target
+              </span>
+            {:else}
+              <span class="heroChip">--{deg} from target</span>
+            {/if}
+            <span class="heroChip heroChip-mode">{s ? modeChip(s.mode) : '—'}</span>
+            {#if hydro.selected}
+              <span class="heroChip">
+                {#if hydro.valid}
+                  SG {hydro.gravity.toFixed(3)}
+                {:else if hydro.stale}
+                  SG stale
+                {:else}
+                  SG waiting
+                {/if}
+              </span>
+            {/if}
+          </div>
+          {#if heroAlert}
+            <div class="heroAlert" role="status">{heroAlert}</div>
+          {/if}
+          {#if heroDetail}
+            <div class="sub">{heroDetail}</div>
+          {/if}
         </div>
         <div class="outputs">
           <div class="out heat" class:on={s?.heater}>{s?.heater ? 'HEATER ON' : 'HEATER OFF'}</div>
@@ -542,13 +688,25 @@
               <button
                 class="danger"
                 class:active={s?.mode === 'OFF'}
-                class:armed={offArmed}
+                class:armed={armedKey === 'OFF'}
                 disabled={offline}
                 onclick={setModeOff}
-              >{offArmed ? 'CONFIRM' : 'OFF'}</button>
+              >{armedKey === 'OFF' ? 'CONFIRM' : 'OFF'}</button>
               <button class:active={s?.mode === 'AUTO'} disabled={offline} onclick={() => setMode('AUTO')}>AUTO</button>
-              <button class="heat" class:active={s?.mode === 'HEAT_ONLY'} disabled={offline} onclick={() => setMode('HEAT_ONLY')}>HEAT</button>
-              <button class="cool" class:active={s?.mode === 'COOL_ONLY'} disabled={offline} onclick={() => setMode('COOL_ONLY')}>COOL</button>
+              <button
+                class="heat"
+                class:active={s?.mode === 'HEAT_ONLY'}
+                class:armed={armedKey === 'HEAT_ONLY'}
+                disabled={offline}
+                onclick={setModeHeat}
+              >{armedKey === 'HEAT_ONLY' ? 'CONFIRM' : 'HEAT'}</button>
+              <button
+                class="cool"
+                class:active={s?.mode === 'COOL_ONLY'}
+                class:armed={armedKey === 'COOL_ONLY'}
+                disabled={offline}
+                onclick={setModeCool}
+              >{armedKey === 'COOL_ONLY' ? 'CONFIRM' : 'COOL'}</button>
             </div>
           </div>
           <div>
@@ -582,7 +740,7 @@
           </div>
         </div>
       </div>
-      <details class="panel">
+      <details class="panel" bind:open={dRestOpen}>
         <summary>
           <h2>Diacetyl Rest</h2>
           <span class="summaryHint">
@@ -627,8 +785,18 @@
           </select>
         </label>
         <div class="modes" style="margin-top:10px">
-          <button class="primary" onclick={startDrest}>START</button>
-          <button disabled={!rest.active} onclick={endDrest}>STOP</button>
+          <button
+            class="primary"
+            class:armed={armedKey === 'drest-start'}
+            disabled={offline}
+            onclick={startDrest}
+          >{armedKey === 'drest-start' ? 'CONFIRM' : rest.active ? 'RESTART' : 'START'}</button>
+          <button
+            class="danger"
+            class:armed={armedKey === 'drest-end'}
+            disabled={offline || !rest.active}
+            onclick={endDrest}
+          >{armedKey === 'drest-end' ? 'CONFIRM' : 'STOP'}</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">{dRestStatusText}</p>
       </details>
@@ -645,8 +813,17 @@
           {programExitText(prog)}
         </p>
         <div class="modes" style="margin-top:10px">
-          <button onclick={progSkip}>SKIP</button>
-          <button class="danger" onclick={progStop}>STOP</button>
+          <button
+            class:armed={armedKey === 'prog-skip'}
+            disabled={offline}
+            onclick={progSkip}
+          >{armedKey === 'prog-skip' ? 'CONFIRM' : 'SKIP'}</button>
+          <button
+            class="danger"
+            class:armed={armedKey === 'prog-stop'}
+            disabled={offline}
+            onclick={progStop}
+          >{armedKey === 'prog-stop' ? 'CONFIRM' : 'STOP'}</button>
         </div>
         <p class="sub" style="font-size:12px;margin-top:10px">
           Build programs in <a href="/settings#programs">Settings</a>.
@@ -678,9 +855,9 @@
             </div>
             <div class="gaugeSub">
               {#if s}
-                target <b>{s.target.toFixed(1)}{unit}</b>
+                beer vs setpoint <b>{s.target.toFixed(1)}{unit}</b>
                 {#if tempDelta != null}
-                  · <b>{tempDeltaText}{s.unit}</b> from target
+                  · <b>{tempDeltaText}{s.unit}</b>
                 {/if}
               {/if}
             </div>

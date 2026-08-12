@@ -71,10 +71,56 @@
     await refresh();
   }
 
-  async function resetHydrometerOg() {
-    await postSettings({ hydrometerResetOg: 1 });
-    await refresh();
+  let ogArmed = $state(false);
+  let ogArmTimer = null;
+  let actionStatus = $state('');
+  let actionError = $state(false);
+  let actionStatusTimer = null;
+
+  function clearOgArm() {
+    ogArmed = false;
+    clearTimeout(ogArmTimer);
+    ogArmTimer = null;
   }
+
+  function setActionStatus(msg, isError = false) {
+    actionStatus = msg;
+    actionError = !!isError && !!msg;
+    clearTimeout(actionStatusTimer);
+    actionStatusTimer = msg
+      ? setTimeout(() => {
+          actionStatus = '';
+          actionError = false;
+          actionStatusTimer = null;
+        }, 3500)
+      : null;
+  }
+
+  async function resetHydrometerOg() {
+    if (!ogArmed) {
+      ogArmed = true;
+      clearTimeout(ogArmTimer);
+      ogArmTimer = setTimeout(clearOgArm, 3000);
+      return;
+    }
+    clearOgArm();
+    try {
+      await postSettings({ hydrometerResetOg: 1 });
+      await refresh();
+      setActionStatus('Original gravity cleared');
+    } catch (e) {
+      setActionStatus('Reset OG failed — check connection', true);
+    }
+  }
+
+  $effect(() => {
+    return () => {
+      clearTimeout(ogArmTimer);
+      clearTimeout(actionStatusTimer);
+      ogArmTimer = null;
+      actionStatusTimer = null;
+    };
+  });
 </script>
 
 <section class="stackedCard">
@@ -105,10 +151,15 @@
       </div>
     {/if}
     <div class="row">
-      <button type="button" onclick={resetHydrometerOg}>Reset OG</button>
+      <button
+        type="button"
+        class="danger"
+        class:armed={ogArmed}
+        onclick={resetHydrometerOg}
+      >{ogArmed ? 'CONFIRM RESET OG' : 'Reset OG'}</button>
       <button type="button" onclick={clearHydrometer}>Clear selection</button>
     </div>
-    <div class="saveStatus">{statusText}</div>
+    <div class="saveStatus" class:saveStatus-error={actionError}>{actionStatus || statusText}</div>
     <div class="networkList">
       {#if !devices.length}
         <p class="formHint">
