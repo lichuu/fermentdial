@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths:
       - 'site-src/**'
+      # site-src/tokens.css symlinks here — a palette change must redeploy.
+      - 'webui/src/shared/tokens.css'
       - 'tools/gen_site_manifests.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -32,7 +34,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p site/ota site/flash
-          cp site-src/index.html site/
+          # -L resolves site-src/tokens.css and the Inter subset, which are
+          # symlinks into webui/src/shared so the installer page and the device
+          # dashboard cannot drift apart.
+          cp -RL site-src/. site/
           TAG="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)"
           VERSION="${TAG#v}"
           echo "Bundling firmware from release ${TAG}"
